@@ -1,0 +1,43 @@
+# wetvlo Configuration Example
+# Copy this file to config.yaml and customize for your needs
+
+# Series to monitor
+series:
+  # Example 1: WeTV series
+  - url: "https://wetv.vip/play/your-series-id"
+    startTime: "20:00" # Time to start checking (24-hour HH:MM format)
+    checks: 10 # Number of times to check for new episodes
+    interval: 300 # Seconds between checks (300 = 5 minutes)
+
+  # Example 2: iQIYI series
+  - url: "https://www.iq.com/play/your-series-id"
+    startTime: "21:00"
+    checks: 5
+    interval: 600 # 600 = 10 minutes
+
+# Optional: Telegram notifications for errors only
+# Leave this section out to disable Telegram notifications
+telegram:
+  # Bot token from @BotFather
+  # Supports ${VAR_NAME} syntax to use environment variables
+  botToken: "${TELEGRAM_BOT_TOKEN}"
+
+  # Chat ID to send notifications to
+  # Use @userinfobot on Telegram to get your chat ID
+  chatId: "${TELEGRAM_CHAT_ID}"
+
+# Directory where downloaded videos will be saved
+downloadDir: "./downloads"
+
+# State file for tracking downloaded episodes (auto-created)
+stateFile: "./wetvlo-state.json"
+
+# Browser to extract cookies from
+# Options: chrome, firefox, safari, chromium, edge
+# Note: Automatic extraction not yet implemented - use cookieFile instead
+browser: "chrome"
+
+# Optional: Manual cookie file path
+# Export cookies using "Get cookies.txt LOCALLY" browser extension
+# File should be in Netscape cookie format
+# cookieFile: "./cookies.txt"

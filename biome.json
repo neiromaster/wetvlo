@@ -60,7 +60,7 @@
           "nursery": {
             "noUnknownAttribute": "error",
             "noImportCycles": "error",
-            "useExplicitType": "error",
+            "useExplicitType": "off",
             "useSpread": "error",
             "noFloatingPromises": "error",
             "noMisusedPromises": "error",

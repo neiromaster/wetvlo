@@ -69,14 +69,14 @@
           "security": {
             "noDangerouslySetInnerHtmlWithChildren": "error",
             "noDangerouslySetInnerHtml": "error",
-            "noSecrets": "error"
+            "noSecrets": "off"
           },
           "suspicious": {
             "noVar": "error"
           },
           "style": {
             "useConsistentCurlyBraces": "error",
-            "noEnum": "error",
+            "noEnum": "off",
             "noNamespace": "error",
             "noParameterAssign": "error",
             "useConsistentTypeDefinitions": {

@@ -59,4 +59,4 @@ export class Registry implements HandlerRegistry {
 }
 
 // Global registry instance
-export const handlerRegistry = new Registry();
+export const handlerRegistry: Registry = new Registry();

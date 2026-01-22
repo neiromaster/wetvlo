@@ -3,8 +3,14 @@ import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { SeriesConfig } from '../types/config.types';
+import { EpisodeType } from '../types/episode.types';
 import type { DomainHandler } from '../types/handler.types';
 import { sleep } from '../utils/time-utils';
+
+/**
+ * Default episode types to download if not specified in config
+ */
+const DEFAULT_DOWNLOAD_TYPES: EpisodeType[] = [EpisodeType.AVAILABLE, EpisodeType.VIP];
 
 /**
  * Task runner for checking a single series
@@ -56,10 +62,15 @@ export class TaskRunner {
 
       this.notifier.notify(NotificationLevel.INFO, `Found ${episodes.length} episodes on ${this.config.url}`);
 
-      // Filter for available episodes not yet downloaded
-      const newEpisodes = episodes.filter(
-        (ep) => ep.type === 'available' && !this.stateManager.isDownloaded(this.config.url, ep.number),
-      );
+      // Get download types from config or use defaults
+      const downloadTypes = this.getDownloadTypes();
+
+      // Filter for episodes matching download types and not yet downloaded
+      const newEpisodes = episodes.filter((ep) => {
+        const shouldDownload = downloadTypes.includes(ep.type);
+        const notDownloaded = !this.stateManager.isDownloaded(this.config.url, ep.number);
+        return shouldDownload && notDownloaded;
+      });
 
       if (newEpisodes.length > 0) {
         this.notifier.notify(
@@ -85,6 +96,36 @@ export class TaskRunner {
         `Error checking ${this.config.url}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /**
+   * Get episode types to download from config or use defaults
+   */
+  private getDownloadTypes(): EpisodeType[] {
+    if (!this.config.downloadTypes) {
+      return DEFAULT_DOWNLOAD_TYPES;
+    }
+
+    // Convert string types from config to EpisodeType enum
+    return this.config.downloadTypes.map((typeStr) => {
+      switch (typeStr) {
+        case 'available':
+          return EpisodeType.AVAILABLE;
+        case 'vip':
+          return EpisodeType.VIP;
+        case 'teaser':
+          return EpisodeType.TEASER;
+        case 'express':
+          return EpisodeType.EXPRESS;
+        case 'preview':
+          return EpisodeType.PREVIEW;
+        case 'locked':
+          return EpisodeType.LOCKED;
+        default:
+          // Default to available for unknown types
+          return EpisodeType.AVAILABLE;
+      }
+    });
   }
 
   /**

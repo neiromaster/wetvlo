@@ -10,7 +10,16 @@ export enum EpisodeType {
   AVAILABLE = 'available',
   /** Locked/not yet released */
   LOCKED = 'locked',
+  /** Teaser/short preview */
+  TEASER = 'teaser',
+  /** Express episode (early release) */
+  EXPRESS = 'express',
 }
+
+/**
+ * Episode type as a union type for convenience
+ */
+export type EpisodeTypeUnion = 'vip' | 'preview' | 'available' | 'locked' | 'teaser' | 'express';
 
 /**
  * Episode information extracted from series page

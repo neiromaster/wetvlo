@@ -12,6 +12,7 @@ CLI application for monitoring and downloading TV series episodes from Chinese v
 - **Smart Notifications**: Console output for normal operations, Telegram for errors only
 - **Cookie Support**: Extract cookies from browser for authentication
 - **Scheduled Checks**: Check for new episodes at specified times with configurable intervals
+- **Episode Type Filtering**: Configure which episode types to download per series (available, vip, teaser, express)
 
 ## Prerequisites
 
@@ -38,11 +39,21 @@ series:
     startTime: "20:00"  # Time to start checking (HH:MM format)
     checks: 10          # Number of times to check
     interval: 300       # Seconds between checks
+    # Optional: Episode types to download (default: available, vip)
+    downloadTypes:
+      - available
+      - vip
 
   - url: "https://www.iq.com/play/xyz789"
     startTime: "21:00"
     checks: 5
     interval: 600
+    # Download all types including teasers and express episodes
+    downloadTypes:
+      - available
+      - vip
+      - teaser
+      - express
 
 # Optional: Telegram notifications for errors only
 telegram:
@@ -107,10 +118,22 @@ bun run dist/index.js /path/to/config.yaml
 2. For each series URL:
    - Fetches the page using configured cookies
    - Extracts episode list (number, URL, type)
-   - Identifies new "available" episodes not yet downloaded
+   - Identifies new episodes matching `downloadTypes` (default: `available` and `vip`) not yet downloaded
    - Downloads each new episode using yt-dlp
 3. Repeats `checks` times with `interval` seconds between checks
 4. Saves download history to state file (prevents duplicates)
+
+### Episode Types
+
+The following episode types are supported:
+- **`available`** - Free to watch
+- **`vip`** - Requires premium subscription
+- **`teaser`** - Short preview/trailer
+- **`express`** - Early release episode
+- **`preview`** - Preview only
+- **`locked`** - Not yet released
+
+By default, only `available` and `vip` episodes are downloaded. You can customize this per series using the `downloadTypes` option in your config.
 
 ### Graceful Shutdown
 

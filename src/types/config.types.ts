@@ -10,6 +10,8 @@ export type SeriesConfig = {
   checks: number;
   /** Interval between checks in seconds */
   interval: number;
+  /** Episode types to download (default: ['available', 'vip']) */
+  downloadTypes?: ('available' | 'vip' | 'teaser' | 'express' | 'preview' | 'locked')[];
 };
 
 /**

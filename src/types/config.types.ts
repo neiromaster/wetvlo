@@ -41,6 +41,19 @@ export type Config = {
 };
 
 /**
+ * Scheduler mode
+ */
+export type SchedulerMode = 'scheduled' | 'once';
+
+/**
+ * Scheduler options
+ */
+export type SchedulerOptions = {
+  /** Execution mode */
+  mode: SchedulerMode;
+};
+
+/**
  * Raw configuration from YAML (before env var resolution)
  */
 export type RawConfig = Record<string, unknown>;

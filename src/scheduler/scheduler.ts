@@ -3,7 +3,7 @@ import { SchedulerError } from '../errors/custom-errors';
 import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
-import type { SeriesConfig } from '../types/config.types';
+import type { SchedulerOptions, SeriesConfig } from '../types/config.types';
 import type { DomainHandler } from '../types/handler.types';
 import { getMsUntilTime, sleep } from '../utils/time-utils';
 import { TaskRunner } from './task-runner';
@@ -18,6 +18,7 @@ export class Scheduler {
   private downloadManager: DownloadManager;
   private notifier: Notifier;
   private cookies?: string;
+  private options: SchedulerOptions;
   private taskRunners: TaskRunner[] = [];
   private running: boolean = false;
   private stopped: boolean = true;
@@ -29,6 +30,7 @@ export class Scheduler {
     downloadManager: DownloadManager,
     notifier: Notifier,
     cookies?: string,
+    options: SchedulerOptions = { mode: 'scheduled' },
   ) {
     this.configs = configs;
     this.getHandler = getHandler;
@@ -36,6 +38,7 @@ export class Scheduler {
     this.downloadManager = downloadManager;
     this.notifier = notifier;
     this.cookies = cookies;
+    this.options = options;
   }
 
   /**
@@ -49,29 +52,33 @@ export class Scheduler {
     this.running = true;
     this.stopped = false;
 
-    this.notifier.notify(NotificationLevel.INFO, 'Scheduler started');
+    if (this.options.mode === 'once') {
+      this.notifier.notify(NotificationLevel.INFO, 'Single-run mode: checking all series once');
+      await this.runOnce();
+    } else {
+      this.notifier.notify(NotificationLevel.INFO, 'Scheduler started');
+      // Group configs by start time
+      const groupedConfigs = this.groupConfigsByStartTime();
 
-    // Group configs by start time
-    const groupedConfigs = this.groupConfigsByStartTime();
+      // Process each time group
+      for (const [startTime, configs] of groupedConfigs.entries()) {
+        if (this.stopped) break;
 
-    // Process each time group
-    for (const [startTime, configs] of groupedConfigs.entries()) {
-      if (this.stopped) break;
+        // Wait until start time
+        const msUntil = getMsUntilTime(startTime);
+        if (msUntil > 0) {
+          this.notifier.notify(
+            NotificationLevel.INFO,
+            `Waiting ${Math.floor(msUntil / 1000 / 60)} minutes until ${startTime}...`,
+          );
+          await sleep(msUntil);
+        }
 
-      // Wait until start time
-      const msUntil = getMsUntilTime(startTime);
-      if (msUntil > 0) {
-        this.notifier.notify(
-          NotificationLevel.INFO,
-          `Waiting ${Math.floor(msUntil / 1000 / 60)} minutes until ${startTime}...`,
-        );
-        await sleep(msUntil);
+        if (this.stopped) break;
+
+        // Run all tasks for this time group
+        await this.runConfigs(configs);
       }
-
-      if (this.stopped) break;
-
-      // Run all tasks for this time group
-      await this.runConfigs(configs);
     }
 
     this.running = false;
@@ -140,6 +147,35 @@ export class Scheduler {
 
     // Run all tasks in parallel
     await Promise.all(runners.map((runner) => runner.runMultipleChecks()));
+  }
+
+  /**
+   * Run all configs sequentially in single-run mode
+   */
+  private async runOnce(): Promise<void> {
+    for (const config of this.configs) {
+      if (this.stopped) break;
+
+      const handler = this.getHandler(config.url);
+      const runner = new TaskRunner(
+        config,
+        handler,
+        this.stateManager,
+        this.downloadManager,
+        this.notifier,
+        this.cookies,
+        true, // singleRun = true
+      );
+      this.taskRunners = [runner];
+
+      await runner.run();
+
+      if (this.stopped) break;
+    }
+
+    // Save state after all checks
+    await this.stateManager.save();
+    this.notifier.notify(NotificationLevel.SUCCESS, 'Single-run complete');
   }
 
   /**

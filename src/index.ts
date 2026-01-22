@@ -9,6 +9,7 @@ import type { NotificationLevel } from './notifications/notifier';
 import { TelegramNotifier } from './notifications/telegram-notifier';
 import { Scheduler } from './scheduler/scheduler';
 import { StateManager } from './state/state-manager';
+import type { SchedulerMode } from './types/config.types';
 import { readCookieFile } from './utils/cookie-extractor';
 import { logger } from './utils/logger';
 
@@ -47,6 +48,10 @@ async function main(): Promise<void> {
     // Parse command line args
     const args = process.argv.slice(2);
     const configPath = args[0] || './config.yaml';
+
+    // Check for --once flag
+    const mode: SchedulerMode = args.includes('--once') ? 'once' : 'scheduled';
+    logger.info(`Mode: ${mode === 'once' ? 'Single-run (checks once, exits)' : 'Scheduled (waits for startTime)'}`);
 
     // Check if yt-dlp is installed
     logger.info('Checking yt-dlp installation...');
@@ -120,6 +125,7 @@ async function main(): Promise<void> {
       downloadManager,
       notifier,
       cookies,
+      { mode },
     );
 
     // Set up signal handlers for graceful shutdown

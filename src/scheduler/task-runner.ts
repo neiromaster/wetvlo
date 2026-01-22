@@ -16,6 +16,7 @@ export class TaskRunner {
   private downloadManager: DownloadManager;
   private notifier: Notifier;
   private cookies?: string;
+  private singleRun: boolean = false;
   private shouldStop: boolean = false;
 
   constructor(
@@ -25,6 +26,7 @@ export class TaskRunner {
     downloadManager: DownloadManager,
     notifier: Notifier,
     cookies?: string,
+    singleRun: boolean = false,
   ) {
     this.config = config;
     this.handler = handler;
@@ -32,6 +34,7 @@ export class TaskRunner {
     this.downloadManager = downloadManager;
     this.notifier = notifier;
     this.cookies = cookies;
+    this.singleRun = singleRun;
   }
 
   /**
@@ -88,6 +91,13 @@ export class TaskRunner {
    * Run multiple checks with intervals
    */
   async runMultipleChecks(): Promise<void> {
+    // In single-run mode, just run once
+    if (this.singleRun) {
+      await this.run();
+      return;
+    }
+
+    // Scheduled mode: run multiple checks with intervals
     const { checks, interval } = this.config;
 
     for (let i = 0; i < checks; i++) {

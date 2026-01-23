@@ -82,7 +82,7 @@ export class TaskRunner {
         for (const episode of newEpisodes) {
           if (this.shouldStop) break;
 
-          await this.downloadManager.download(this.config.url, episode);
+          await this.downloadManager.download(this.config.url, this.config.name, episode);
 
           // Small delay between downloads
           await sleep(1000);

@@ -2,6 +2,8 @@
  * Configuration for a single series to monitor
  */
 export type SeriesConfig = {
+  /** Series name (used in downloaded filename: "name - 02.ext") */
+  name: string;
   /** URL of the series page */
   url: string;
   /** Time to start checking (HH:MM format) */

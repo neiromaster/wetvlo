@@ -49,6 +49,8 @@ export type DownloadedEpisode = {
   downloadedAt: string;
   /** URL of the series it belongs to */
   seriesUrl: string;
+  /** Series name */
+  seriesName: string;
   /** Filename of the downloaded video */
   filename: string;
 };

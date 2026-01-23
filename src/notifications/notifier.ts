@@ -6,6 +6,7 @@ export enum NotificationLevel {
   SUCCESS = 'success',
   WARNING = 'warning',
   ERROR = 'error',
+  HIGHLIGHT = 'highlight',
 }
 
 /**

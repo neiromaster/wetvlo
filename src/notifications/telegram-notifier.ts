@@ -73,6 +73,10 @@ export class TelegramNotifier implements Notifier {
         return '⚠️';
       case NotificationLevel.ERROR:
         return '❌';
+      case NotificationLevel.HIGHLIGHT:
+        return '🔔';
+      default:
+        return '';
     }
   }
 

@@ -22,6 +22,9 @@ export class ConsoleNotifier implements Notifier {
       case NotificationLevel.ERROR:
         logger.error(message);
         break;
+      case NotificationLevel.HIGHLIGHT:
+        logger.highlight(message);
+        break;
     }
   }
 

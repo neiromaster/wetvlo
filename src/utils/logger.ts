@@ -7,6 +7,7 @@ export enum LogLevel {
   SUCCESS = 'SUCCESS',
   WARNING = 'WARNING',
   ERROR = 'ERROR',
+  HIGHLIGHT = 'HIGHLIGHT',
 }
 
 /**
@@ -116,10 +117,26 @@ export class Logger {
   }
 
   /**
+   * Log highlighted message
+   */
+  highlight(message: string): void {
+    if (this.shouldLog(LogLevel.HIGHLIGHT)) {
+      console.log(this.format(LogLevel.HIGHLIGHT, this.colorize(message, colors.bright + colors.magenta)));
+    }
+  }
+
+  /**
    * Check if message should be logged based on level
    */
   private shouldLog(level: LogLevel): boolean {
-    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.SUCCESS, LogLevel.WARNING, LogLevel.ERROR];
+    const levels = [
+      LogLevel.DEBUG,
+      LogLevel.INFO,
+      LogLevel.SUCCESS,
+      LogLevel.WARNING,
+      LogLevel.ERROR,
+      LogLevel.HIGHLIGHT,
+    ];
     return levels.indexOf(level) >= levels.indexOf(this.config.level);
   }
 

@@ -40,7 +40,7 @@ export class DownloadManager {
       return false;
     }
 
-    this.notifier.notify(NotificationLevel.INFO, `Downloading Episode ${episode.number} of ${seriesName}`);
+    this.notifier.notify(NotificationLevel.HIGHLIGHT, `Downloading Episode ${episode.number} of ${seriesName}`);
 
     try {
       const result = await this.runYtDlp(seriesName, episode);

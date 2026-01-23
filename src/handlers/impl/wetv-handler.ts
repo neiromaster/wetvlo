@@ -1,4 +1,5 @@
-import type { CheerioAPI, Element } from 'cheerio';
+import type { CheerioAPI } from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import type { Episode } from '../../types/episode.types';
 import { EpisodeType } from '../../types/episode.types';
 import { BaseHandler } from '../base/base-handler';
@@ -46,7 +47,7 @@ export class WeTVHandler extends BaseHandler {
   /**
    * Process a single episode link element
    */
-  private processEpisodeLink($: CheerioAPI, element: Element, episodes: Episode[]): void {
+  private processEpisodeLink($: CheerioAPI, element: AnyNode, episodes: Episode[]): void {
     const $el = $(element);
     const href = $el.attr('href');
 
@@ -80,7 +81,7 @@ export class WeTVHandler extends BaseHandler {
   /**
    * Determine episode type based on badges (VIP, Teaser, Express)
    */
-  private determineEpisodeType($: CheerioAPI, element: Element): EpisodeType {
+  private determineEpisodeType($: CheerioAPI, element: AnyNode): EpisodeType {
     // Check for badges in parent li or sibling elements
     const $li = $(element).closest('li');
 

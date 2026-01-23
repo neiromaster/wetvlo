@@ -146,7 +146,7 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
         // Episodes found - send to download queue, do NOT requeue
         this.notifier.notify(
           NotificationLevel.SUCCESS,
-          `[${this.domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks})`,
+          `[${this.domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks ?? 3})`,
         );
 
         // Trigger callback to send episodes to download queue
@@ -158,14 +158,14 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
         // Scheduler will reschedule for next startTime
       } else {
         // No episodes found - check if we should requeue
-        if (attemptNumber < config.checks) {
+        if (attemptNumber < (config.checks ?? 3)) {
           // Requeue with interval delay
           const intervalMs = (config.interval ?? this.domainConfig.interval ?? 60) * 1000;
           const requeueDelay = result.requeueDelay ?? intervalMs;
 
           this.notifier.notify(
             NotificationLevel.INFO,
-            `[${this.domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
+            `[${this.domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks ?? 3}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
           );
 
           await sleep(requeueDelay);
@@ -181,7 +181,7 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
           // Checks exhausted - do not requeue
           this.notifier.notify(
             NotificationLevel.INFO,
-            `[${this.domain}] Checks exhausted for ${seriesName} (${config.checks} attempts with no new episodes)`,
+            `[${this.domain}] Checks exhausted for ${seriesName} (${config.checks ?? 3} attempts with no new episodes)`,
           );
           // Scheduler will reschedule for next startTime
         }
@@ -254,7 +254,7 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
   ): Promise<CheckResult> {
     this.notifier.notify(
       NotificationLevel.INFO,
-      `[${this.domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${config.checks})`,
+      `[${this.domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${config.checks ?? 3})`,
     );
 
     // Extract episodes from the series page

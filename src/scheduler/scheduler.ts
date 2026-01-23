@@ -1,44 +1,77 @@
-import type { DownloadManager } from '../downloader/download-manager';
-import { SchedulerError } from '../errors/custom-errors';
-import type { Notifier } from '../notifications/notifier';
-import { NotificationLevel } from '../notifications/notifier';
-import type { StateManager } from '../state/state-manager';
-import type { SchedulerOptions, SeriesConfig } from '../types/config.types';
-import type { DomainHandler } from '../types/handler.types';
-import { getMsUntilTime, sleep } from '../utils/time-utils';
-import { TaskRunner } from './task-runner';
+/**
+ * Scheduler - Queue-based architecture for managing series checks
+ *
+ * Features:
+ * - Per-domain sequential processing (concatMap semantics)
+ * - Domain-based parallelism
+ * - Retry with exponential backoff
+ * - "No episodes" requeue with interval
+ * - Graceful shutdown
+ */
+
+import type { DownloadManager } from '../downloader/download-manager.js';
+import { SchedulerError } from '../errors/custom-errors.js';
+import type { Notifier } from '../notifications/notifier.js';
+import { NotificationLevel } from '../notifications/notifier.js';
+import { QueueManager } from '../queue/queue-manager.js';
+import type { StateManager } from '../state/state-manager.js';
+import type {
+  DomainConfig,
+  RetryConfig,
+  SchedulerOptions,
+  SeriesConfig,
+  SeriesDefaults,
+} from '../types/config.types.js';
+import { getMsUntilTime, sleep } from '../utils/time-utils.js';
 
 /**
- * Scheduler for managing periodic checks
+ * Scheduler for managing periodic checks with queue-based architecture
  */
 export class Scheduler {
   private configs: SeriesConfig[];
-  private getHandler: (url: string) => DomainHandler;
   private stateManager: StateManager;
   private downloadManager: DownloadManager;
   private notifier: Notifier;
   private cookies?: string;
   private options: SchedulerOptions;
-  private taskRunners: TaskRunner[] = [];
+  private queueManager: QueueManager;
   private running: boolean = false;
   private stopped: boolean = true;
+  private domainConfigs?: DomainConfig[];
+  private seriesDefaults?: SeriesDefaults;
+  private retryDefaults?: RetryConfig;
 
   constructor(
     configs: SeriesConfig[],
-    getHandler: (url: string) => DomainHandler,
     stateManager: StateManager,
     downloadManager: DownloadManager,
     notifier: Notifier,
     cookies?: string,
     options: SchedulerOptions = { mode: 'scheduled' },
+    domainConfigs?: DomainConfig[],
+    seriesDefaults?: SeriesDefaults,
+    retryDefaults?: RetryConfig,
   ) {
     this.configs = configs;
-    this.getHandler = getHandler;
     this.stateManager = stateManager;
     this.downloadManager = downloadManager;
     this.notifier = notifier;
     this.cookies = cookies;
     this.options = options;
+    this.domainConfigs = domainConfigs;
+    this.seriesDefaults = seriesDefaults;
+    this.retryDefaults = retryDefaults;
+
+    // Create queue manager
+    this.queueManager = new QueueManager(
+      this.stateManager,
+      this.downloadManager,
+      this.notifier,
+      this.cookies,
+      this.domainConfigs,
+      this.seriesDefaults,
+      this.retryDefaults,
+    );
   }
 
   /**
@@ -52,11 +85,14 @@ export class Scheduler {
     this.running = true;
     this.stopped = false;
 
+    // Start queue manager
+    this.queueManager.start();
+
     if (this.options.mode === 'once') {
       this.notifier.notify(NotificationLevel.INFO, 'Single-run mode: checking all series once');
       await this.runOnce();
     } else {
-      this.notifier.notify(NotificationLevel.INFO, 'Scheduler started');
+      this.notifier.notify(NotificationLevel.INFO, 'Scheduler started (queue-based architecture)');
       // Group configs by start time
       const groupedConfigs = this.groupConfigsByStartTime();
 
@@ -71,13 +107,21 @@ export class Scheduler {
             NotificationLevel.INFO,
             `Waiting ${Math.floor(msUntil / 1000 / 60)} minutes until ${startTime}...`,
           );
+          // biome-ignore lint/performance/noAwaitInLoops: Sequential waiting is intentional
           await sleep(msUntil);
         }
 
         if (this.stopped) break;
 
-        // Run all tasks for this time group
+        // Add all configs to queue manager
         await this.runConfigs(configs);
+
+        // Wait for queues to drain (optional - can remove if not needed)
+        while (this.queueManager.hasActiveProcessing()) {
+          if (this.stopped) break;
+          // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
+          await sleep(1000);
+        }
       }
     }
 
@@ -92,13 +136,8 @@ export class Scheduler {
 
     this.stopped = true;
 
-    // Stop all task runners
-    for (const runner of this.taskRunners) {
-      runner.stop();
-    }
-
-    // Wait a bit for tasks to finish
-    await sleep(2000);
+    // Stop queue manager (drains all queues)
+    await this.queueManager.stop();
 
     // Save state
     await this.stateManager.save();
@@ -124,53 +163,39 @@ export class Scheduler {
   }
 
   /**
-   * Run all configs in parallel
+   * Add all configs to queue manager
    */
   private async runConfigs(configs: SeriesConfig[]): Promise<void> {
-    const runners: TaskRunner[] = [];
-
-    // Create task runners
+    // Add all series to the queue manager
     for (const config of configs) {
-      const handler = this.getHandler(config.url);
-      const runner = new TaskRunner(
-        config,
-        handler,
-        this.stateManager,
-        this.downloadManager,
-        this.notifier,
-        this.cookies,
-      );
-      runners.push(runner);
+      if (this.stopped) break;
+
+      this.queueManager.addSeriesCheck(config);
     }
 
-    this.taskRunners = runners;
-
-    // Run all tasks in parallel
-    await Promise.all(runners.map((runner) => runner.runMultipleChecks()));
+    // Log queue stats
+    const stats = this.queueManager.getQueueStats();
+    this.notifier.notify(
+      NotificationLevel.INFO,
+      `Added ${configs.length} series to check queues. Queue stats: ${JSON.stringify(stats)}`,
+    );
   }
 
   /**
-   * Run all configs sequentially in single-run mode
+   * Run all configs in single-run mode
    */
   private async runOnce(): Promise<void> {
     for (const config of this.configs) {
       if (this.stopped) break;
 
-      const handler = this.getHandler(config.url);
-      const runner = new TaskRunner(
-        config,
-        handler,
-        this.stateManager,
-        this.downloadManager,
-        this.notifier,
-        this.cookies,
-        true, // singleRun = true
-      );
-      this.taskRunners = [runner];
+      this.queueManager.addSeriesCheck(config);
+    }
 
-      await runner.run();
-
+    // Wait for all queues to drain
+    while (this.queueManager.hasActiveProcessing()) {
       if (this.stopped) break;
+      // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
+      await sleep(1000);
     }
 
     // Save state after all checks
@@ -183,5 +208,12 @@ export class Scheduler {
    */
   isRunning(): boolean {
     return this.running && !this.stopped;
+  }
+
+  /**
+   * Get queue manager (for testing/debugging)
+   */
+  getQueueManager(): QueueManager {
+    return this.queueManager;
   }
 }

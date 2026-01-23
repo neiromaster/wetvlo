@@ -1,21 +1,91 @@
 # wetvlo Configuration Example
 # Copy this file to config.yaml and customize for your needs
 
+# =============================================================================
 # Series to monitor
+# =============================================================================
 series:
-  # Example 1: WeTV series
-  - url: "https://wetv.vip/play/your-series-id"
+  # Example 1: WeTV series with per-series retry config
+  - name: "My WeTV Show" # Series name (used in downloaded filename)
+    url: "https://wetv.vip/play/your-series-id"
     startTime: "20:00" # Time to start checking (24-hour HH:MM format)
     checks: 10 # Number of times to check for new episodes
     interval: 300 # Seconds between checks (300 = 5 minutes)
+    downloadTypes: # Episode types to download (optional)
+      - available
+      - vip
+    # Optional: Override domain defaults for this series
+    checkInterval: 180 # Custom check interval (seconds)
+    downloadDelay: 10 # Custom delay between downloads (seconds)
+    # Optional: Override retry config for this series
+    retryConfig:
+      maxRetries: 5 # More retries for important series
+      initialTimeout: 15 # Initial retry delay in seconds
+      backoffMultiplier: 2 # Exponential backoff multiplier
+      jitterPercentage: 20 # Random jitter (0-100%)
 
-  # Example 2: iQIYI series
-  - url: "https://www.iq.com/play/your-series-id"
+  # Example 2: iQIYI series (uses domain/global defaults)
+  - name: "My IQiyi Show"
+    url: "https://www.iq.com/play/your-series-id"
     startTime: "21:00"
     checks: 5
     interval: 600 # 600 = 10 minutes
+    downloadTypes:
+      - available
+    # No checkInterval, downloadDelay, or retryConfig - will use domain/global defaults
 
-# Optional: Telegram notifications for errors only
+# =============================================================================
+# Optional: Per-domain configuration
+# =============================================================================
+# These settings override global defaults for specific domains
+domainConfigs:
+  - domain: "wetv.vip"
+    checkInterval: 60 # Default seconds between checks for this domain
+    downloadDelay: 5 # Default seconds between downloads for this domain
+    retryConfig:
+      maxRetries: 3 # Maximum retry attempts on failure
+      initialTimeout: 5 # Initial retry delay in seconds
+      backoffMultiplier: 2 # Exponential backoff multiplier (2 = double each time)
+      jitterPercentage: 10 # Random jitter (0-100%) to avoid thundering herd
+
+  - domain: "iqiyi.com"
+    checkInterval: 120
+    downloadDelay: 10
+    retryConfig:
+      maxRetries: 5
+      initialTimeout: 3 # seconds
+      backoffMultiplier: 2
+      jitterPercentage: 15
+
+# =============================================================================
+# Optional: Global series defaults
+# =============================================================================
+# These settings apply to all series unless overridden in domainConfigs or series
+seriesDefaults:
+  checks: 3 # Number of times to check for new episodes
+  interval: 60 # Seconds between checks
+  downloadDelay: 5 # Seconds between downloads
+  downloadTypes: # Episode types to download
+    - available
+    - vip
+  retryConfig:
+    maxRetries: 3
+    initialTimeout: 5 # seconds
+    backoffMultiplier: 2
+    jitterPercentage: 10
+
+# =============================================================================
+# Optional: Global retry defaults (DEPRECATED - use seriesDefaults.retryConfig)
+# =============================================================================
+# retryDefaults:
+#   maxRetries: 3
+#   initialTimeout: 5
+#   backoffMultiplier: 2
+#   jitterPercentage: 10
+
+# =============================================================================
+# Optional: Telegram notifications for errors
+# =============================================================================
 # Leave this section out to disable Telegram notifications
 telegram:
   # Bot token from @BotFather
@@ -26,12 +96,18 @@ telegram:
   # Use @userinfobot on Telegram to get your chat ID
   chatId: "${TELEGRAM_CHAT_ID}"
 
+# =============================================================================
+# Download settings
+# =============================================================================
 # Directory where downloaded videos will be saved
 downloadDir: "./downloads"
 
 # State file for tracking downloaded episodes (auto-created)
 stateFile: "./wetvlo-state.json"
 
+# =============================================================================
+# Browser settings
+# =============================================================================
 # Browser to extract cookies from
 # Options: chrome, firefox, safari, chromium, edge
 # Note: Automatic extraction not yet implemented - use cookieFile instead

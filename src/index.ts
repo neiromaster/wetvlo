@@ -86,9 +86,7 @@ async function runApp(configPath: string, mode: SchedulerMode): Promise<void> {
   // Create composite notifier
   const notifier = {
     notify: async (level: NotificationLevel, message: string): Promise<void> => {
-      for (const n of notifiers) {
-        await n.notify(level, message);
-      }
+      await Promise.all(notifiers.map((n) => n.notify(level, message)));
     },
     progress: (message: string): void => {
       for (const n of notifiers) {
@@ -121,15 +119,18 @@ async function runApp(configPath: string, mode: SchedulerMode): Promise<void> {
   // Create download manager
   const downloadManager = new DownloadManager(stateManager, notifier, config.downloadDir, config.cookieFile);
 
-  // Create and start scheduler
+  // Create and start scheduler with queue-based architecture
+  logger.info('Using queue-based scheduler');
   const scheduler = new Scheduler(
     config.series,
-    (url) => handlerRegistry.getHandlerOrThrow(url),
     stateManager,
     downloadManager,
     notifier,
     cookies,
     { mode },
+    config.domainConfigs,
+    config.seriesDefaults,
+    config.retryDefaults,
   );
 
   // Set up signal handlers for graceful shutdown

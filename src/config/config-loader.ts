@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml';
 import { ConfigError } from '../errors/custom-errors';
 import type { Config, RawConfig } from '../types/config.types';
 import { resolveEnvRecursive } from '../utils/env-resolver';
-import { validateConfig } from './config-validator';
+import { validateConfig } from './config-schema';
 
 /**
  * Default config file path

@@ -1,48 +1,18 @@
 /**
- * Configuration for a single series to monitor
+ * Configuration types
+ *
+ * All types are automatically inferred from Zod schemas in config-schema.ts
+ * to ensure validation and types stay in sync.
  */
-export type SeriesConfig = {
-  /** Series name (used in downloaded filename: "name - 02.ext") */
-  name: string;
-  /** URL of the series page */
-  url: string;
-  /** Time to start checking (HH:MM format) */
-  startTime: string;
-  /** Number of times to check for new episodes */
-  checks: number;
-  /** Interval between checks in seconds */
-  interval: number;
-  /** Episode types to download (default: ['available', 'vip']) */
-  downloadTypes?: ('available' | 'vip' | 'teaser' | 'express' | 'preview' | 'locked')[];
-};
 
-/**
- * Telegram notification configuration
- */
-export type TelegramConfig = {
-  /** Bot token (supports ${VAR_NAME} env variable syntax) */
-  botToken: string;
-  /** Chat ID to send notifications to */
-  chatId: string;
-};
-
-/**
- * Main configuration structure
- */
-export type Config = {
-  /** List of series to monitor */
-  series: SeriesConfig[];
-  /** Telegram configuration for error notifications */
-  telegram?: TelegramConfig;
-  /** Directory to save downloaded videos */
-  downloadDir: string;
-  /** Path to state file */
-  stateFile: string;
-  /** Browser to extract cookies from */
-  browser: 'chrome' | 'firefox' | 'safari' | 'chromium' | 'edge';
-  /** Optional: manual cookie file path */
-  cookieFile?: string;
-};
+export type {
+  Config,
+  DomainConfig,
+  RetryConfig,
+  SeriesConfig,
+  SeriesDefaults,
+  TelegramConfig,
+} from '../config/config-schema.js';
 
 /**
  * Scheduler mode
@@ -53,11 +23,11 @@ export type SchedulerMode = 'scheduled' | 'once';
  * Scheduler options
  */
 export type SchedulerOptions = {
-  /** Execution mode */
   mode: SchedulerMode;
 };
 
 /**
  * Raw configuration from YAML (before env var resolution)
+ * Re-exported from config-schema for convenience
  */
-export type RawConfig = Record<string, unknown>;
+export type { RawConfig } from '../config/config-schema.js';

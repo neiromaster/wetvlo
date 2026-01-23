@@ -7,6 +7,15 @@ import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 
 /**
+ * Error type returned by execa when a subprocess fails
+ */
+type ExecaError = {
+  stderr?: string;
+  stdout?: string;
+  message?: string;
+};
+
+/**
  * Download manager for yt-dlp with progress tracking
  */
 export class DownloadManager {
@@ -75,81 +84,88 @@ export class DownloadManager {
     const paddedNumber = String(episode.number).padStart(2, '0');
     const outputTemplate = `${this.downloadDir}/${seriesName} - ${paddedNumber}.%(ext)s`;
 
-    const args = [
-      '--no-warnings',
-      '--newline', // Ensure progress is on separate lines
-      '--print',
-      'filename', // Print filename to stdout
-      '-o',
-      outputTemplate,
-      episode.url,
-    ];
+    const args = ['--no-warnings', '--newline', '-o', outputTemplate, episode.url];
 
-    // Add cookies if available
     if (this.cookieFile) {
       args.unshift('--cookies', this.cookieFile);
     }
 
     let filename: string | null = null;
-    let lastProgress = '';
+    const outputBuffer: string[] = [];
 
     try {
-      const subprocess = execa('yt-dlp', args, {
-        all: true, // Capture stdout and stderr together
-      });
+      const subprocess = execa('yt-dlp', args, { all: true });
 
-      // Process output line by line
       for await (const line of subprocess.all) {
         const text = line.toString().trim();
-
-        // Skip empty lines
         if (!text) continue;
 
-        // yt-dlp prints the filename on a line by itself (from --print filename)
-        // It's the first non-progress line we see
-        if (!text.includes('[download]') && !text.includes('[info]') && text.length > 0) {
-          filename = text;
+        // Buffer all output for error debugging
+        outputBuffer.push(text);
+
+        // Capture filename from "[download] Destination: ..." line
+        const destMatch = text.match(/\[download\] Destination:\s*(.+)/);
+        if (destMatch) {
+          filename = destMatch[1];
         }
 
-        // Parse download progress
+        // Status messages: [info], [ffmpeg], [merge] - check FIRST
+        if (
+          text.includes('[info]') ||
+          text.includes('[ffmpeg]') ||
+          text.includes('[merge]') ||
+          text.includes('[postprocessor]')
+        ) {
+          this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${text}`);
+          continue;
+        }
+
+        // Detailed progress with file size
         if (text.includes('[download]')) {
-          // Extract progress info
-          const progressMatch = text.match(/\[(\d+\.\d+)%\]/);
-          const speedMatch = text.match(/at\s+(\d+\.\d+\s*\w+\/s)/);
-          const etaMatch = text.match(/ETA\s+([\d:]+)/);
+          // Match: [download]  23.8% of ~ 145.41MiB at  563.37KiB/s ETA 03:34 (frag 48/203)
+          // or:    [download]   0.0% of ~  68.02MiB at    2.83KiB/s ETA Unknown (frag 0/203)
+          // The format has:
+          // - Optional ~ before size (indicates estimated)
+          // - (frag X/Y) suffix at end
+          // - Extra whitespace
+          // - ETA can be "Unknown" or a time like "03:34"
+          const progressMatch = text.match(
+            /\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*([\d.]+\w+)\s+at\s+~?\s*([\d.]+\w+\/s)\s+ETA\s+(\S+)/,
+          );
 
           if (progressMatch) {
-            const percentage = progressMatch[1];
-            let progressText = `[${percentage}%]`;
-
-            if (speedMatch) progressText += ` ${speedMatch[1]}`;
-            if (etaMatch) progressText += ` ETA ${etaMatch[1]}`;
-
-            // Only log if progress changed (reduce spam)
-            if (progressText !== lastProgress) {
-              this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${progressText}`);
-              lastProgress = progressText;
-            }
+            const [, percentage, totalSize, speed, eta] = progressMatch;
+            this.notifier.notify(
+              NotificationLevel.INFO,
+              `Episode ${episode.number}: ${percentage}% of ${totalSize} at ${speed} ETA ${eta}`,
+            );
+          } else {
+            // Other download status: Destination, Resuming, etc.
+            this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${text}`);
           }
         }
       }
 
       await subprocess;
 
-      // If we didn't capture the filename from output, construct it
       if (!filename) {
-        // Try to get the extension from yt-dlp's behavior
-        // Default to mp4 if unknown
-        const ext = 'mp4';
-        filename = `${this.downloadDir}/${seriesName} - ${paddedNumber}.${ext}`;
+        filename = `${this.downloadDir}/${seriesName} - ${paddedNumber}.mp4`;
       }
 
       return { filename };
     } catch (error) {
-      // execa throws on non-zero exit
-      const stderr = error.stderr ?? '';
-      const stdout = error.stdout ?? '';
-      throw new Error(`yt-dlp failed: ${stderr || stdout || error.message}`);
+      const err = error as ExecaError;
+      const stderr = err.stderr ?? '';
+      const stdout = err.stdout ?? '';
+      const allOutput = outputBuffer.join('\n');
+
+      throw new Error(
+        `yt-dlp failed:\n` +
+          `stderr: ${stderr}\n` +
+          `stdout: ${stdout}\n` +
+          `captured output:\n${allOutput}\n` +
+          `message: ${err.message}`,
+      );
     }
   }
 

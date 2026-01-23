@@ -6,11 +6,12 @@
  */
 
 export type {
+  CheckSettings,
   Config,
   DomainConfig,
-  RetryConfig,
+  DownloadSettings,
+  GlobalConfigs,
   SeriesConfig,
-  SeriesDefaults,
   TelegramConfig,
 } from '../config/config-schema.js';
 

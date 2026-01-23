@@ -2,37 +2,36 @@
 # Copy this file to config.yaml and customize for your needs
 
 # =============================================================================
-# Series to monitor
+# Series to monitor (highest priority)
 # =============================================================================
+# Settings here override domain and global defaults
 series:
-  # Example 1: WeTV series with per-series retry config
+  # Example 1: WeTV series with per-series overrides
   - name: "My WeTV Show" # Series name (used in downloaded filename)
     url: "https://wetv.vip/play/your-series-id"
     startTime: "20:00" # Time to start checking (24-hour HH:MM format)
-    checks: 10 # Number of times to check for new episodes
-    interval: 300 # Seconds between checks (300 = 5 minutes)
-    downloadTypes: # Episode types to download (optional)
-      - available
-      - vip
-    # Optional: Override domain defaults for this series
-    checkInterval: 180 # Custom check interval (seconds)
-    downloadDelay: 10 # Custom delay between downloads (seconds)
-    # Optional: Override retry config for this series
-    retryConfig:
-      maxRetries: 5 # More retries for important series
-      initialTimeout: 15 # Initial retry delay in seconds
-      backoffMultiplier: 2 # Exponential backoff multiplier
-      jitterPercentage: 20 # Random jitter (0-100%)
+
+    # Optional: Override check settings for this series
+    check:
+      count: 10 # Number of times to check for new episodes (default: 3)
+      checkInterval: 300 # Seconds between checks (default: 60)
+      downloadTypes: # Episode types to download
+        - available
+        - vip
+
+    # Optional: Override download settings for this series
+    download:
+      downloadDelay: 10 # Delay between downloads in seconds (default: 5)
+      maxRetries: 5 # Maximum retry attempts on failure (default: 3)
+      initialTimeout: 15 # Initial retry delay in seconds (default: 5)
+      backoffMultiplier: 2 # Exponential backoff multiplier (default: 2)
+      jitterPercentage: 20 # Random jitter 0-100% (default: 10)
 
   # Example 2: iQIYI series (uses domain/global defaults)
   - name: "My IQiyi Show"
     url: "https://www.iq.com/play/your-series-id"
     startTime: "21:00"
-    checks: 5
-    interval: 600 # 600 = 10 minutes
-    downloadTypes:
-      - available
-    # No checkInterval, downloadDelay, or retryConfig - will use domain/global defaults
+    # No check/download sections - will use domain/global defaults
 
 # =============================================================================
 # Optional: Per-domain configuration
@@ -40,48 +39,48 @@ series:
 # These settings override global defaults for specific domains
 domainConfigs:
   - domain: "wetv.vip"
-    checkInterval: 60 # Default seconds between checks for this domain
-    downloadDelay: 5 # Default seconds between downloads for this domain
-    retryConfig:
-      maxRetries: 3 # Maximum retry attempts on failure
+    check:
+      checkInterval: 60 # Default seconds between checks for this domain
+      downloadTypes: # Default episode types to download
+        - available
+        - vip
+    download:
+      downloadDelay: 5 # Default seconds between downloads
+      maxRetries: 3 # Maximum retry attempts
       initialTimeout: 5 # Initial retry delay in seconds
-      backoffMultiplier: 2 # Exponential backoff multiplier (2 = double each time)
-      jitterPercentage: 10 # Random jitter (0-100%) to avoid thundering herd
+      backoffMultiplier: 2 # Exponential backoff multiplier
+      jitterPercentage: 10 # Random jitter (0-100%)
 
   - domain: "iqiyi.com"
-    checkInterval: 120
-    downloadDelay: 10
-    retryConfig:
+    check:
+      checkInterval: 120
+      downloadTypes:
+        - available
+    download:
+      downloadDelay: 10
       maxRetries: 5
-      initialTimeout: 3 # seconds
+      initialTimeout: 3
       backoffMultiplier: 2
       jitterPercentage: 15
 
 # =============================================================================
-# Optional: Global series defaults
+# Optional: Global configuration defaults
 # =============================================================================
-# These settings apply to all series unless overridden in domainConfigs or series
-seriesDefaults:
-  checks: 3 # Number of times to check for new episodes
-  interval: 60 # Seconds between checks
-  downloadDelay: 5 # Seconds between downloads
-  downloadTypes: # Episode types to download
-    - available
-    - vip
-  retryConfig:
-    maxRetries: 3
-    initialTimeout: 5 # seconds
-    backoffMultiplier: 2
-    jitterPercentage: 10
-
-# =============================================================================
-# Optional: Global retry defaults (DEPRECATED - use seriesDefaults.retryConfig)
-# =============================================================================
-# retryDefaults:
-#   maxRetries: 3
-#   initialTimeout: 5
-#   backoffMultiplier: 2
-#   jitterPercentage: 10
+# These settings apply to all series unless overridden at domain/series level
+globalConfigs:
+  check:
+    count: 3 # Number of times to check for new episodes
+    checkInterval: 60 # Seconds between checks
+    downloadTypes: # Episode types to download
+      - available
+      - vip
+  download:
+    downloadDir: "./downloads" # Directory where downloads are saved
+    downloadDelay: 5 # Seconds between downloads
+    maxRetries: 3 # Maximum retry attempts on failure
+    initialTimeout: 5 # Initial retry delay in seconds
+    backoffMultiplier: 2 # Exponential backoff multiplier
+    jitterPercentage: 10 # Random jitter (0-100%)
 
 # =============================================================================
 # Optional: Telegram notifications for errors
@@ -97,12 +96,8 @@ telegram:
   chatId: "${TELEGRAM_CHAT_ID}"
 
 # =============================================================================
-# Download settings
-# =============================================================================
-# Directory where downloaded videos will be saved
-downloadDir: "./downloads"
-
 # State file for tracking downloaded episodes (auto-created)
+# =============================================================================
 stateFile: "./wetvlo-state.json"
 
 # =============================================================================

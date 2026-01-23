@@ -9,7 +9,38 @@ import type { SeriesConfig } from '../types/config.types.js';
 import type { Episode } from '../types/episode.types.js';
 
 /**
+ * Check settings for queue behavior
+ */
+export type CheckSettings = {
+  /** Number of checks to perform for a series */
+  count?: number;
+  /** Interval between checks in seconds */
+  checkInterval?: number;
+  /** Episode types to download */
+  downloadTypes?: ('available' | 'vip' | 'teaser' | 'express' | 'preview' | 'locked')[];
+};
+
+/**
+ * Download settings for queue behavior
+ */
+export type DownloadSettings = {
+  /** Directory to download episodes to */
+  downloadDir?: string;
+  /** Delay between downloads in seconds */
+  downloadDelay?: number;
+  /** Maximum number of retry attempts */
+  maxRetries?: number;
+  /** Initial timeout in seconds */
+  initialTimeout?: number;
+  /** Multiplier for exponential backoff (e.g., 2 = double each time) */
+  backoffMultiplier?: number;
+  /** Percentage of jitter to add (0-100) to avoid thundering herd */
+  jitterPercentage?: number;
+};
+
+/**
  * Retry configuration with exponential backoff
+ * @deprecated Use DownloadSettings instead
  */
 export type RetryConfig = {
   /** Maximum number of retry attempts */
@@ -28,16 +59,10 @@ export type RetryConfig = {
 export type DomainConfig = {
   /** Domain name (e.g., "wetv.vip", "iqiyi.com") */
   domain: string;
-  /** Default interval between checks in seconds */
-  interval?: number;
-  /** Default delay between downloads in seconds */
-  downloadDelay?: number;
-  /** Default number of checks for series */
-  checks?: number;
-  /** Default episode types to download */
-  downloadTypes?: ('available' | 'vip' | 'teaser' | 'express' | 'preview' | 'locked')[];
-  /** Retry configuration for this domain */
-  retryConfig?: RetryConfig;
+  /** Check settings */
+  check?: CheckSettings;
+  /** Download settings */
+  download?: DownloadSettings;
 };
 
 /**
@@ -50,7 +75,7 @@ export type CheckQueueItem = {
   seriesName: string;
   /** Configuration for this series */
   config: SeriesConfig;
-  /** Current attempt number (1..config.checks) */
+  /** Current attempt number (1..config.check.count) */
   attemptNumber: number;
   /** Current retry count for errors */
   retryCount?: number;

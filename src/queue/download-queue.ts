@@ -8,6 +8,7 @@
  * - Multiple episode scheduling with delays
  */
 
+import { DEFAULT_DOWNLOAD_SETTINGS } from '../config/config-defaults.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
@@ -55,7 +56,8 @@ export class DownloadQueue extends AsyncQueue<DownloadQueueItem> {
    * @param delay - Delay in seconds before starting download (default: domain downloadDelay)
    */
   addEpisode(seriesUrl: string, seriesName: string, episode: Episode, delay?: number): void {
-    const delayMs = (delay ?? this.domainConfig.downloadDelay ?? 5) * 1000;
+    const downloadDelay = this.domainConfig.download?.downloadDelay ?? DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+    const delayMs = (delay ?? downloadDelay) * 1000;
     const scheduledTime = new Date(Date.now() + delayMs);
 
     const item: DownloadQueueItem = {
@@ -81,9 +83,11 @@ export class DownloadQueue extends AsyncQueue<DownloadQueueItem> {
   addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[]): void {
     let cumulativeDelay = 0;
 
+    const downloadDelay = this.domainConfig.download?.downloadDelay ?? DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+
     for (const episode of episodes) {
       this.addEpisode(seriesUrl, seriesName, episode, cumulativeDelay);
-      cumulativeDelay += this.domainConfig.downloadDelay ?? 5;
+      cumulativeDelay += downloadDelay;
     }
   }
 
@@ -128,9 +132,10 @@ export class DownloadQueue extends AsyncQueue<DownloadQueueItem> {
       if (result.shouldRetry) {
         // Retry with backoff
         const retryDelay = result.retryDelay ?? 5000;
+        const maxRetries = this.domainConfig.download?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
         this.notifier.notify(
           NotificationLevel.WARNING,
-          `[${this.domain}] Download failed for Episode ${episode.number}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${this.domainConfig.retryConfig?.maxRetries ?? 3})`,
+          `[${this.domain}] Download failed for Episode ${episode.number}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
         );
 
         await sleep(retryDelay);
@@ -150,8 +155,9 @@ export class DownloadQueue extends AsyncQueue<DownloadQueueItem> {
     }
 
     // Add delay between downloads (unless queue is empty)
+    const downloadDelay = this.domainConfig.download?.downloadDelay ?? DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
     if (this.getQueueLength() > 0) {
-      await sleep((this.domainConfig.downloadDelay ?? 5) * 1000);
+      await sleep(downloadDelay * 1000);
     }
   }
 
@@ -163,13 +169,11 @@ export class DownloadQueue extends AsyncQueue<DownloadQueueItem> {
    * @returns Download result with retry decision
    */
   private shouldRetryDownload(retryCount: number, errorMessage: string): DownloadResult {
-    const retryConfig = this.domainConfig.retryConfig ?? {
-      maxRetries: 3,
-      initialTimeout: 5,
-      backoffMultiplier: 2,
-      jitterPercentage: 10,
-    };
-    const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = retryConfig;
+    const downloadSettings = this.domainConfig.download;
+    const maxRetries = downloadSettings?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
+    const initialTimeout = downloadSettings?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
+    const backoffMultiplier = downloadSettings?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
+    const jitterPercentage = downloadSettings?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
 
     if (retryCount >= maxRetries) {
       return {

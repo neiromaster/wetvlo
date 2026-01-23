@@ -15,13 +15,7 @@ import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import { QueueManager } from '../queue/queue-manager.js';
 import type { StateManager } from '../state/state-manager.js';
-import type {
-  DomainConfig,
-  RetryConfig,
-  SchedulerOptions,
-  SeriesConfig,
-  SeriesDefaults,
-} from '../types/config.types.js';
+import type { DomainConfig, GlobalConfigs, SchedulerOptions, SeriesConfig } from '../types/config.types.js';
 import { getMsUntilTime, sleep } from '../utils/time-utils.js';
 
 /**
@@ -37,9 +31,8 @@ export class Scheduler {
   private queueManager: QueueManager;
   private running: boolean = false;
   private stopped: boolean = true;
+  private globalConfigs?: GlobalConfigs;
   private domainConfigs?: DomainConfig[];
-  private seriesDefaults?: SeriesDefaults;
-  private retryDefaults?: RetryConfig;
 
   constructor(
     configs: SeriesConfig[],
@@ -48,9 +41,8 @@ export class Scheduler {
     notifier: Notifier,
     cookies?: string,
     options: SchedulerOptions = { mode: 'scheduled' },
+    globalConfigs?: GlobalConfigs,
     domainConfigs?: DomainConfig[],
-    seriesDefaults?: SeriesDefaults,
-    retryDefaults?: RetryConfig,
   ) {
     this.configs = configs;
     this.stateManager = stateManager;
@@ -58,9 +50,8 @@ export class Scheduler {
     this.notifier = notifier;
     this.cookies = cookies;
     this.options = options;
+    this.globalConfigs = globalConfigs;
     this.domainConfigs = domainConfigs;
-    this.seriesDefaults = seriesDefaults;
-    this.retryDefaults = retryDefaults;
 
     // Create queue manager
     this.queueManager = new QueueManager(
@@ -69,8 +60,7 @@ export class Scheduler {
       this.notifier,
       this.cookies,
       this.domainConfigs,
-      this.seriesDefaults,
-      this.retryDefaults,
+      this.globalConfigs,
     );
   }
 

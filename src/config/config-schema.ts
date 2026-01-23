@@ -8,16 +8,34 @@
 import { z } from 'zod';
 
 /**
- * Retry configuration with exponential backoff
+ * Episode types
  */
-export const RetryConfigSchema = z.object({
-  maxRetries: z.number().int().nonnegative(),
-  initialTimeout: z.number().positive(), // seconds (changed from milliseconds in v2.0)
-  backoffMultiplier: z.number().positive(),
-  jitterPercentage: z.number().int().min(0).max(100),
+const EpisodeTypeSchema = z.enum(['available', 'vip', 'teaser', 'express', 'preview', 'locked']);
+
+/**
+ * Check settings for series/domain
+ */
+export const CheckSettingsSchema = z.object({
+  count: z.number().positive().optional(),
+  checkInterval: z.number().positive().optional(),
+  downloadTypes: z.array(EpisodeTypeSchema).optional(),
 });
 
-export type RetryConfig = z.infer<typeof RetryConfigSchema>;
+export type CheckSettings = z.infer<typeof CheckSettingsSchema>;
+
+/**
+ * Download settings for series/domain
+ */
+export const DownloadSettingsSchema = z.object({
+  downloadDir: z.string().optional(),
+  downloadDelay: z.number().nonnegative().optional(),
+  maxRetries: z.number().int().nonnegative().optional(),
+  initialTimeout: z.number().positive().optional(),
+  backoffMultiplier: z.number().positive().optional(),
+  jitterPercentage: z.number().int().min(0).max(100).optional(),
+});
+
+export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;
 
 /**
  * Telegram notification configuration
@@ -30,20 +48,12 @@ export const TelegramConfigSchema = z.object({
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 
 /**
- * Episode types
- */
-const EpisodeTypeSchema = z.enum(['available', 'vip', 'teaser', 'express', 'preview', 'locked']);
-
-/**
  * Domain-specific configuration
  */
 export const DomainConfigSchema = z.object({
   domain: z.string(),
-  interval: z.number().positive().optional(),
-  downloadDelay: z.number().nonnegative().optional(),
-  checks: z.number().positive().optional(),
-  downloadTypes: z.array(EpisodeTypeSchema).optional(),
-  retryConfig: RetryConfigSchema.optional(),
+  check: CheckSettingsSchema.optional(),
+  download: DownloadSettingsSchema.optional(),
 });
 
 export type DomainConfig = z.infer<typeof DomainConfigSchema>;
@@ -57,27 +67,21 @@ export const SeriesConfigSchema = z.object({
   startTime: z.string().regex(/^\d{1,2}:\d{2}$/, {
     message: 'Must be in HH:MM format (e.g., "20:00")',
   }),
-  checks: z.number().positive().optional(),
-  interval: z.number().positive().optional(),
-  downloadTypes: z.array(EpisodeTypeSchema).optional(),
-  downloadDelay: z.number().nonnegative().optional(),
-  retryConfig: RetryConfigSchema.optional(),
+  check: CheckSettingsSchema.optional(),
+  download: DownloadSettingsSchema.optional(),
 });
 
 export type SeriesConfig = z.infer<typeof SeriesConfigSchema>;
 
 /**
- * Default series configuration
+ * Global configuration defaults
  */
-export const SeriesDefaultsSchema = z.object({
-  checks: z.number().positive().optional(),
-  interval: z.number().positive().optional(),
-  downloadDelay: z.number().nonnegative().optional(),
-  downloadTypes: z.array(EpisodeTypeSchema).optional(),
-  retryConfig: RetryConfigSchema.optional(),
+export const GlobalConfigsSchema = z.object({
+  check: CheckSettingsSchema.optional(),
+  download: DownloadSettingsSchema.optional(),
 });
 
-export type SeriesDefaults = z.infer<typeof SeriesDefaultsSchema>;
+export type GlobalConfigs = z.infer<typeof GlobalConfigsSchema>;
 
 /**
  * Browser options
@@ -90,13 +94,11 @@ const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']
 export const ConfigSchema = z.object({
   series: z.array(SeriesConfigSchema).min(1, 'Cannot be empty'),
   telegram: TelegramConfigSchema.optional(),
-  downloadDir: z.string(),
+  globalConfigs: GlobalConfigsSchema.optional(),
   stateFile: z.string(),
   browser: BrowserSchema,
   cookieFile: z.string().optional(),
   domainConfigs: z.array(DomainConfigSchema).optional(),
-  seriesDefaults: SeriesDefaultsSchema.optional(),
-  retryDefaults: RetryConfigSchema.optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

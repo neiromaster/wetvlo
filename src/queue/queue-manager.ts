@@ -9,18 +9,19 @@
  * - Domain-based parallelism
  */
 
+import { DEFAULT_CHECK_SETTINGS, DEFAULT_DOWNLOAD_SETTINGS } from '../config/config-defaults.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { handlerRegistry } from '../handlers/handler-registry.js';
 import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import type { StateManager } from '../state/state-manager.js';
-import type { SeriesConfig, SeriesDefaults } from '../types/config.types.js';
+import type { GlobalConfigs, SeriesConfig } from '../types/config.types.js';
 import type { Episode } from '../types/episode.types.js';
 import { extractDomain } from '../utils/url-utils.js';
 import { CheckQueue } from './check-queue.js';
 import { DownloadQueue } from './download-queue.js';
 import { sleep } from './retry-strategy.js';
-import type { DomainConfig, RetryConfig } from './types.js';
+import type { DomainConfig } from './types.js';
 
 /**
  * Per-domain queue pair
@@ -46,8 +47,7 @@ export class QueueManager {
   private domainConfigs: Map<string, DomainConfig> = new Map();
 
   // Global defaults
-  private retryDefaults: RetryConfig;
-  private seriesDefaults?: SeriesDefaults;
+  private globalConfigs?: GlobalConfigs;
 
   // Checker and downloader loops
   private checkerRunning = false;
@@ -66,8 +66,7 @@ export class QueueManager {
    * @param notifier - Notifier instance
    * @param _cookieFile - Optional cookie file path (unused, kept for API compatibility)
    * @param domainConfigs - Optional domain configurations
-   * @param seriesDefaults - Optional global series defaults
-   * @param retryDefaults - Optional global retry defaults (deprecated)
+   * @param globalConfigs - Optional global configuration defaults
    */
   constructor(
     stateManager: StateManager,
@@ -75,20 +74,12 @@ export class QueueManager {
     notifier: Notifier,
     _cookieFile: string | undefined,
     domainConfigs: DomainConfig[] = [],
-    seriesDefaults?: SeriesDefaults,
-    retryDefaults?: RetryConfig,
+    globalConfigs?: GlobalConfigs,
   ) {
     this.stateManager = stateManager;
     this.downloadManager = downloadManager;
     this.notifier = notifier;
-    this.seriesDefaults = seriesDefaults;
-    this.retryDefaults = retryDefaults ??
-      seriesDefaults?.retryConfig ?? {
-        maxRetries: 3,
-        initialTimeout: 5, // seconds
-        backoffMultiplier: 2,
-        jitterPercentage: 10,
-      };
+    this.globalConfigs = globalConfigs;
 
     // Initialize domain configurations
     for (const config of domainConfigs) {
@@ -124,7 +115,7 @@ export class QueueManager {
    *
    * Level 1 (highest): Series config
    * Level 2: Domain config
-   * Level 3: Global defaults (seriesDefaults)
+   * Level 3: Global defaults (globalConfigs)
    * Level 4 (lowest): Hardcoded defaults
    *
    * @param config - Series configuration
@@ -133,15 +124,47 @@ export class QueueManager {
    */
   private mergeSeriesConfig(config: SeriesConfig, domain: string): SeriesConfig {
     const domainConfig = this.domainConfigs.get(domain);
+    const globalCheck = this.globalConfigs?.check;
+    const globalDownload = this.globalConfigs?.download;
 
     return {
       ...config,
-      checks: config.checks ?? domainConfig?.checks ?? this.seriesDefaults?.checks ?? 3,
-      interval: config.interval ?? domainConfig?.interval ?? this.seriesDefaults?.interval ?? 60,
-      downloadTypes: config.downloadTypes ?? domainConfig?.downloadTypes ?? this.seriesDefaults?.downloadTypes,
-      downloadDelay: config.downloadDelay ?? domainConfig?.downloadDelay ?? this.seriesDefaults?.downloadDelay ?? 5,
-      retryConfig:
-        config.retryConfig ?? domainConfig?.retryConfig ?? this.seriesDefaults?.retryConfig ?? this.retryDefaults,
+      check: {
+        count: config.check?.count ?? domainConfig?.check?.count ?? globalCheck?.count ?? DEFAULT_CHECK_SETTINGS.count,
+        checkInterval:
+          config.check?.checkInterval ??
+          domainConfig?.check?.checkInterval ??
+          globalCheck?.checkInterval ??
+          DEFAULT_CHECK_SETTINGS.checkInterval,
+        downloadTypes: config.check?.downloadTypes ?? domainConfig?.check?.downloadTypes ?? globalCheck?.downloadTypes,
+      },
+      download: {
+        downloadDelay:
+          config.download?.downloadDelay ??
+          domainConfig?.download?.downloadDelay ??
+          globalDownload?.downloadDelay ??
+          DEFAULT_DOWNLOAD_SETTINGS.downloadDelay,
+        maxRetries:
+          config.download?.maxRetries ??
+          domainConfig?.download?.maxRetries ??
+          globalDownload?.maxRetries ??
+          DEFAULT_DOWNLOAD_SETTINGS.maxRetries,
+        initialTimeout:
+          config.download?.initialTimeout ??
+          domainConfig?.download?.initialTimeout ??
+          globalDownload?.initialTimeout ??
+          DEFAULT_DOWNLOAD_SETTINGS.initialTimeout,
+        backoffMultiplier:
+          config.download?.backoffMultiplier ??
+          domainConfig?.download?.backoffMultiplier ??
+          globalDownload?.backoffMultiplier ??
+          DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier,
+        jitterPercentage:
+          config.download?.jitterPercentage ??
+          domainConfig?.download?.jitterPercentage ??
+          globalDownload?.jitterPercentage ??
+          DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage,
+      },
     };
   }
 
@@ -330,7 +353,7 @@ export class QueueManager {
    *
    * 3-level hierarchy (highest to lowest priority):
    * 1. Domain config (from domainConfigs)
-   * 2. Global defaults (seriesDefaults)
+   * 2. Global defaults (globalConfigs)
    * 3. Hardcoded defaults
    *
    * Note: Series-level config is applied in mergeSeriesConfig()
@@ -345,29 +368,19 @@ export class QueueManager {
     }
 
     // Level 2: Global defaults
-    if (this.seriesDefaults || this.retryDefaults) {
+    if (this.globalConfigs?.check || this.globalConfigs?.download) {
       return {
         domain,
-        interval: this.seriesDefaults?.interval ?? 60,
-        downloadDelay: this.seriesDefaults?.downloadDelay ?? 5,
-        checks: this.seriesDefaults?.checks ?? 3,
-        downloadTypes: this.seriesDefaults?.downloadTypes,
-        retryConfig: this.seriesDefaults?.retryConfig ?? this.retryDefaults,
+        check: this.globalConfigs.check,
+        download: this.globalConfigs.download,
       };
     }
 
     // Level 1: Hardcoded defaults (fallback)
     return {
       domain,
-      interval: 60,
-      downloadDelay: 5,
-      checks: 3,
-      retryConfig: {
-        maxRetries: 3,
-        initialTimeout: 5, // seconds
-        backoffMultiplier: 2,
-        jitterPercentage: 10,
-      },
+      check: DEFAULT_CHECK_SETTINGS,
+      download: DEFAULT_DOWNLOAD_SETTINGS,
     };
   }
 
@@ -459,5 +472,12 @@ export class QueueManager {
     }
 
     this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Downloader loop stopped');
+  }
+
+  /**
+   * Set global configs (for dependency injection)
+   */
+  setGlobalConfigs(globalConfigs: GlobalConfigs): void {
+    this.globalConfigs = globalConfigs;
   }
 }

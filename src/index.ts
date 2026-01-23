@@ -1,4 +1,5 @@
 import { boolean, command, flag, option, run, string } from 'cmd-ts';
+import { DEFAULT_DOWNLOAD_DIR } from './config/config-defaults.js';
 import { loadConfig } from './config/config-loader';
 import { DownloadManager } from './downloader/download-manager';
 import { ConfigError } from './errors/custom-errors';
@@ -117,7 +118,8 @@ async function runApp(configPath: string, mode: SchedulerMode): Promise<void> {
   }
 
   // Create download manager
-  const downloadManager = new DownloadManager(stateManager, notifier, config.downloadDir, config.cookieFile);
+  const downloadDir = config.globalConfigs?.download?.downloadDir ?? DEFAULT_DOWNLOAD_DIR;
+  const downloadManager = new DownloadManager(stateManager, notifier, downloadDir, config.cookieFile);
 
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');
@@ -128,9 +130,8 @@ async function runApp(configPath: string, mode: SchedulerMode): Promise<void> {
     notifier,
     cookies,
     { mode },
+    config.globalConfigs,
     config.domainConfigs,
-    config.seriesDefaults,
-    config.retryDefaults,
   );
 
   // Set up signal handlers for graceful shutdown

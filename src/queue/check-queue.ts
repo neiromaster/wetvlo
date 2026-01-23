@@ -9,6 +9,11 @@
  * - Send episodes to download queue when found
  */
 
+import {
+  DEFAULT_CHECK_SETTINGS,
+  DEFAULT_DOWNLOAD_SETTINGS,
+  DEFAULT_DOWNLOAD_TYPES_ENUM,
+} from '../config/config-defaults.js';
 import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import type { StateManager } from '../state/state-manager.js';
@@ -18,11 +23,6 @@ import type { DomainHandler } from '../types/handler.types.js';
 import { AsyncQueue } from './async-queue.js';
 import { sleep } from './retry-strategy.js';
 import type { CheckQueueItem, CheckResult, DomainConfig, QueueProcessor } from './types.js';
-
-/**
- * Default episode types to download if not specified in config
- */
-const DEFAULT_DOWNLOAD_TYPES: EpisodeType[] = [EpisodeType.AVAILABLE, EpisodeType.VIP];
 
 /**
  * Check Queue for a specific domain
@@ -142,11 +142,17 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
       // Perform the check
       const result = await this.performCheck(seriesUrl, seriesName, config, attemptNumber);
 
+      // Get check count from config (series, domain, global, or hardcoded default)
+      const checksCount = config.check?.count ?? this.domainConfig.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+      // Get check interval from config (series, domain, global, or hardcoded default)
+      const checkInterval =
+        config.check?.checkInterval ?? this.domainConfig.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
+
       if (result.hasNewEpisodes) {
         // Episodes found - send to download queue, do NOT requeue
         this.notifier.notify(
           NotificationLevel.SUCCESS,
-          `[${this.domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks ?? 3})`,
+          `[${this.domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount})`,
         );
 
         // Trigger callback to send episodes to download queue
@@ -158,14 +164,14 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
         // Scheduler will reschedule for next startTime
       } else {
         // No episodes found - check if we should requeue
-        if (attemptNumber < (config.checks ?? 3)) {
+        if (attemptNumber < checksCount) {
           // Requeue with interval delay
-          const intervalMs = (config.interval ?? this.domainConfig.interval ?? 60) * 1000;
+          const intervalMs = checkInterval * 1000;
           const requeueDelay = result.requeueDelay ?? intervalMs;
 
           this.notifier.notify(
             NotificationLevel.INFO,
-            `[${this.domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${config.checks ?? 3}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
+            `[${this.domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
           );
 
           await sleep(requeueDelay);
@@ -181,7 +187,7 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
           // Checks exhausted - do not requeue
           this.notifier.notify(
             NotificationLevel.INFO,
-            `[${this.domain}] Checks exhausted for ${seriesName} (${config.checks ?? 3} attempts with no new episodes)`,
+            `[${this.domain}] Checks exhausted for ${seriesName} (${checksCount} attempts with no new episodes)`,
           );
           // Scheduler will reschedule for next startTime
         }
@@ -189,14 +195,12 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // Check if we should retry
-      const retryConfig = this.domainConfig.retryConfig ?? {
-        maxRetries: 3,
-        initialTimeout: 5,
-        backoffMultiplier: 2,
-        jitterPercentage: 10,
-      };
-      const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = retryConfig;
+      // Get download settings for retry config
+      const downloadSettings = this.domainConfig.download;
+      const maxRetries = downloadSettings?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
+      const initialTimeout = downloadSettings?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
+      const backoffMultiplier = downloadSettings?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
+      const jitterPercentage = downloadSettings?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
 
       if (retryCount < maxRetries) {
         // Retry with exponential backoff (convert seconds to ms)
@@ -230,8 +234,11 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
     }
 
     // Add delay between checks (interval)
+    // Get check interval from config
+    const checkInterval =
+      config.check?.checkInterval ?? this.domainConfig.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
+    const intervalMs = checkInterval * 1000;
     // Wait before processing next item in queue
-    const intervalMs = (config.interval ?? this.domainConfig.interval ?? 60) * 1000;
     if (this.getQueueLength() > 0) {
       await sleep(intervalMs);
     }
@@ -241,7 +248,7 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
    * Perform the actual check for new episodes
    *
    * @param seriesUrl - Series URL
-   * @param seriesName - Series name
+   * @param _seriesName - Series name
    * @param config - Series configuration
    * @param attemptNumber - Current attempt number
    * @returns Check result
@@ -252,9 +259,11 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
     config: import('../types/config.types.js').SeriesConfig,
     attemptNumber: number,
   ): Promise<CheckResult> {
+    const checksCount = config.check?.count ?? this.domainConfig.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+
     this.notifier.notify(
       NotificationLevel.INFO,
-      `[${this.domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${config.checks ?? 3})`,
+      `[${this.domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${checksCount})`,
     );
 
     // Extract episodes from the series page
@@ -298,12 +307,12 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
    * @returns Array of episode types
    */
   private getDownloadTypes(config: import('../types/config.types.js').SeriesConfig): EpisodeType[] {
-    if (!config.downloadTypes) {
-      return DEFAULT_DOWNLOAD_TYPES;
-    }
+    // Get from series config, domain config, or use defaults
+    const downloadTypes =
+      config.check?.downloadTypes ?? this.domainConfig.check?.downloadTypes ?? DEFAULT_DOWNLOAD_TYPES_ENUM;
 
     // Convert string types from config to EpisodeType enum
-    return config.downloadTypes.map((typeStr): EpisodeType => {
+    return downloadTypes.map((typeStr): EpisodeType => {
       switch (typeStr) {
         case 'available':
           return EpisodeType.AVAILABLE;

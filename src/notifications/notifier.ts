@@ -18,4 +18,15 @@ export type Notifier = {
    * @param message - Message to send
    */
   notify(level: NotificationLevel, message: string): Promise<void> | void;
+
+  /**
+   * Update progress on the same line (overwrites previous output)
+   * @param message - Progress message to display
+   */
+  progress(message: string): Promise<void> | void;
+
+  /**
+   * Finalize progress (add newline after last progress update)
+   */
+  endProgress(): Promise<void> | void;
 };

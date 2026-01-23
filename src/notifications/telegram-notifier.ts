@@ -75,4 +75,18 @@ export class TelegramNotifier implements Notifier {
         return '❌';
     }
   }
+
+  /**
+   * Progress updates are not sent to Telegram (no-op)
+   */
+  async progress(_message: string): Promise<void> {
+    // Telegram doesn't need real-time progress updates
+  }
+
+  /**
+   * Progress finalization is no-op for Telegram
+   */
+  async endProgress(): Promise<void> {
+    // No-op for Telegram
+  }
 }

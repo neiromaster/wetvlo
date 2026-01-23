@@ -135,12 +135,10 @@ export class DownloadManager {
 
           if (progressMatch) {
             const [, percentage, totalSize, speed, eta] = progressMatch;
-            this.notifier.notify(
-              NotificationLevel.INFO,
-              `Episode ${episode.number}: ${percentage}% of ${totalSize} at ${speed} ETA ${eta}`,
-            );
+            // Use progress() to update on same line
+            this.notifier.progress(`[${episode.number}] ${percentage}% of ${totalSize} at ${speed} ETA ${eta}`);
           } else {
-            // Other download status: Destination, Resuming, etc.
+            // Other download status: Destination, Resuming, etc. - show normally
             this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${text}`);
           }
         }
@@ -148,12 +146,18 @@ export class DownloadManager {
 
       await subprocess;
 
+      // End progress display (add newline)
+      this.notifier.endProgress();
+
       if (!filename) {
         filename = `${this.downloadDir}/${seriesName} - ${paddedNumber}.mp4`;
       }
 
       return { filename };
     } catch (error) {
+      // End progress display on error
+      this.notifier.endProgress();
+
       const err = error as ExecaError;
       const stderr = err.stderr ?? '';
       const stdout = err.stdout ?? '';

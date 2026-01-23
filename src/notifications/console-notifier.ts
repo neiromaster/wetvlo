@@ -28,7 +28,7 @@ export class ConsoleNotifier implements Notifier {
   progress(message: string): void {
     // Clear previous progress by overwriting with spaces
     if (this.lastProgressLength > 0) {
-      process.stdout.write('\r' + ' '.repeat(this.lastProgressLength) + '\r');
+      process.stdout.write(`\r${' '.repeat(this.lastProgressLength)}\r`);
     }
 
     // Write new progress message

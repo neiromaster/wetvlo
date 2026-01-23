@@ -90,14 +90,14 @@ async function runApp(configPath: string, mode: SchedulerMode): Promise<void> {
         await n.notify(level, message);
       }
     },
-    progress: async (message: string): Promise<void> => {
+    progress: (message: string): void => {
       for (const n of notifiers) {
-        await n.progress(message);
+        n.progress(message);
       }
     },
-    endProgress: async (): Promise<void> => {
+    endProgress: (): void => {
       for (const n of notifiers) {
-        await n.endProgress();
+        n.endProgress();
       }
     },
   };

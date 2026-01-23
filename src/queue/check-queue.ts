@@ -138,15 +138,15 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
       await sleep(delayMs);
     }
 
+    // Get check count from config (series, domain, global, or hardcoded default)
+    const checksCount = config.check?.count ?? this.domainConfig.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+    // Get check interval from config (series, domain, global, or hardcoded default)
+    const checkInterval =
+      config.check?.checkInterval ?? this.domainConfig.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
+
     try {
       // Perform the check
       const result = await this.performCheck(seriesUrl, seriesName, config, attemptNumber);
-
-      // Get check count from config (series, domain, global, or hardcoded default)
-      const checksCount = config.check?.count ?? this.domainConfig.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
-      // Get check interval from config (series, domain, global, or hardcoded default)
-      const checkInterval =
-        config.check?.checkInterval ?? this.domainConfig.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
 
       if (result.hasNewEpisodes) {
         // Episodes found - send to download queue, do NOT requeue
@@ -234,9 +234,6 @@ export class CheckQueue extends AsyncQueue<CheckQueueItem> {
     }
 
     // Add delay between checks (interval)
-    // Get check interval from config
-    const checkInterval =
-      config.check?.checkInterval ?? this.domainConfig.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
     const intervalMs = checkInterval * 1000;
     // Wait before processing next item in queue
     if (this.getQueueLength() > 0) {

@@ -35,8 +35,29 @@ const getVideoDurationSpy = spyOn(VideoValidator, 'getVideoDuration');
 getVideoDurationSpy.mockImplementation(async () => 100);
 
 // Mock fs/promises
+const mockUnlink = mock(async () => {});
+const mockMkdir = mock(async () => {});
+const mockRename = mock(async () => {});
+const mockStat = mock(async () => ({ size: 1024 }));
+
 mock.module('node:fs/promises', () => ({
-  unlink: mock(async () => {}),
+  unlink: mockUnlink,
+  mkdir: mockMkdir,
+  rename: mockRename,
+  stat: mockStat,
+}));
+
+// Mock node:fs
+mock.module('node:fs', () => ({
+  existsSync: mock(() => true),
+}));
+
+// Mock node:path
+mock.module('node:path', () => ({
+  basename: (p: string) => p.split('/').pop() || '',
+  dirname: (p: string) => p.split('/').slice(0, -1).join('/'),
+  join: (...args: string[]) => args.join('/').replace(/\/+/g, '/'),
+  resolve: (p: string) => (p.startsWith('/') ? p : `/${p}`),
 }));
 
 describe('DownloadManager', () => {
@@ -55,6 +76,9 @@ describe('DownloadManager', () => {
     mockNotifier.endProgress.mockClear();
     getVideoDurationSpy.mockClear();
     getVideoDurationSpy.mockImplementation(async () => 100); // Reset to default
+    mockUnlink.mockClear();
+    mockMkdir.mockClear();
+    mockRename.mockClear();
 
     // @ts-expect-error
     downloadManager = new DownloadManager(mockStateManager, mockNotifier, '/downloads');
@@ -88,6 +112,28 @@ describe('DownloadManager', () => {
     expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.SUCCESS, expect.stringContaining('Downloaded'));
   });
 
+  it('should download to temp dir and move files', async () => {
+    // Re-init with temp dir
+    // @ts-expect-error
+    downloadManager = new DownloadManager(mockStateManager, mockNotifier, '/downloads', undefined, '/temp');
+    // Mock verifyDownload to avoid file system check
+    // @ts-expect-error
+    downloadManager.verifyDownload = () => 1024 * 1024; // 1MB
+
+    mockStateManager.isDownloaded.mockReturnValue(false);
+
+    const result = await downloadManager.download('url', 'Series', { number: 1, url: 'url' } as any);
+
+    expect(result).toBe(true);
+    // Check if directories were created
+    expect(mockMkdir).toHaveBeenCalledWith('/temp', { recursive: true });
+    expect(mockMkdir).toHaveBeenCalledWith('/downloads', { recursive: true });
+
+    // Check if rename was called for the file
+    // The mock execa output returns 'test-file.mp4', which is resolved to '/test-file.mp4'
+    expect(mockRename).toHaveBeenCalledWith('/test-file.mp4', '/downloads/test-file.mp4');
+  });
+
   it('should validate video duration if minDuration > 0', async () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
     getVideoDurationSpy.mockResolvedValue(100);
@@ -118,10 +164,9 @@ describe('DownloadManager', () => {
 
     expect(getVideoDurationSpy).toHaveBeenCalled();
     // Verify file deletion
-    // Since we mocked fs/promises module, we can check if unlink was called
-    // But module mocking in bun test is global, let's just assume it works or try to spy it if we imported it
-    // We imported * as fsPromises, but mock.module intercepts imports.
-    // Let's verify NOT downloaded
+    expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('test-file.mp4'));
+
+    // Verify NOT downloaded
     expect(mockStateManager.addDownloadedEpisode).not.toHaveBeenCalled();
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.ERROR,

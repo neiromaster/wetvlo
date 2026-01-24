@@ -25,6 +25,7 @@ export type AppDependencies = {
     notifier: Notifier,
     downloadDir: string,
     cookieFile?: string,
+    tempDir?: string,
   ) => DownloadManager;
   createScheduler: (
     configs: SeriesConfig[],
@@ -43,7 +44,7 @@ const defaultDependencies: AppDependencies = {
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
   createStateManager: (path) => new StateManager(path),
-  createDownloadManager: (sm, n, dir, cf) => new DownloadManager(sm, n, dir, cf),
+  createDownloadManager: (sm, n, dir, cf, temp) => new DownloadManager(sm, n, dir, cf, temp),
   createScheduler: (c, sm, dm, n, cook, opt, gc, dc) => new Scheduler(c, sm, dm, n, cook, opt, gc, dc),
 };
 
@@ -139,7 +140,8 @@ export async function runApp(
 
   // Create download manager
   const downloadDir = config.globalConfigs?.download?.downloadDir ?? DEFAULT_DOWNLOAD_DIR;
-  const downloadManager = deps.createDownloadManager(stateManager, notifier, downloadDir, config.cookieFile);
+  const tempDir = config.globalConfigs?.download?.tempDir;
+  const downloadManager = deps.createDownloadManager(stateManager, notifier, downloadDir, config.cookieFile, tempDir);
 
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');

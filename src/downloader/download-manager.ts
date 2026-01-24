@@ -1,5 +1,6 @@
-import { unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdir, rename, stat, unlink } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { execa } from 'execa';
 import { DownloadError } from '../errors/custom-errors';
 import type { Notifier } from '../notifications/notifier';
@@ -24,13 +25,21 @@ export class DownloadManager {
   private stateManager: StateManager;
   private notifier: Notifier;
   private downloadDir: string;
+  private tempDir?: string;
   private cookieFile?: string;
 
-  constructor(stateManager: StateManager, notifier: Notifier, downloadDir: string, cookieFile?: string) {
+  constructor(
+    stateManager: StateManager,
+    notifier: Notifier,
+    downloadDir: string,
+    cookieFile?: string,
+    tempDir?: string,
+  ) {
     this.stateManager = stateManager;
     this.notifier = notifier;
-    this.downloadDir = downloadDir;
-    this.cookieFile = cookieFile;
+    this.downloadDir = resolve(downloadDir);
+    this.cookieFile = cookieFile ? resolve(cookieFile) : undefined;
+    this.tempDir = tempDir ? resolve(tempDir) : undefined;
   }
 
   /**
@@ -51,22 +60,49 @@ export class DownloadManager {
       const fileSize = this.verifyDownload(result.filename);
 
       if (fileSize === 0) {
+        await this.cleanupFiles(result.allFiles);
         throw new Error('Downloaded file is empty or does not exist');
       }
 
       // Verify duration if required
       if (minDuration > 0) {
-        const fullPath = join(process.cwd(), result.filename);
+        const fullPath = resolve(result.filename);
         const duration = await VideoValidator.getVideoDuration(fullPath);
         if (duration < minDuration) {
-          // Delete invalid file
-          try {
-            await unlink(fullPath);
-          } catch (e) {
-            this.notifier.notify(NotificationLevel.ERROR, `Failed to delete invalid file ${result.filename}: ${e}`);
-          }
-
+          // Delete all downloaded files
+          await this.cleanupFiles(result.allFiles);
           throw new Error(`Video duration ${duration}s is less than minimum ${minDuration}s`);
+        }
+      }
+
+      // Move files from tempDir to downloadDir if needed
+      if (this.tempDir && this.tempDir !== this.downloadDir) {
+        this.notifier.notify(NotificationLevel.INFO, `Moving files from temp directory to ${this.downloadDir}...`);
+
+        // Ensure download directory exists
+        await mkdir(this.downloadDir, { recursive: true });
+
+        for (const file of result.allFiles) {
+          try {
+            // Resolve 'file' to absolute path just in case
+            const absFile = resolve(file);
+
+            if (!existsSync(absFile)) {
+              this.notifier.notify(NotificationLevel.WARNING, `File not found, skipping move: ${absFile}`);
+              continue;
+            }
+
+            const fileName = basename(absFile);
+            const newPath = join(this.downloadDir, fileName);
+            await rename(absFile, newPath);
+
+            // Update filename if it matches the main file
+            if (absFile === resolve(result.filename)) {
+              result.filename = newPath;
+            }
+          } catch (e) {
+            this.notifier.notify(NotificationLevel.ERROR, `Failed to move file ${file}: ${e}`);
+          }
         }
       }
 
@@ -96,11 +132,32 @@ export class DownloadManager {
   }
 
   /**
+   * Clean up downloaded files
+   */
+  private async cleanupFiles(files: string[]): Promise<void> {
+    for (const file of files) {
+      try {
+        const fullPath = resolve(file);
+        if (existsSync(fullPath)) {
+          await unlink(fullPath);
+        }
+      } catch (e) {
+        this.notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
+      }
+    }
+  }
+
+  /**
    * Run yt-dlp with execa and progress tracking
    */
-  private async runYtDlp(seriesName: string, episode: Episode): Promise<{ filename: string }> {
+  private async runYtDlp(seriesName: string, episode: Episode): Promise<{ filename: string; allFiles: string[] }> {
     const paddedNumber = String(episode.number).padStart(2, '0');
-    const outputTemplate = `${this.downloadDir}/${seriesName} - ${paddedNumber}.%(ext)s`;
+    const targetDir = this.tempDir || this.downloadDir;
+
+    // Ensure directory exists
+    await mkdir(targetDir, { recursive: true });
+
+    const outputTemplate = `${targetDir}/${seriesName} - ${paddedNumber}.%(ext)s`;
 
     const args = ['--no-warnings', '--newline', '-o', outputTemplate, episode.url];
 
@@ -109,6 +166,7 @@ export class DownloadManager {
     }
 
     let filename: string | null = null;
+    const allFiles: Set<string> = new Set();
     const outputBuffer: string[] = [];
 
     try {
@@ -125,6 +183,20 @@ export class DownloadManager {
         const destMatch = text.match(/\[download\] Destination:\s*(.+)/);
         if (destMatch) {
           filename = destMatch[1];
+          if (filename) allFiles.add(filename);
+        }
+
+        // Capture subtitles from "[info] Writing video subtitles to: ..."
+        const subMatch = text.match(/\[info\] Writing video subtitles to:\s*(.+)/);
+        if (subMatch && subMatch[1]) {
+          allFiles.add(subMatch[1]);
+        }
+
+        // Capture merged file from "[merge] Merging formats into "..."
+        const mergeMatch = text.match(/\[merge\] Merging formats into "(.*)"/);
+        if (mergeMatch) {
+          filename = mergeMatch[1];
+          if (filename) allFiles.add(filename);
         }
 
         // Status messages: [info], [ffmpeg], [merge] - check FIRST
@@ -168,10 +240,16 @@ export class DownloadManager {
       this.notifier.endProgress();
 
       if (!filename) {
-        filename = `${this.downloadDir}/${seriesName} - ${paddedNumber}.mp4`;
+        // Fallback if we couldn't parse the filename
+        filename = `${targetDir}/${seriesName} - ${paddedNumber}.mp4`;
       }
 
-      return { filename };
+      // Ensure the main filename is included in allFiles
+      if (filename && !allFiles.has(filename)) {
+        allFiles.add(filename);
+      }
+
+      return { filename, allFiles: Array.from(allFiles) };
     } catch (error) {
       // End progress display on error
       this.notifier.endProgress();
@@ -195,7 +273,7 @@ export class DownloadManager {
    * Verify downloaded file exists and get its size
    */
   private verifyDownload(filename: string): number {
-    const fullPath = join(process.cwd(), filename);
+    const fullPath = resolve(filename);
 
     try {
       const file = Bun.file(fullPath);

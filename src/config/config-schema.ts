@@ -28,6 +28,7 @@ export type CheckSettings = z.infer<typeof CheckSettingsSchema>;
  */
 export const DownloadSettingsSchema = z.object({
   downloadDir: z.string().optional(),
+  tempDir: z.string().optional(),
   downloadDelay: z.number().nonnegative().optional(),
   maxRetries: z.number().int().nonnegative().optional(),
   initialTimeout: z.number().positive().optional(),

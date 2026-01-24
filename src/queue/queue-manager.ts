@@ -389,7 +389,7 @@ export class QueueManager {
           retryCount: retryCount + 1,
         };
 
-        this.scheduler.addTask(queueName, requeuedItem, retryDelay);
+        this.scheduler.addPriorityTask(queueName, requeuedItem, retryDelay);
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
       } else {
         // Max retries exceeded - log error and give up
@@ -459,7 +459,7 @@ export class QueueManager {
           retryCount: retryCount + 1,
         };
 
-        this.scheduler.addTask(queueName, requeuedItem, retryDelay);
+        this.scheduler.addPriorityTask(queueName, requeuedItem, retryDelay);
         this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
       } else {
         // Max retries exceeded - log error and give up

@@ -105,6 +105,27 @@ export class UniversalScheduler<TaskType> {
   }
 
   /**
+   * Add a priority task to the front of a specific queue
+   *
+   * @param typeName - Queue type name
+   * @param task - Task to add
+   * @param delay - Optional delay in milliseconds
+   */
+  addPriorityTask(typeName: string, task: TaskType, delay?: number): void {
+    const queue = this.queues.get(typeName);
+    if (!queue) {
+      throw new Error(`Queue ${typeName} is not registered`);
+    }
+
+    queue.addFirst(task, delay);
+
+    // Trigger scheduling attempt
+    if (!this.stopped) {
+      this.scheduleNext();
+    }
+  }
+
+  /**
    * Mark a task as complete
    *
    * Called by executor when task completes successfully.
@@ -171,15 +192,25 @@ export class UniversalScheduler<TaskType> {
     // Try to schedule immediately
     const scheduled = this.trySchedule();
 
-    if (!scheduled) {
-      // No task could be scheduled now
-      // Check if we should set a timer for the next available time
-      const next = this.getEarliestAvailableTime();
-      if (next) {
-        const now = Date.now();
-        const waitMs = Math.max(0, next.time.getTime() - now);
-        this.scheduleTimer(waitMs, next.queueName, next.time);
-      }
+    if (scheduled) {
+      // Task scheduled and executor is busy.
+      // No need to set timer, completion will trigger next schedule.
+      return;
+    }
+
+    // If executor is busy but nothing new was scheduled (because it was already busy),
+    // we also don't need a timer.
+    if (this.executorBusy) {
+      return;
+    }
+
+    // No task running and none could be scheduled.
+    // Check if we should set a timer for the next available time
+    const next = this.getEarliestAvailableTime();
+    if (next) {
+      const now = Date.now();
+      const waitMs = Math.max(0, next.time.getTime() - now);
+      this.scheduleTimer(waitMs, next.queueName, next.time);
     }
   }
 

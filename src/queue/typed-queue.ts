@@ -51,6 +51,17 @@ export class TypedQueue<TaskType> {
   }
 
   /**
+   * Add a task to the front of the queue (priority)
+   *
+   * @param task - Task to add
+   * @param delay - Optional delay in milliseconds before task is available
+   */
+  addFirst(task: TaskType, delay?: number): void {
+    const addedAt = new Date(Date.now() + (delay ?? 0));
+    this.queue.unshift({ data: task, addedAt });
+  }
+
+  /**
    * Get the next task from the queue
    *
    * @returns Next task or null if queue is empty

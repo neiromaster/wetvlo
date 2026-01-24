@@ -13,8 +13,8 @@ import type { CheckSettings, DownloadSettings } from './config-schema.js';
  */
 export const DEFAULT_CHECK_SETTINGS: Required<CheckSettings> = {
   count: 3, // Number of times to check for new episodes
-  checkInterval: 60, // Seconds between checks
-  downloadTypes: ['available', 'vip'], // Episode types to download
+  checkInterval: 600, // Seconds between checks
+  downloadTypes: ['available'], // Episode types to download
 };
 
 /**
@@ -22,7 +22,7 @@ export const DEFAULT_CHECK_SETTINGS: Required<CheckSettings> = {
  */
 export const DEFAULT_DOWNLOAD_SETTINGS: Required<DownloadSettings> = {
   downloadDir: './downloads',
-  downloadDelay: 5, // Seconds between downloads
+  downloadDelay: 10, // Seconds between downloads
   maxRetries: 3, // Maximum retry attempts on failure
   initialTimeout: 5, // Initial retry delay in seconds
   backoffMultiplier: 2, // Exponential backoff multiplier

@@ -114,19 +114,35 @@ export class Scheduler {
       // Group configs by start time
       const groupedConfigs = this.groupConfigsByStartTime();
 
-      // Process each time group
-      for (const [startTime, configs] of groupedConfigs.entries()) {
-        if (this.stopped) break;
+      while (!this.stopped) {
+        // Find the next start time
+        let nextTime: string | null = null;
+        let minMsUntil = Number.MAX_SAFE_INTEGER;
+
+        for (const startTime of groupedConfigs.keys()) {
+          const msUntil = this.timeProvider.getMsUntilTime(startTime);
+          if (msUntil < minMsUntil) {
+            minMsUntil = msUntil;
+            nextTime = startTime;
+          }
+        }
+
+        if (!nextTime) {
+          this.notifier.notify(NotificationLevel.WARNING, 'No scheduled configs found. Exiting loop.');
+          break;
+        }
+
+        const configs = groupedConfigs.get(nextTime);
+        if (!configs) break;
 
         // Wait until start time
-        const msUntil = this.timeProvider.getMsUntilTime(startTime);
-        if (msUntil > 0) {
+        if (minMsUntil > 0) {
           this.notifier.notify(
             NotificationLevel.INFO,
-            `Waiting ${Math.floor(msUntil / 1000 / 60)} minutes until ${startTime}...`,
+            `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until ${nextTime}...`,
           );
           // biome-ignore lint/performance/noAwaitInLoops: Sequential waiting is intentional
-          await this.timeProvider.sleep(msUntil);
+          await this.timeProvider.sleep(minMsUntil);
         }
 
         if (this.stopped) break;

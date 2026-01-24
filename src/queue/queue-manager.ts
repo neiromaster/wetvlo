@@ -465,7 +465,7 @@ export class QueueManager {
         // Max retries exceeded - log error and give up
         this.notifier.notify(
           NotificationLevel.ERROR,
-          `[${domain}] Failed to download Episode ${episode.number} after ${retryCount} attempts: ${errorMessage}`,
+          `[${domain}] Failed to download Episode ${episode.number} after ${retryCount + 1} attempts: ${errorMessage}`,
         );
         this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
       }

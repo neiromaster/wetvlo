@@ -1,12 +1,12 @@
 /**
- * QueueManager - Orchestrates per-domain check and download queues
+ * QueueManager - Orchestrates check and download queues with UniversalScheduler
  *
  * Manages the queue-based architecture with:
  * - Per-domain check and download queues
- * - Single checker (concatMap across all check queues)
- * - Single downloader (concatMap across all download queues)
+ * - Universal scheduler for single-task execution globally
+ * - Event-driven scheduling (no polling loops)
  * - Graceful shutdown
- * - Domain-based parallelism
+ * - Proper end-to-start cooldowns
  */
 
 import { DEFAULT_CHECK_SETTINGS, DEFAULT_DOWNLOAD_SETTINGS } from '../config/config-defaults.js';
@@ -16,32 +16,21 @@ import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import type { StateManager } from '../state/state-manager.js';
 import type { GlobalConfigs, SeriesConfig } from '../types/config.types.js';
-import type { Episode } from '../types/episode.types.js';
+import type { Episode, EpisodeType } from '../types/episode.types.js';
 import { extractDomain } from '../utils/url-utils.js';
-import { CheckQueue } from './check-queue.js';
-import { DownloadQueue } from './download-queue.js';
-import { sleep } from './retry-strategy.js';
-import type { DomainConfig } from './types.js';
+import type { CheckQueueItem, DomainConfig, DownloadQueueItem } from './types.js';
+import { UniversalScheduler } from './universal-scheduler.js';
 
 /**
- * Per-domain queue pair
- */
-type DomainQueuesPair = {
-  checkQueue: CheckQueue;
-  downloadQueue: DownloadQueue;
-};
-
-/**
- * Queue Manager for orchestrating all queues
+ * Queue Manager for orchestrating all queues with universal scheduler
  */
 export class QueueManager {
   private stateManager: StateManager;
   private downloadManager: DownloadManager;
   private notifier: Notifier;
 
-  // Per-domain queues
-  private checkQueues: Map<string, CheckQueue> = new Map();
-  private downloadQueues: Map<string, DownloadQueue> = new Map();
+  // Universal scheduler (handles all check and download queues)
+  private scheduler: UniversalScheduler<CheckQueueItem | DownloadQueueItem>;
 
   // Domain configurations
   private domainConfigs: Map<string, DomainConfig> = new Map();
@@ -49,14 +38,11 @@ export class QueueManager {
   // Global defaults
   private globalConfigs?: GlobalConfigs;
 
-  // Checker and downloader loops
-  private checkerRunning = false;
-  private downloaderRunning = false;
-  private shouldStop = false;
+  // Running state
+  private running = false;
 
-  // Active processing tracking
-  private activeChecks = new Set<string>();
-  private activeDownloads = new Set<string>();
+  // Domain handlers cache
+  private domainHandlers = new Map<string, ReturnType<typeof handlerRegistry.getHandlerOrThrow>>();
 
   /**
    * Create a new QueueManager
@@ -85,6 +71,11 @@ export class QueueManager {
     for (const config of domainConfigs) {
       this.domainConfigs.set(config.domain, config);
     }
+
+    // Create universal scheduler with executor callback
+    this.scheduler = new UniversalScheduler<CheckQueueItem | DownloadQueueItem>(async (task, queueName) => {
+      await this.executeTask(task, queueName);
+    });
   }
 
   /**
@@ -98,11 +89,27 @@ export class QueueManager {
     // Merge config with defaults from all 4 levels
     const mergedConfig = this.mergeSeriesConfig(config, domain);
 
-    // Get or create queues for this domain
-    const { checkQueue } = this.getOrCreateDomainQueues(domain);
+    // Register queues for this domain if not already registered
+    this.registerDomainQueues(domain);
+
+    // Get check interval from merged config
+    const _checkInterval =
+      mergedConfig.check?.checkInterval ??
+      this.domainConfigs.get(domain)?.check?.checkInterval ??
+      this.globalConfigs?.check?.checkInterval ??
+      DEFAULT_CHECK_SETTINGS.checkInterval;
 
     // Add series to check queue with merged config
-    checkQueue.addSeriesCheck(mergedConfig.url, mergedConfig.name, mergedConfig, 1);
+    const item: CheckQueueItem = {
+      seriesUrl: mergedConfig.url,
+      seriesName: mergedConfig.name,
+      config: mergedConfig,
+      attemptNumber: 1,
+      retryCount: 0,
+    };
+
+    const queueName = `check:${domain}`;
+    this.scheduler.addTask(queueName, item);
 
     this.notifier.notify(
       NotificationLevel.INFO,
@@ -182,11 +189,31 @@ export class QueueManager {
 
     const domain = extractDomain(seriesUrl);
 
-    // Get or create download queue for this domain
-    const { downloadQueue } = this.getOrCreateDomainQueues(domain);
+    // Register queues for this domain if not already registered
+    this.registerDomainQueues(domain);
 
-    // Add episodes to download queue
-    downloadQueue.addEpisodes(seriesUrl, seriesName, episodes);
+    // Get download delay from domain config
+    const domainConfig = this.getDomainConfig(domain);
+    const downloadDelay =
+      domainConfig.download?.downloadDelay ??
+      this.globalConfigs?.download?.downloadDelay ??
+      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+
+    // Add episodes to download queue with staggered delays
+    for (let i = 0; i < episodes.length; i++) {
+      const episode = episodes[i]!;
+      const item: DownloadQueueItem = {
+        seriesUrl,
+        seriesName,
+        episode,
+        retryCount: 0,
+      };
+
+      const queueName = `download:${domain}`;
+      // Stagger episodes by downloadDelay
+      const delayMs = i * downloadDelay * 1000;
+      this.scheduler.addTask(queueName, item, delayMs);
+    }
 
     this.notifier.notify(
       NotificationLevel.SUCCESS,
@@ -198,29 +225,12 @@ export class QueueManager {
    * Start all queues
    */
   start(): void {
-    if (this.checkerRunning || this.downloaderRunning) {
+    if (this.running) {
       throw new Error('QueueManager is already running');
     }
 
-    this.shouldStop = false;
-    this.checkerRunning = true;
-    this.downloaderRunning = true;
-
-    // Start the checker loop (single checker for all check queues)
-    this.runChecker().catch((error) => {
-      this.notifier.notify(
-        NotificationLevel.ERROR,
-        `Checker loop error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
-
-    // Start the downloader loop (single downloader for all download queues)
-    this.runDownloader().catch((error) => {
-      this.notifier.notify(
-        NotificationLevel.ERROR,
-        `Downloader loop error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
+    this.running = true;
+    this.scheduler.resume();
 
     this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Started queue processing');
   }
@@ -228,27 +238,17 @@ export class QueueManager {
   /**
    * Stop all queues gracefully
    *
-   * Drains all queues before stopping.
+   * Waits for current task to complete.
    */
   async stop(): Promise<void> {
-    if (!this.checkerRunning && !this.downloaderRunning) {
+    if (!this.running) {
       return;
     }
 
     this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Stopping queue processing...');
 
-    this.shouldStop = true;
-
-    // Stop all check queues
-    const checkStopPromises = Array.from(this.checkQueues.values()).map((queue) => queue.stop());
-    await Promise.all(checkStopPromises);
-
-    // Stop all download queues
-    const downloadStopPromises = Array.from(this.downloadQueues.values()).map((queue) => queue.stop());
-    await Promise.all(downloadStopPromises);
-
-    this.checkerRunning = false;
-    this.downloaderRunning = false;
+    this.scheduler.stop();
+    this.running = false;
 
     this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Queue processing stopped');
   }
@@ -256,23 +256,10 @@ export class QueueManager {
   /**
    * Check if there is active processing
    *
-   * @returns Whether any queue is actively processing
+   * @returns Whether scheduler is actively processing
    */
   hasActiveProcessing(): boolean {
-    // Check if any queue is processing
-    for (const queue of this.checkQueues.values()) {
-      if (queue.isProcessing()) {
-        return true;
-      }
-    }
-
-    for (const queue of this.downloadQueues.values()) {
-      if (queue.isProcessing()) {
-        return true;
-      }
-    }
-
-    return false;
+    return this.scheduler.isExecutorBusy();
   }
 
   /**
@@ -284,39 +271,42 @@ export class QueueManager {
     checkQueues: Record<string, { length: number; processing: boolean }>;
     downloadQueues: Record<string, { length: number; processing: boolean }>;
   } {
+    const stats = this.scheduler.getStats();
     const checkQueues: Record<string, { length: number; processing: boolean }> = {};
     const downloadQueues: Record<string, { length: number; processing: boolean }> = {};
 
-    for (const [domain, queue] of this.checkQueues.entries()) {
-      checkQueues[domain] = {
-        length: queue.getQueueLength(),
-        processing: queue.isProcessing(),
-      };
-    }
-
-    for (const [domain, queue] of this.downloadQueues.entries()) {
-      downloadQueues[domain] = {
-        length: queue.getQueueLength(),
-        processing: queue.isProcessing(),
-      };
+    for (const [queueName, queueStats] of stats.entries()) {
+      if (queueName.startsWith('check:')) {
+        const domain = queueName.slice(6); // Remove "check:" prefix
+        checkQueues[domain] = {
+          length: queueStats.queueLength,
+          processing: queueStats.isExecuting,
+        };
+      } else if (queueName.startsWith('download:')) {
+        const domain = queueName.slice(9); // Remove "download:" prefix
+        downloadQueues[domain] = {
+          length: queueStats.queueLength,
+          processing: queueStats.isExecuting,
+        };
+      }
     }
 
     return { checkQueues, downloadQueues };
   }
 
   /**
-   * Get or create domain queues
+   * Register queues for a domain if not already registered
    *
    * @param domain - Domain name
-   * @returns Domain queue pair
    */
-  private getOrCreateDomainQueues(domain: string): DomainQueuesPair {
-    // Return existing queues if already created
-    if (this.checkQueues.has(domain) && this.downloadQueues.has(domain)) {
-      return {
-        checkQueue: this.checkQueues.get(domain) as CheckQueue,
-        downloadQueue: this.downloadQueues.get(domain) as DownloadQueue,
-      };
+  private registerDomainQueues(domain: string): void {
+    const checkQueueName = `check:${domain}`;
+    const downloadQueueName = `download:${domain}`;
+
+    // Check if queues are already registered
+    const existingStats = this.scheduler.getStats();
+    if (existingStats.has(checkQueueName) && existingStats.has(downloadQueueName)) {
+      return;
     }
 
     // Get domain configuration
@@ -324,28 +314,21 @@ export class QueueManager {
 
     // Get handler for this domain
     const handler = handlerRegistry.getHandlerOrThrow(`https://${domain}/`);
+    this.domainHandlers.set(domain, handler);
 
-    // Create check queue
-    const checkQueue = new CheckQueue(
-      domain,
-      domainConfig,
-      handler,
-      this.stateManager,
-      this.notifier,
-      (seriesUrl, seriesName, episodes) => {
-        // Callback when episodes are found - add to download queue
-        this.addEpisodes(seriesUrl, seriesName, episodes);
-      },
-    );
+    // Get cooldowns
+    const checkInterval =
+      domainConfig.check?.checkInterval ??
+      this.globalConfigs?.check?.checkInterval ??
+      DEFAULT_CHECK_SETTINGS.checkInterval;
+    const downloadDelay =
+      domainConfig.download?.downloadDelay ??
+      this.globalConfigs?.download?.downloadDelay ??
+      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
 
-    // Create download queue
-    const downloadQueue = new DownloadQueue(domain, domainConfig, this.downloadManager, this.notifier);
-
-    // Store queues
-    this.checkQueues.set(domain, checkQueue);
-    this.downloadQueues.set(domain, downloadQueue);
-
-    return { checkQueue, downloadQueue };
+    // Register queues with scheduler
+    this.scheduler.registerQueue(checkQueueName, checkInterval * 1000); // Convert to ms
+    this.scheduler.registerQueue(downloadQueueName, downloadDelay * 1000); // Convert to ms
   }
 
   /**
@@ -385,93 +368,304 @@ export class QueueManager {
   }
 
   /**
-   * Run the checker loop
+   * Execute a task from the scheduler
    *
-   * Processes items from all check queues sequentially (concatMap).
+   * This is the executor callback that handles both check and download tasks.
+   *
+   * @param task - Task to execute
+   * @param queueName - Queue name (format: "check:domain" or "download:domain")
    */
-  private async runChecker(): Promise<void> {
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Checker loop started');
+  private async executeTask(task: CheckQueueItem | DownloadQueueItem, queueName: string): Promise<void> {
+    const parts = queueName.split(':');
+    const type = parts[0];
+    const domain = parts[1];
 
-    while (!this.shouldStop) {
-      // Check if any check queue has items
-      let hasItems = false;
-
-      for (const [_domain, queue] of this.checkQueues.entries()) {
-        if (queue.getQueueLength() > 0) {
-          hasItems = true;
-          break;
-        }
-      }
-
-      if (!hasItems) {
-        // No items to process, wait a bit
-        // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-        await sleep(100);
-        continue;
-      }
-
-      // Process one item from each domain round-robin
-      for (const [domain, queue] of this.checkQueues.entries()) {
-        if (this.shouldStop) break;
-
-        // Queue processes items automatically via AsyncQueue
-        // Just wait a bit between domains to avoid overwhelming
-        if (queue.isProcessing()) {
-          this.activeChecks.add(domain);
-        } else {
-          this.activeChecks.delete(domain);
-        }
-      }
-
-      await sleep(50);
+    if (!type || !domain) {
+      throw new Error(`Invalid queue name format: ${queueName}`);
     }
 
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Checker loop stopped');
+    if (type === 'check') {
+      await this.executeCheck(task as CheckQueueItem, domain, queueName);
+    } else if (type === 'download') {
+      await this.executeDownload(task as DownloadQueueItem, domain, queueName);
+    } else {
+      throw new Error(`Unknown queue type: ${type}`);
+    }
   }
 
   /**
-   * Run the downloader loop
+   * Execute a check task
    *
-   * Processes items from all download queues sequentially (concatMap).
+   * @param item - Check queue item
+   * @param domain - Domain name
+   * @param queueName - Queue name for scheduler callbacks
    */
-  private async runDownloader(): Promise<void> {
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Downloader loop started');
+  private async executeCheck(item: CheckQueueItem, domain: string, queueName: string): Promise<void> {
+    const { seriesUrl, seriesName, config, attemptNumber, retryCount = 0 } = item;
 
-    while (!this.shouldStop) {
-      // Check if any download queue has items
-      let hasItems = false;
-
-      for (const [_domain, queue] of this.downloadQueues.entries()) {
-        if (queue.getQueueLength() > 0) {
-          hasItems = true;
-          break;
-        }
-      }
-
-      if (!hasItems) {
-        // No items to process, wait a bit
-        // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-        await sleep(100);
-        continue;
-      }
-
-      // Process one item from each domain round-robin
-      for (const [domain, queue] of this.downloadQueues.entries()) {
-        if (this.shouldStop) break;
-
-        // Queue processes items automatically via AsyncQueue
-        // Just wait a bit between domains to avoid overwhelming
-        if (queue.isProcessing()) {
-          this.activeDownloads.add(domain);
-        } else {
-          this.activeDownloads.delete(domain);
-        }
-      }
-
-      await sleep(50);
+    // Get handler for this domain
+    const handler = this.domainHandlers.get(domain);
+    if (!handler) {
+      throw new Error(`No handler found for domain ${domain}`);
     }
 
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Downloader loop stopped');
+    // Get settings
+    const checksCount = config.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+    const checkInterval = config.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
+
+    try {
+      // Perform the check
+      const result = await this.performCheck(handler, seriesUrl, seriesName, config, attemptNumber, domain);
+
+      if (result.hasNewEpisodes) {
+        // Episodes found - send to download queue, do NOT requeue
+        this.notifier.notify(
+          NotificationLevel.SUCCESS,
+          `[${domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount})`,
+        );
+
+        // Add episodes to download queue
+        this.addEpisodes(seriesUrl, seriesName, result.episodes);
+
+        // Session complete - do not requeue
+        this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
+      } else {
+        // No episodes found - check if we should requeue
+        if (attemptNumber < checksCount) {
+          // Requeue with interval delay
+          const intervalMs = checkInterval * 1000;
+          const requeueDelay = result.requeueDelay ?? intervalMs;
+
+          this.notifier.notify(
+            NotificationLevel.INFO,
+            `[${domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
+          );
+
+          // Requeue with incremented attempt number
+          const requeuedItem: CheckQueueItem = {
+            ...item,
+            attemptNumber: attemptNumber + 1,
+            retryCount: 0,
+          };
+
+          this.scheduler.addTask(queueName, requeuedItem, requeueDelay);
+          this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
+        } else {
+          // Checks exhausted - do not requeue
+          this.notifier.notify(
+            NotificationLevel.INFO,
+            `[${domain}] Checks exhausted for ${seriesName} (${checksCount} attempts with no new episodes)`,
+          );
+          this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Get download settings for retry config
+      const domainConfig = this.getDomainConfig(domain);
+      const maxRetries = domainConfig.download?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
+      const initialTimeout = domainConfig.download?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
+      const backoffMultiplier = domainConfig.download?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
+      const jitterPercentage = domainConfig.download?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
+
+      if (retryCount < maxRetries) {
+        // Retry with exponential backoff (convert seconds to ms)
+        const retryDelay = this.calculateBackoff(
+          retryCount,
+          initialTimeout * 1000,
+          backoffMultiplier,
+          jitterPercentage,
+        );
+
+        this.notifier.notify(
+          NotificationLevel.WARNING,
+          `[${domain}] Check failed for ${seriesName}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
+        );
+
+        // Requeue with incremented retry count (same attempt number)
+        const requeuedItem: CheckQueueItem = {
+          ...item,
+          retryCount: retryCount + 1,
+        };
+
+        this.scheduler.addTask(queueName, requeuedItem, retryDelay);
+        this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
+      } else {
+        // Max retries exceeded - log error and give up
+        this.notifier.notify(
+          NotificationLevel.ERROR,
+          `[${domain}] Failed to check ${seriesName} after ${retryCount} retry attempts: ${errorMessage}`,
+        );
+        this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
+      }
+    }
+  }
+
+  /**
+   * Execute a download task
+   *
+   * @param item - Download queue item
+   * @param domain - Domain name
+   * @param queueName - Queue name for scheduler callbacks
+   */
+  private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
+    const { seriesUrl, seriesName, episode, retryCount = 0 } = item;
+
+    // Get domain config
+    const domainConfig = this.getDomainConfig(domain);
+    const downloadDelay = domainConfig.download?.downloadDelay ?? DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+
+    try {
+      // Attempt download
+      await this.downloadManager.download(seriesUrl, seriesName, episode);
+
+      // Success - log and continue
+      this.notifier.notify(
+        NotificationLevel.SUCCESS,
+        `[${domain}] Successfully queued download of Episode ${episode.number} for ${seriesName}`,
+      );
+
+      this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if we should retry
+      const maxRetries = domainConfig.download?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
+      const initialTimeout = domainConfig.download?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
+      const backoffMultiplier = domainConfig.download?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
+      const jitterPercentage = domainConfig.download?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
+
+      if (retryCount < maxRetries) {
+        // Retry with backoff
+        const retryDelay = this.calculateBackoff(
+          retryCount,
+          initialTimeout * 1000, // convert seconds to ms
+          backoffMultiplier,
+          jitterPercentage,
+        );
+
+        this.notifier.notify(
+          NotificationLevel.WARNING,
+          `[${domain}] Download failed for Episode ${episode.number}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
+        );
+
+        // Requeue with incremented retry count
+        const requeuedItem: DownloadQueueItem = {
+          ...item,
+          retryCount: retryCount + 1,
+        };
+
+        this.scheduler.addTask(queueName, requeuedItem, retryDelay);
+        this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
+      } else {
+        // Max retries exceeded - log error and give up
+        this.notifier.notify(
+          NotificationLevel.ERROR,
+          `[${domain}] Failed to download Episode ${episode.number} after ${retryCount} attempts: ${errorMessage}`,
+        );
+        this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
+      }
+    }
+  }
+
+  /**
+   * Perform the actual check for new episodes
+   *
+   * @param handler - Domain handler
+   * @param seriesUrl - Series URL
+   * @param _seriesName - Series name
+   * @param config - Series configuration
+   * @param attemptNumber - Current attempt number
+   * @param domain - Domain name
+   * @returns Check result
+   */
+  private async performCheck(
+    handler: ReturnType<typeof handlerRegistry.getHandlerOrThrow>,
+    seriesUrl: string,
+    _seriesName: string,
+    config: SeriesConfig,
+    attemptNumber: number,
+    domain: string,
+  ): Promise<{ hasNewEpisodes: boolean; episodes: Episode[]; requeueDelay?: number }> {
+    const checksCount = config.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+
+    this.notifier.notify(
+      NotificationLevel.INFO,
+      `[${domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${checksCount})`,
+    );
+
+    // Extract episodes from the series page
+    const episodes = await handler.extractEpisodes(seriesUrl);
+
+    this.notifier.notify(NotificationLevel.INFO, `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl}`);
+
+    // Get download types from config or use defaults
+    const downloadTypes = this.getDownloadTypes(config);
+
+    // Filter for episodes matching download types and not yet downloaded
+    const newEpisodes = episodes.filter((ep) => {
+      const shouldDownload = downloadTypes.includes(ep.type as EpisodeType);
+      const notDownloaded = !this.stateManager.isDownloaded(seriesUrl, ep.number);
+      return shouldDownload && notDownloaded;
+    });
+
+    if (newEpisodes.length > 0) {
+      return {
+        hasNewEpisodes: true,
+        episodes: newEpisodes,
+      };
+    }
+
+    // No new episodes
+    return {
+      hasNewEpisodes: false,
+      episodes: [],
+      shouldRequeue: true,
+    } as { hasNewEpisodes: false; episodes: Episode[]; requeueDelay?: number };
+  }
+
+  /**
+   * Get episode types to download from config or use defaults
+   *
+   * @param config - Series configuration
+   * @returns Array of episode types
+   */
+  private getDownloadTypes(config: SeriesConfig): string[] {
+    // Get from series config, domain config, or use defaults
+    const downloadTypes = config.check?.downloadTypes ?? this.globalConfigs?.check?.downloadTypes;
+
+    return downloadTypes ?? ['available', 'vip'];
+  }
+
+  /**
+   * Calculate exponential backoff with jitter
+   *
+   * @param retryCount - Current retry count
+   * @param initialTimeout - Initial timeout in ms
+   * @param backoffMultiplier - Multiplier for exponential backoff
+   * @param jitterPercentage - Percentage of jitter (0-100)
+   * @returns Delay in milliseconds
+   */
+  private calculateBackoff(
+    retryCount: number,
+    initialTimeout: number,
+    backoffMultiplier: number,
+    jitterPercentage: number,
+  ): number {
+    // Calculate base delay with exponential backoff
+    const baseDelay = initialTimeout * backoffMultiplier ** retryCount;
+
+    // Calculate jitter amount
+    const jitterAmount = (baseDelay * jitterPercentage) / 100;
+
+    // Generate random jitter within ±jitterAmount
+    const jitter = (Math.random() * 2 - 1) * jitterAmount;
+
+    // Calculate final delay (ensure non-negative)
+    const finalDelay = Math.max(0, baseDelay + jitter);
+
+    return Math.floor(finalDelay);
   }
 
   /**

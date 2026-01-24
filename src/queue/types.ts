@@ -147,13 +147,29 @@ export type DownloadResult = {
 };
 
 /**
- * Domain queue pair (check + download for a specific domain)
+ * Task item wrapper with metadata
  */
-export type DomainQueues = {
-  /** Domain name */
-  domain: string;
-  /** Check queue for this domain */
-  checkQueue: import('./check-queue.js').CheckQueue;
-  /** Download queue for this domain */
-  downloadQueue: import('./download-queue.js').DownloadQueue;
+export type TaskItem<T> = {
+  /** Task data */
+  data: T;
+  /** When the task was added to the queue */
+  addedAt: Date;
 };
+
+/**
+ * Universal scheduler configuration
+ */
+export type SchedulerConfig = {
+  /** Optional global cooldown between tasks (milliseconds) */
+  globalCooldownMs?: number;
+};
+
+/**
+ * Executor callback for universal scheduler
+ */
+export type ExecutorCallback<T> = (task: T, queueName: string) => Promise<void>;
+
+/**
+ * Combined task type for universal scheduler
+ */
+export type ScheduledTask = CheckQueueItem | DownloadQueueItem;

@@ -278,8 +278,8 @@ export class DownloadManager {
     const fullPath = resolve(filename);
 
     try {
-      const file = Bun.file(fullPath);
-      return file.size;
+      const stats = fs.statSync(fullPath);
+      return stats.size;
     } catch {
       return 0;
     }

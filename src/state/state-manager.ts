@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StateError } from '../errors/custom-errors';
 import type { SeriesEpisode, State } from '../types/state.types';
@@ -29,8 +30,7 @@ export class StateManager {
     }
 
     try {
-      const file = Bun.file(this.statePath);
-      const content = await file.text();
+      const content = await readFile(this.statePath, 'utf-8');
       this.state = JSON.parse(content) as State;
       this.dirty = false;
     } catch (error) {
@@ -47,7 +47,7 @@ export class StateManager {
     try {
       this.state.lastUpdated = new Date().toISOString();
       const content = JSON.stringify(this.state, null, 2);
-      await Bun.write(this.statePath, content);
+      await writeFile(this.statePath, content, 'utf-8');
       this.dirty = false;
     } catch (error) {
       throw new StateError(`Failed to save state file: ${error instanceof Error ? error.message : String(error)}`);

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as yaml from 'js-yaml';
 import { ConfigError } from '../errors/custom-errors';
@@ -28,8 +29,7 @@ export async function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Prom
     );
   }
 
-  const file = Bun.file(absolutePath);
-  const content = await file.text();
+  const content = await readFile(absolutePath, 'utf-8');
 
   let rawConfig: RawConfig;
 

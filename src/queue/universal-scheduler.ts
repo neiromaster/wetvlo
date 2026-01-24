@@ -205,8 +205,11 @@ export class UniversalScheduler<TaskType> {
     // Try each queue in round-robin order
     for (let i = 0; i < queueNames.length; i++) {
       const index = (this.roundRobinIndex + i) % queueNames.length;
-      const queueName = queueNames[index]!;
-      const queue = this.queues.get(queueName)!;
+      const queueName = queueNames[index];
+      if (!queueName) continue;
+
+      const queue = this.queues.get(queueName);
+      if (!queue) continue;
 
       // Check if queue has tasks and can start
       if (queue.hasTasks() && queue.canStart(now)) {

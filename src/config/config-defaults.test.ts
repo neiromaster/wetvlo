@@ -24,6 +24,7 @@ describe('Config Defaults', () => {
       initialTimeout: 5,
       backoffMultiplier: 2,
       jitterPercentage: 10,
+      minDuration: 0,
     });
   });
 

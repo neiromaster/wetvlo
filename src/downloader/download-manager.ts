@@ -6,7 +6,7 @@ import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
-import { VideoValidator } from '../utils/video-validator';
+import * as VideoValidator from '../utils/video-validator';
 
 /**
  * Error type returned by execa when a subprocess fails
@@ -58,7 +58,6 @@ export class DownloadManager {
       if (minDuration > 0) {
         const fullPath = join(process.cwd(), result.filename);
         const duration = await VideoValidator.getVideoDuration(fullPath);
-
         if (duration < minDuration) {
           // Delete invalid file
           try {

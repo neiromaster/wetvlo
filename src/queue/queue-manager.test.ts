@@ -223,7 +223,7 @@ describe('QueueManager', () => {
 
     await schedulerExecutor(task, 'download:wetv.vip');
 
-    expect(mockDownloadManager.download).toHaveBeenCalledWith(task.seriesUrl, task.seriesName, task.episode);
+    expect(mockDownloadManager.download).toHaveBeenCalledWith(task.seriesUrl, task.seriesName, task.episode, 0);
     expect(mockScheduler.markTaskComplete).toHaveBeenCalled();
   });
 

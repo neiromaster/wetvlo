@@ -1,12 +1,10 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+  "root": true,
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
-  },
-  "files": {
-    "ignoreUnknown": false
   },
   "formatter": {
     "enabled": true,
@@ -17,11 +15,7 @@
     "enabled": true,
     "rules": {
       "recommended": true
-    },
-    "includes": [
-      "**",
-      "!dist/**"
-    ]
+    }
   },
   "javascript": {
     "formatter": {
@@ -40,7 +34,29 @@
   "overrides": [
     {
       "includes": [
-        "**/*.{ts,tsx,mts,cts}"
+        "**/*.test.{ts,tsx,mts,cts}",
+        "**/*.spec.{ts,tsx,mts,cts}"
+      ],
+      "linter": {
+        "rules": {
+          "security": {
+            "noSecrets": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noTemplateCurlyInString": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "**/*.{ts,tsx,mts,cts}",
+        "!**/*.test.{ts,tsx,mts,cts}",
+        "!**/*.spec.{ts,tsx,mts,cts}"
       ],
       "linter": {
         "domains": {

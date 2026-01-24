@@ -225,7 +225,9 @@ export class QueueManager {
 
     // Add episodes to download queue with staggered delays
     for (let i = 0; i < episodes.length; i++) {
-      const episode = episodes[i]!;
+      const episode = episodes[i];
+      if (!episode) continue;
+
       const item: DownloadQueueItem = {
         seriesUrl,
         seriesName,

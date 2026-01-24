@@ -284,7 +284,7 @@ test('TypedQueue: should provide status', () => {
 
 test('UniversalScheduler: should trigger onWait callback', async () => {
   const waitLog: string[] = [];
-  const scheduler = new UniversalScheduler<TestTask>(async (task, queueName) => {
+  const scheduler = new UniversalScheduler<TestTask>(async (_task, _queueName) => {
     // Immediate completion for test simplicity
   });
 

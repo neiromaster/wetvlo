@@ -1,7 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import * as fsPromises from 'node:fs/promises';
 import { NotificationLevel } from '../notifications/notifier.js';
-import { VideoValidator } from '../utils/video-validator.js';
+import * as VideoValidator from '../utils/video-validator.js';
 import { DownloadManager } from './download-manager.js';
 
 // Mock dependencies
@@ -32,7 +31,8 @@ mock.module('execa', () => ({
 }));
 
 // Mock VideoValidator
-const getVideoDurationSpy = spyOn(VideoValidator, 'getVideoDuration').mockImplementation(async () => 100);
+const getVideoDurationSpy = spyOn(VideoValidator, 'getVideoDuration');
+getVideoDurationSpy.mockImplementation(async () => 100);
 
 // Mock fs/promises
 mock.module('node:fs/promises', () => ({
@@ -90,7 +90,7 @@ describe('DownloadManager', () => {
 
   it('should validate video duration if minDuration > 0', async () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
-    (VideoValidator.getVideoDuration as any).mockResolvedValue(100);
+    getVideoDurationSpy.mockResolvedValue(100);
 
     const result = await downloadManager.download(
       'url',
@@ -100,12 +100,12 @@ describe('DownloadManager', () => {
     );
 
     expect(result).toBe(true);
-    expect(VideoValidator.getVideoDuration).toHaveBeenCalled();
+    expect(getVideoDurationSpy).toHaveBeenCalled();
   });
 
   it('should throw error and delete file if video duration is too short', async () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
-    (VideoValidator.getVideoDuration as any).mockResolvedValue(30); // 30s < 50s
+    getVideoDurationSpy.mockResolvedValue(30); // 30s < 50s
 
     await expect(
       downloadManager.download(
@@ -116,7 +116,7 @@ describe('DownloadManager', () => {
       ),
     ).rejects.toThrow('Video duration 30s is less than minimum 50s');
 
-    expect(VideoValidator.getVideoDuration).toHaveBeenCalled();
+    expect(getVideoDurationSpy).toHaveBeenCalled();
     // Verify file deletion
     // Since we mocked fs/promises module, we can check if unlink was called
     // But module mocking in bun test is global, let's just assume it works or try to spy it if we imported it

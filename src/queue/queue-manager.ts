@@ -9,7 +9,8 @@
  * - Proper end-to-start cooldowns
  */
 
-import { DEFAULT_CHECK_SETTINGS, DEFAULT_DOWNLOAD_SETTINGS } from '../config/config-defaults.js';
+import { ConfigResolver } from '../config/config-resolver.js';
+import type { ResolvedSeriesConfig } from '../config/resolved-config.types.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { handlerRegistry } from '../handlers/handler-registry.js';
 import type { Notifier } from '../notifications/notifier.js';
@@ -32,11 +33,8 @@ export class QueueManager {
   // Universal scheduler (handles all check and download queues)
   private scheduler: UniversalScheduler<CheckQueueItem | DownloadQueueItem>;
 
-  // Domain configurations
-  private domainConfigs: Map<string, DomainConfig> = new Map();
-
-  // Global defaults
-  private globalConfigs?: GlobalConfigs;
+  // Config resolver
+  private configResolver: ConfigResolver;
 
   // Running state
   private running = false;
@@ -68,12 +66,9 @@ export class QueueManager {
     this.stateManager = stateManager;
     this.downloadManager = downloadManager;
     this.notifier = notifier;
-    this.globalConfigs = globalConfigs;
 
-    // Initialize domain configurations
-    for (const config of domainConfigs) {
-      this.domainConfigs.set(config.domain, config);
-    }
+    // Initialize config resolver
+    this.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
 
     // Create universal scheduler with executor callback
     const createScheduler = schedulerFactory || ((executor) => new UniversalScheduler(executor));
@@ -104,24 +99,14 @@ export class QueueManager {
   addSeriesCheck(config: SeriesConfig): void {
     const domain = extractDomain(config.url);
 
-    // Merge config with defaults from all 4 levels
-    const mergedConfig = this.mergeSeriesConfig(config, domain);
-
     // Register queues for this domain if not already registered
     this.registerDomainQueues(domain);
 
-    // Get check interval from merged config
-    const _checkInterval =
-      mergedConfig.check?.checkInterval ??
-      this.domainConfigs.get(domain)?.check?.checkInterval ??
-      this.globalConfigs?.check?.checkInterval ??
-      DEFAULT_CHECK_SETTINGS.checkInterval;
-
-    // Add series to check queue with merged config
+    // Add series to check queue with config
     const item: CheckQueueItem = {
-      seriesUrl: mergedConfig.url,
-      seriesName: mergedConfig.name,
-      config: mergedConfig,
+      seriesUrl: config.url,
+      seriesName: config.name,
+      config: config,
       attemptNumber: 1,
       retryCount: 0,
     };
@@ -131,71 +116,8 @@ export class QueueManager {
 
     this.notifier.notify(
       NotificationLevel.INFO,
-      `[QueueManager] Added ${mergedConfig.name} to check queue for domain ${domain}`,
+      `[QueueManager] Added ${config.name} to check queue for domain ${domain}`,
     );
-  }
-
-  /**
-   * Merge series configuration with defaults from 4 levels
-   *
-   * Level 1 (highest): Series config
-   * Level 2: Domain config
-   * Level 3: Global defaults (globalConfigs)
-   * Level 4 (lowest): Hardcoded defaults
-   *
-   * @param config - Series configuration
-   * @param domain - Domain name
-   * @returns Merged series configuration
-   */
-  private mergeSeriesConfig(config: SeriesConfig, domain: string): SeriesConfig {
-    const domainConfig = this.domainConfigs.get(domain);
-    const globalCheck = this.globalConfigs?.check;
-    const globalDownload = this.globalConfigs?.download;
-
-    return {
-      ...config,
-      check: {
-        count: config.check?.count ?? domainConfig?.check?.count ?? globalCheck?.count ?? DEFAULT_CHECK_SETTINGS.count,
-        checkInterval:
-          config.check?.checkInterval ??
-          domainConfig?.check?.checkInterval ??
-          globalCheck?.checkInterval ??
-          DEFAULT_CHECK_SETTINGS.checkInterval,
-        downloadTypes: config.check?.downloadTypes ?? domainConfig?.check?.downloadTypes ?? globalCheck?.downloadTypes,
-      },
-      download: {
-        downloadDelay:
-          config.download?.downloadDelay ??
-          domainConfig?.download?.downloadDelay ??
-          globalDownload?.downloadDelay ??
-          DEFAULT_DOWNLOAD_SETTINGS.downloadDelay,
-        maxRetries:
-          config.download?.maxRetries ??
-          domainConfig?.download?.maxRetries ??
-          globalDownload?.maxRetries ??
-          DEFAULT_DOWNLOAD_SETTINGS.maxRetries,
-        initialTimeout:
-          config.download?.initialTimeout ??
-          domainConfig?.download?.initialTimeout ??
-          globalDownload?.initialTimeout ??
-          DEFAULT_DOWNLOAD_SETTINGS.initialTimeout,
-        backoffMultiplier:
-          config.download?.backoffMultiplier ??
-          domainConfig?.download?.backoffMultiplier ??
-          globalDownload?.backoffMultiplier ??
-          DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier,
-        jitterPercentage:
-          config.download?.jitterPercentage ??
-          domainConfig?.download?.jitterPercentage ??
-          globalDownload?.jitterPercentage ??
-          DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage,
-        minDuration:
-          config.download?.minDuration ??
-          domainConfig?.download?.minDuration ??
-          globalDownload?.minDuration ??
-          DEFAULT_DOWNLOAD_SETTINGS.minDuration,
-      },
-    };
   }
 
   /**
@@ -216,12 +138,9 @@ export class QueueManager {
     // Register queues for this domain if not already registered
     this.registerDomainQueues(domain);
 
-    // Get download delay from domain config
-    const domainConfig = this.getDomainConfig(domain);
-    const downloadDelay =
-      domainConfig.download?.downloadDelay ??
-      this.globalConfigs?.download?.downloadDelay ??
-      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+    // Get download delay from resolved config
+    const resolvedConfig = this.configResolver.resolveDomain(domain);
+    const { downloadDelay } = resolvedConfig.download;
 
     // Add episodes to download queue with staggered delays
     for (let i = 0; i < episodes.length; i++) {
@@ -336,62 +255,20 @@ export class QueueManager {
       return;
     }
 
-    // Get domain configuration
-    const domainConfig = this.getDomainConfig(domain);
+    // Resolve configuration
+    const resolvedConfig = this.configResolver.resolveDomain(domain);
 
     // Get handler for this domain
     const handler = handlerRegistry.getHandlerOrThrow(`https://${domain}/`);
     this.domainHandlers.set(domain, handler);
 
     // Get cooldowns
-    const checkInterval =
-      domainConfig.check?.checkInterval ??
-      this.globalConfigs?.check?.checkInterval ??
-      DEFAULT_CHECK_SETTINGS.checkInterval;
-    const downloadDelay =
-      domainConfig.download?.downloadDelay ??
-      this.globalConfigs?.download?.downloadDelay ??
-      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+    const { checkInterval } = resolvedConfig.check;
+    const { downloadDelay } = resolvedConfig.download;
 
     // Register queues with scheduler
     this.scheduler.registerQueue(checkQueueName, checkInterval * 1000); // Convert to ms
     this.scheduler.registerQueue(downloadQueueName, downloadDelay * 1000); // Convert to ms
-  }
-
-  /**
-   * Get domain configuration with defaults
-   *
-   * 3-level hierarchy (highest to lowest priority):
-   * 1. Domain config (from domainConfigs)
-   * 2. Global defaults (globalConfigs)
-   * 3. Hardcoded defaults
-   *
-   * Note: Series-level config is applied in mergeSeriesConfig()
-   *
-   * @param domain - Domain name
-   * @returns Domain configuration
-   */
-  private getDomainConfig(domain: string): DomainConfig {
-    // Level 3: Domain config
-    if (this.domainConfigs.has(domain)) {
-      return this.domainConfigs.get(domain) as DomainConfig;
-    }
-
-    // Level 2: Global defaults
-    if (this.globalConfigs?.check || this.globalConfigs?.download) {
-      return {
-        domain,
-        check: this.globalConfigs.check,
-        download: this.globalConfigs.download,
-      };
-    }
-
-    // Level 1: Hardcoded defaults (fallback)
-    return {
-      domain,
-      check: DEFAULT_CHECK_SETTINGS,
-      download: DEFAULT_DOWNLOAD_SETTINGS,
-    };
   }
 
   /**
@@ -437,12 +314,12 @@ export class QueueManager {
     }
 
     // Get settings
-    const checksCount = config.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
-    const checkInterval = config.check?.checkInterval ?? DEFAULT_CHECK_SETTINGS.checkInterval;
+    const resolvedConfig = this.configResolver.resolve(config);
+    const { count: checksCount, checkInterval } = resolvedConfig.check;
 
     try {
       // Perform the check
-      const result = await this.performCheck(handler, seriesUrl, seriesName, config, attemptNumber, domain);
+      const result = await this.performCheck(handler, seriesUrl, seriesName, resolvedConfig, attemptNumber, domain);
 
       if (result.hasNewEpisodes) {
         // Episodes found - send to download queue, do NOT requeue
@@ -490,11 +367,7 @@ export class QueueManager {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Get download settings for retry config
-      const domainConfig = this.getDomainConfig(domain);
-      const maxRetries = domainConfig.download?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
-      const initialTimeout = domainConfig.download?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
-      const backoffMultiplier = domainConfig.download?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
-      const jitterPercentage = domainConfig.download?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
+      const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = resolvedConfig.download;
 
       if (retryCount < maxRetries) {
         // Retry with exponential backoff (convert seconds to ms)
@@ -539,19 +412,15 @@ export class QueueManager {
   private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
     const { seriesUrl, seriesName, episode, config, retryCount = 0 } = item;
 
-    // Get domain config
-    const domainConfig = this.getDomainConfig(domain);
-    const downloadDelay =
-      config?.download?.downloadDelay ??
-      domainConfig.download?.downloadDelay ??
-      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+    // Resolve config
+    let resolvedConfig: ResolvedSeriesConfig;
+    if (config) {
+      resolvedConfig = this.configResolver.resolve(config);
+    } else {
+      resolvedConfig = this.configResolver.resolveDomain(domain);
+    }
 
-    // Get min duration
-    const minDuration =
-      config?.download?.minDuration ??
-      domainConfig.download?.minDuration ??
-      this.globalConfigs?.download?.minDuration ??
-      DEFAULT_DOWNLOAD_SETTINGS.minDuration;
+    const { downloadDelay, minDuration } = resolvedConfig.download;
 
     try {
       // Attempt download
@@ -568,10 +437,7 @@ export class QueueManager {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Check if we should retry
-      const maxRetries = domainConfig.download?.maxRetries ?? DEFAULT_DOWNLOAD_SETTINGS.maxRetries;
-      const initialTimeout = domainConfig.download?.initialTimeout ?? DEFAULT_DOWNLOAD_SETTINGS.initialTimeout;
-      const backoffMultiplier = domainConfig.download?.backoffMultiplier ?? DEFAULT_DOWNLOAD_SETTINGS.backoffMultiplier;
-      const jitterPercentage = domainConfig.download?.jitterPercentage ?? DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage;
+      const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = resolvedConfig.download;
 
       if (retryCount < maxRetries) {
         // Retry with backoff
@@ -621,11 +487,11 @@ export class QueueManager {
     handler: ReturnType<typeof handlerRegistry.getHandlerOrThrow>,
     seriesUrl: string,
     _seriesName: string,
-    config: SeriesConfig,
+    config: ResolvedSeriesConfig,
     attemptNumber: number,
     domain: string,
   ): Promise<{ hasNewEpisodes: boolean; episodes: Episode[]; requeueDelay?: number }> {
-    const checksCount = config.check?.count ?? DEFAULT_CHECK_SETTINGS.count;
+    const checksCount = config.check.count;
 
     this.notifier.notify(
       NotificationLevel.INFO,
@@ -637,8 +503,8 @@ export class QueueManager {
 
     this.notifier.notify(NotificationLevel.INFO, `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl}`);
 
-    // Get download types from config or use defaults
-    const downloadTypes = this.getDownloadTypes(config);
+    // Get download types from config
+    const downloadTypes = config.check.downloadTypes;
 
     // Filter for episodes matching download types and not yet downloaded
     const newEpisodes = episodes.filter((ep) => {
@@ -660,19 +526,6 @@ export class QueueManager {
       episodes: [],
       shouldRequeue: true,
     } as { hasNewEpisodes: false; episodes: Episode[]; requeueDelay?: number };
-  }
-
-  /**
-   * Get episode types to download from config or use defaults
-   *
-   * @param config - Series configuration
-   * @returns Array of episode types
-   */
-  private getDownloadTypes(config: SeriesConfig): string[] {
-    // Get from series config, domain config, or use defaults
-    const downloadTypes = config.check?.downloadTypes ?? this.globalConfigs?.check?.downloadTypes;
-
-    return downloadTypes ?? ['available', 'vip'];
   }
 
   /**
@@ -709,6 +562,6 @@ export class QueueManager {
    * Set global configs (for dependency injection)
    */
   setGlobalConfigs(globalConfigs: GlobalConfigs): void {
-    this.globalConfigs = globalConfigs;
+    this.configResolver.setGlobalConfigs(globalConfigs);
   }
 }

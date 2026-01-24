@@ -35,6 +35,7 @@ export class UniversalScheduler<TaskType> {
 
   // Callback
   private executor: ExecutorCallback<TaskType>;
+  private onWait?: (queueName: string, waitMs: number, nextTime: Date) => void;
 
   /**
    * Create a new UniversalScheduler
@@ -43,6 +44,15 @@ export class UniversalScheduler<TaskType> {
    */
   constructor(executor: ExecutorCallback<TaskType>) {
     this.executor = executor;
+  }
+
+  /**
+   * Set callback for when the scheduler is waiting
+   *
+   * @param callback - Callback function
+   */
+  setOnWait(callback: (queueName: string, waitMs: number, nextTime: Date) => void): void {
+    this.onWait = callback;
   }
 
   /**
@@ -164,11 +174,11 @@ export class UniversalScheduler<TaskType> {
     if (!scheduled) {
       // No task could be scheduled now
       // Check if we should set a timer for the next available time
-      const nextTime = this.getEarliestAvailableTime();
-      if (nextTime) {
+      const next = this.getEarliestAvailableTime();
+      if (next) {
         const now = Date.now();
-        const waitMs = Math.max(0, nextTime.getTime() - now);
-        this.scheduleTimer(waitMs);
+        const waitMs = Math.max(0, next.time.getTime() - now);
+        this.scheduleTimer(waitMs, next.queueName, next.time);
       }
     }
   }
@@ -237,9 +247,16 @@ export class UniversalScheduler<TaskType> {
    * Schedule a timer for the next attempt
    *
    * @param waitMs - Milliseconds to wait
+   * @param queueName - Name of the queue we are waiting for
+   * @param nextTime - Time when the task will be ready
    */
-  private scheduleTimer(waitMs: number): void {
+  private scheduleTimer(waitMs: number, queueName: string, nextTime: Date): void {
     this.clearTimer();
+
+    // Notify waiting state if callback defined and wait is significant (>1s)
+    if (this.onWait && waitMs > 1000) {
+      this.onWait(queueName, waitMs, nextTime);
+    }
 
     this.timerId = setTimeout(() => {
       this.timerId = null;
@@ -260,24 +277,24 @@ export class UniversalScheduler<TaskType> {
   /**
    * Get the earliest available time across all queues
    *
-   * @returns Earliest available time or null if no queues with tasks
+   * @returns Earliest available time and queue name, or null if no queues with tasks
    */
-  private getEarliestAvailableTime(): Date | null {
-    let earliest: Date | null = null;
+  private getEarliestAvailableTime(): { time: Date; queueName: string } | null {
+    let result: { time: Date; queueName: string } | null = null;
 
-    for (const queue of this.queues.values()) {
+    for (const [name, queue] of this.queues.entries()) {
       // Only consider queues that have tasks
       if (!queue.hasTasks()) {
         continue;
       }
 
       const nextTime = queue.getNextAvailableTime();
-      if (earliest === null || nextTime < earliest) {
-        earliest = nextTime;
+      if (result === null || nextTime < result.time) {
+        result = { time: nextTime, queueName: name };
       }
     }
 
-    return earliest;
+    return result;
   }
 
   /**

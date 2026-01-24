@@ -19,6 +19,26 @@ import type { DomainConfig, GlobalConfigs, SchedulerOptions, SeriesConfig } from
 import { getMsUntilTime, sleep } from '../utils/time-utils.js';
 
 /**
+ * Time provider type for dependency injection
+ */
+export type TimeProvider = {
+  getMsUntilTime: typeof getMsUntilTime;
+  sleep: typeof sleep;
+};
+
+/**
+ * QueueManager factory type for dependency injection
+ */
+export type QueueManagerFactory = (
+  stateManager: StateManager,
+  downloadManager: DownloadManager,
+  notifier: Notifier,
+  cookies: string | undefined,
+  domainConfigs: DomainConfig[] | undefined,
+  globalConfigs: GlobalConfigs | undefined,
+) => QueueManager;
+
+/**
  * Scheduler for managing periodic checks with queue-based architecture
  */
 export class Scheduler {
@@ -33,6 +53,7 @@ export class Scheduler {
   private stopped: boolean = true;
   private globalConfigs?: GlobalConfigs;
   private domainConfigs?: DomainConfig[];
+  private timeProvider: TimeProvider;
 
   constructor(
     configs: SeriesConfig[],
@@ -43,6 +64,8 @@ export class Scheduler {
     options: SchedulerOptions = { mode: 'scheduled' },
     globalConfigs?: GlobalConfigs,
     domainConfigs?: DomainConfig[],
+    timeProvider?: TimeProvider,
+    queueManagerFactory?: QueueManagerFactory,
   ) {
     this.configs = configs;
     this.stateManager = stateManager;
@@ -52,9 +75,14 @@ export class Scheduler {
     this.options = options;
     this.globalConfigs = globalConfigs;
     this.domainConfigs = domainConfigs;
+    this.timeProvider = timeProvider || { getMsUntilTime, sleep };
 
     // Create queue manager
-    this.queueManager = new QueueManager(
+    const createQueueManager =
+      queueManagerFactory ||
+      ((sm, dm, notif, cook, dConf, gConf) => new QueueManager(sm, dm, notif, cook, dConf, gConf));
+
+    this.queueManager = createQueueManager(
       this.stateManager,
       this.downloadManager,
       this.notifier,
@@ -91,14 +119,14 @@ export class Scheduler {
         if (this.stopped) break;
 
         // Wait until start time
-        const msUntil = getMsUntilTime(startTime);
+        const msUntil = this.timeProvider.getMsUntilTime(startTime);
         if (msUntil > 0) {
           this.notifier.notify(
             NotificationLevel.INFO,
             `Waiting ${Math.floor(msUntil / 1000 / 60)} minutes until ${startTime}...`,
           );
           // biome-ignore lint/performance/noAwaitInLoops: Sequential waiting is intentional
-          await sleep(msUntil);
+          await this.timeProvider.sleep(msUntil);
         }
 
         if (this.stopped) break;
@@ -110,7 +138,7 @@ export class Scheduler {
         while (this.queueManager.hasActiveProcessing()) {
           if (this.stopped) break;
           // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-          await sleep(1000);
+          await this.timeProvider.sleep(1000);
         }
       }
     }
@@ -185,7 +213,7 @@ export class Scheduler {
     while (this.queueManager.hasActiveProcessing()) {
       if (this.stopped) break;
       // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-      await sleep(1000);
+      await this.timeProvider.sleep(1000);
     }
 
     // Save state after all checks

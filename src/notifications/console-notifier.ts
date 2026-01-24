@@ -9,6 +9,12 @@ export class ConsoleNotifier implements Notifier {
   private lastProgressLength = 0;
 
   notify(level: NotificationLevel, message: string): void {
+    // If there was an active progress line, clear it first so the log appears cleanly
+    if (this.lastProgressLength > 0) {
+      process.stdout.write(`\r${' '.repeat(this.lastProgressLength)}\r`);
+      this.lastProgressLength = 0;
+    }
+
     switch (level) {
       case NotificationLevel.INFO:
         logger.info(message);

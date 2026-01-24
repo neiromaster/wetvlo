@@ -83,7 +83,21 @@ export class TypedQueue<TaskType> {
    * @returns Whether task can start
    */
   canStart(now: Date): boolean {
-    return !this.isExecuting && now >= this.nextAvailableAt;
+    if (this.isExecuting) {
+      return false;
+    }
+
+    if (now < this.nextAvailableAt) {
+      return false;
+    }
+
+    // Check if head task is ready (respect delay)
+    const head = this.queue[0];
+    if (head && now < head.addedAt) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -130,7 +144,16 @@ export class TypedQueue<TaskType> {
    * @returns Next available time
    */
   getNextAvailableTime(): Date {
-    return this.nextAvailableAt;
+    // Start with cooldown time
+    let time = this.nextAvailableAt;
+
+    // Check head task delay
+    const head = this.queue[0];
+    if (head && head.addedAt > time) {
+      time = head.addedAt;
+    }
+
+    return time;
   }
 
   /**

@@ -281,3 +281,28 @@ test('TypedQueue: should provide status', () => {
   expect(status.canStartNow).toBe(true);
   expect(status.cooldownMs).toBe(100);
 });
+
+test('UniversalScheduler: should trigger onWait callback', async () => {
+  const waitLog: string[] = [];
+  const scheduler = new UniversalScheduler<TestTask>(async (task, queueName) => {
+    // Immediate completion for test simplicity
+  });
+
+  scheduler.registerQueue('queue1', 0);
+
+  scheduler.setOnWait((queueName, waitMs, _nextTime) => {
+    waitLog.push(`${queueName}:${waitMs}`);
+  });
+
+  // Add task with delay
+  const delay = 1500; // > 1000ms threshold
+  scheduler.addTask('queue1', createTask('a', 1), delay);
+
+  // Wait for scheduler to process
+  await sleep(50);
+
+  expect(waitLog.length).toBeGreaterThan(0);
+  expect(waitLog[0]).toContain('queue1');
+
+  scheduler.stop();
+});

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CookieError } from '../errors/custom-errors';
@@ -89,8 +90,7 @@ export async function readCookieFile(cookieFile: string): Promise<string> {
     throw new CookieError(`Cookie file not found: "${cookieFile}"`);
   }
 
-  const file = Bun.file(cookieFile);
-  const content = await file.text();
+  const content = await readFile(cookieFile, 'utf-8');
 
   // Parse Netscape cookie format and convert to Cookie header format
   const lines = content.split('\n');
@@ -98,13 +98,19 @@ export async function readCookieFile(cookieFile: string): Promise<string> {
 
   for (const line of lines) {
     // Skip comments and empty lines
-    if (line.startsWith('#') || !line.trim()) continue;
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('#') || !trimmedLine) continue;
 
     const fields = line.split('\t');
     if (fields.length >= 7) {
-      const [, _domain, , _path, , , name, value] = fields;
+      const name = fields[5];
+      const value = fields[6];
+
       if (name && value) {
-        cookies.push(`${name}=${value}`);
+        const cleanValue = value.trim();
+        if (cleanValue) {
+          cookies.push(`${name}=${cleanValue}`);
+        }
       }
     }
   }

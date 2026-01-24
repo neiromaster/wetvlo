@@ -61,6 +61,9 @@ export class QueueManager {
     _cookieFile: string | undefined,
     domainConfigs: DomainConfig[] = [],
     globalConfigs?: GlobalConfigs,
+    schedulerFactory?: (
+      executor: (task: CheckQueueItem | DownloadQueueItem, queueName: string) => Promise<void>,
+    ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,
   ) {
     this.stateManager = stateManager;
     this.downloadManager = downloadManager;
@@ -73,8 +76,23 @@ export class QueueManager {
     }
 
     // Create universal scheduler with executor callback
-    this.scheduler = new UniversalScheduler<CheckQueueItem | DownloadQueueItem>(async (task, queueName) => {
+    const createScheduler = schedulerFactory || ((executor) => new UniversalScheduler(executor));
+    this.scheduler = createScheduler(async (task, queueName) => {
       await this.executeTask(task, queueName);
+    });
+
+    // Set up wait notification
+    this.scheduler.setOnWait((queueName, waitMs) => {
+      const seconds = Math.round(waitMs / 1000);
+      const parts = queueName.split(':');
+      const type = parts[0];
+      const domain = parts[1];
+
+      if (type === 'download') {
+        this.notifier.notify(NotificationLevel.INFO, `[${domain}] Next download in ${seconds}s...`);
+      } else if (type === 'check') {
+        this.notifier.notify(NotificationLevel.INFO, `[${domain}] Next check in ${seconds}s...`);
+      }
     });
   }
 
@@ -254,12 +272,12 @@ export class QueueManager {
   }
 
   /**
-   * Check if there is active processing
+   * Check if there is active processing or pending tasks
    *
-   * @returns Whether scheduler is actively processing
+   * @returns Whether scheduler is actively processing or has pending tasks
    */
   hasActiveProcessing(): boolean {
-    return this.scheduler.isExecutorBusy();
+    return this.scheduler.isExecutorBusy() || this.scheduler.hasPendingTasks();
   }
 
   /**

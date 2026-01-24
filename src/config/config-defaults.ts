@@ -27,6 +27,7 @@ export const DEFAULT_DOWNLOAD_SETTINGS: Required<DownloadSettings> = {
   initialTimeout: 5, // Initial retry delay in seconds
   backoffMultiplier: 2, // Exponential backoff multiplier
   jitterPercentage: 10, // Random jitter (0-100%)
+  minDuration: 0, // Minimum duration in seconds (0 = disabled)
 };
 
 /**

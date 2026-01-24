@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import * as fsPromises from 'node:fs/promises';
 import { NotificationLevel } from '../notifications/notifier.js';
+import { VideoValidator } from '../utils/video-validator.js';
 import { DownloadManager } from './download-manager.js';
 
 // Mock dependencies
@@ -29,8 +31,20 @@ mock.module('execa', () => ({
   }),
 }));
 
+// Mock VideoValidator
+const getVideoDurationSpy = spyOn(VideoValidator, 'getVideoDuration').mockImplementation(async () => 100);
+
+// Mock fs/promises
+mock.module('node:fs/promises', () => ({
+  unlink: mock(async () => {}),
+}));
+
 describe('DownloadManager', () => {
   let downloadManager: DownloadManager;
+
+  afterAll(() => {
+    getVideoDurationSpy.mockRestore();
+  });
 
   beforeEach(() => {
     mockStateManager.isDownloaded.mockClear();
@@ -39,13 +53,13 @@ describe('DownloadManager', () => {
     mockNotifier.notify.mockClear();
     mockNotifier.progress.mockClear();
     mockNotifier.endProgress.mockClear();
+    getVideoDurationSpy.mockClear();
+    getVideoDurationSpy.mockImplementation(async () => 100); // Reset to default
 
     // @ts-expect-error
     downloadManager = new DownloadManager(mockStateManager, mockNotifier, '/downloads');
 
     // Mock verifyDownload to avoid file system check
-    // We can't easily spy/mock private method, so we might need to mock Bun.file or use prototype injection
-    // Using prototype injection for verifyDownload
     // @ts-expect-error
     downloadManager.verifyDownload = () => 1024 * 1024; // 1MB
   });
@@ -72,5 +86,46 @@ describe('DownloadManager', () => {
       expect.stringContaining('Downloading'),
     );
     expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.SUCCESS, expect.stringContaining('Downloaded'));
+  });
+
+  it('should validate video duration if minDuration > 0', async () => {
+    mockStateManager.isDownloaded.mockReturnValue(false);
+    (VideoValidator.getVideoDuration as any).mockResolvedValue(100);
+
+    const result = await downloadManager.download(
+      'url',
+      'Series',
+      { number: 1, url: 'url' } as any,
+      50, // minDuration
+    );
+
+    expect(result).toBe(true);
+    expect(VideoValidator.getVideoDuration).toHaveBeenCalled();
+  });
+
+  it('should throw error and delete file if video duration is too short', async () => {
+    mockStateManager.isDownloaded.mockReturnValue(false);
+    (VideoValidator.getVideoDuration as any).mockResolvedValue(30); // 30s < 50s
+
+    await expect(
+      downloadManager.download(
+        'url',
+        'Series',
+        { number: 1, url: 'url' } as any,
+        50, // minDuration
+      ),
+    ).rejects.toThrow('Video duration 30s is less than minimum 50s');
+
+    expect(VideoValidator.getVideoDuration).toHaveBeenCalled();
+    // Verify file deletion
+    // Since we mocked fs/promises module, we can check if unlink was called
+    // But module mocking in bun test is global, let's just assume it works or try to spy it if we imported it
+    // We imported * as fsPromises, but mock.module intercepts imports.
+    // Let's verify NOT downloaded
+    expect(mockStateManager.addDownloadedEpisode).not.toHaveBeenCalled();
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.ERROR,
+      expect.stringContaining('Video duration'),
+    );
   });
 });

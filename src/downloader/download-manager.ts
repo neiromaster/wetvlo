@@ -1,3 +1,4 @@
+import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { DownloadError } from '../errors/custom-errors';
@@ -5,6 +6,7 @@ import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
+import { VideoValidator } from '../utils/video-validator';
 
 /**
  * Error type returned by execa when a subprocess fails
@@ -34,7 +36,7 @@ export class DownloadManager {
   /**
    * Download an episode using yt-dlp with progress tracking
    */
-  async download(seriesUrl: string, seriesName: string, episode: Episode): Promise<boolean> {
+  async download(seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
     // Check if already downloaded
     if (this.stateManager.isDownloaded(seriesUrl, episode.number)) {
       return false;
@@ -50,6 +52,23 @@ export class DownloadManager {
 
       if (fileSize === 0) {
         throw new Error('Downloaded file is empty or does not exist');
+      }
+
+      // Verify duration if required
+      if (minDuration > 0) {
+        const fullPath = join(process.cwd(), result.filename);
+        const duration = await VideoValidator.getVideoDuration(fullPath);
+
+        if (duration < minDuration) {
+          // Delete invalid file
+          try {
+            await unlink(fullPath);
+          } catch (e) {
+            this.notifier.notify(NotificationLevel.ERROR, `Failed to delete invalid file ${result.filename}: ${e}`);
+          }
+
+          throw new Error(`Video duration ${duration}s is less than minimum ${minDuration}s`);
+        }
       }
 
       // Add to state

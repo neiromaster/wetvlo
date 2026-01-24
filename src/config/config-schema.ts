@@ -33,6 +33,7 @@ export const DownloadSettingsSchema = z.object({
   initialTimeout: z.number().positive().optional(),
   backoffMultiplier: z.number().positive().optional(),
   jitterPercentage: z.number().int().min(0).max(100).optional(),
+  minDuration: z.number().nonnegative().optional(),
 });
 
 export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;

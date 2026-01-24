@@ -36,6 +36,8 @@ export type DownloadSettings = {
   backoffMultiplier?: number;
   /** Percentage of jitter to add (0-100) to avoid thundering herd */
   jitterPercentage?: number;
+  /** Minimum duration in seconds (0 = disabled) */
+  minDuration?: number;
 };
 
 /**
@@ -93,6 +95,8 @@ export type DownloadQueueItem = {
   seriesName: string;
   /** Episode to download */
   episode: Episode;
+  /** Configuration for this series (optional, for passing series-level overrides) */
+  config?: SeriesConfig;
   /** Timestamp when this download should occur */
   scheduledTime?: Date;
   /** Current retry count for errors */

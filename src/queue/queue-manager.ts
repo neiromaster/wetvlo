@@ -189,6 +189,11 @@ export class QueueManager {
           domainConfig?.download?.jitterPercentage ??
           globalDownload?.jitterPercentage ??
           DEFAULT_DOWNLOAD_SETTINGS.jitterPercentage,
+        minDuration:
+          config.download?.minDuration ??
+          domainConfig?.download?.minDuration ??
+          globalDownload?.minDuration ??
+          DEFAULT_DOWNLOAD_SETTINGS.minDuration,
       },
     };
   }
@@ -199,8 +204,9 @@ export class QueueManager {
    * @param seriesUrl - Series URL
    * @param seriesName - Series name
    * @param episodes - Episodes to download
+   * @param config - Series configuration (optional)
    */
-  addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[]): void {
+  addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[], config?: SeriesConfig): void {
     if (episodes.length === 0) {
       return;
     }
@@ -224,6 +230,7 @@ export class QueueManager {
         seriesUrl,
         seriesName,
         episode,
+        config,
         retryCount: 0,
       };
 
@@ -443,7 +450,7 @@ export class QueueManager {
         );
 
         // Add episodes to download queue
-        this.addEpisodes(seriesUrl, seriesName, result.episodes);
+        this.addEpisodes(seriesUrl, seriesName, result.episodes, config);
 
         // Session complete - do not requeue
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
@@ -528,15 +535,25 @@ export class QueueManager {
    * @param queueName - Queue name for scheduler callbacks
    */
   private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
-    const { seriesUrl, seriesName, episode, retryCount = 0 } = item;
+    const { seriesUrl, seriesName, episode, config, retryCount = 0 } = item;
 
     // Get domain config
     const domainConfig = this.getDomainConfig(domain);
-    const downloadDelay = domainConfig.download?.downloadDelay ?? DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+    const downloadDelay =
+      config?.download?.downloadDelay ??
+      domainConfig.download?.downloadDelay ??
+      DEFAULT_DOWNLOAD_SETTINGS.downloadDelay;
+
+    // Get min duration
+    const minDuration =
+      config?.download?.minDuration ??
+      domainConfig.download?.minDuration ??
+      this.globalConfigs?.download?.minDuration ??
+      DEFAULT_DOWNLOAD_SETTINGS.minDuration;
 
     try {
       // Attempt download
-      await this.downloadManager.download(seriesUrl, seriesName, episode);
+      await this.downloadManager.download(seriesUrl, seriesName, episode, minDuration);
 
       // Success - log and continue
       this.notifier.notify(

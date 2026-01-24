@@ -1,12 +1,13 @@
-import { existsSync } from 'node:fs';
-import { mkdir, rename, stat, unlink } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import * as fs from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import { execa } from 'execa';
 import { DownloadError } from '../errors/custom-errors';
 import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
+import { sanitizeFilename } from '../utils/filename-sanitizer';
 import * as VideoValidator from '../utils/video-validator';
 
 /**
@@ -80,21 +81,21 @@ export class DownloadManager {
         this.notifier.notify(NotificationLevel.INFO, `Moving files from temp directory to ${this.downloadDir}...`);
 
         // Ensure download directory exists
-        await mkdir(this.downloadDir, { recursive: true });
+        await fsPromises.mkdir(this.downloadDir, { recursive: true });
 
         for (const file of result.allFiles) {
           try {
             // Resolve 'file' to absolute path just in case
             const absFile = resolve(file);
 
-            if (!existsSync(absFile)) {
+            if (!fs.existsSync(absFile)) {
               this.notifier.notify(NotificationLevel.WARNING, `File not found, skipping move: ${absFile}`);
               continue;
             }
 
             const fileName = basename(absFile);
             const newPath = join(this.downloadDir, fileName);
-            await rename(absFile, newPath);
+            await fsPromises.rename(absFile, newPath);
 
             // Update filename if it matches the main file
             if (absFile === resolve(result.filename)) {
@@ -138,8 +139,8 @@ export class DownloadManager {
     for (const file of files) {
       try {
         const fullPath = resolve(file);
-        if (existsSync(fullPath)) {
-          await unlink(fullPath);
+        if (fs.existsSync(fullPath)) {
+          await fsPromises.unlink(fullPath);
         }
       } catch (e) {
         this.notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
@@ -155,9 +156,10 @@ export class DownloadManager {
     const targetDir = this.tempDir || this.downloadDir;
 
     // Ensure directory exists
-    await mkdir(targetDir, { recursive: true });
+    await fsPromises.mkdir(targetDir, { recursive: true });
 
-    const outputTemplate = `${targetDir}/${seriesName} - ${paddedNumber}.%(ext)s`;
+    const sanitizedSeriesName = sanitizeFilename(seriesName);
+    const outputTemplate = join(targetDir, `${sanitizedSeriesName} - ${paddedNumber}.%(ext)s`);
 
     const args = ['--no-warnings', '--newline', '-o', outputTemplate, episode.url];
 
@@ -188,7 +190,7 @@ export class DownloadManager {
 
         // Capture subtitles from "[info] Writing video subtitles to: ..."
         const subMatch = text.match(/\[info\] Writing video subtitles to:\s*(.+)/);
-        if (subMatch && subMatch[1]) {
+        if (subMatch?.[1]) {
           allFiles.add(subMatch[1]);
         }
 
@@ -241,7 +243,7 @@ export class DownloadManager {
 
       if (!filename) {
         // Fallback if we couldn't parse the filename
-        filename = `${targetDir}/${seriesName} - ${paddedNumber}.mp4`;
+        filename = join(targetDir, `${sanitizedSeriesName} - ${paddedNumber}.mp4`);
       }
 
       // Ensure the main filename is included in allFiles

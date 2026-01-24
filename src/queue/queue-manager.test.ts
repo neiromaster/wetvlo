@@ -46,6 +46,7 @@ describe('QueueManager', () => {
     mockScheduler = {
       registerQueue: mock(() => {}),
       addTask: mock(() => {}),
+      addPriorityTask: mock(() => {}),
       resume: mock(() => {}),
       stop: mock(() => Promise.resolve()),
       getStats: mock(() => new Map()),
@@ -130,11 +131,11 @@ describe('QueueManager', () => {
       expect.objectContaining({ episode: episodes[0] }),
       0,
     );
-    // Second episode: delay based on default (5s) -> 5000ms
+    // Second episode: delay based on default (10s) -> 10000ms
     expect(mockScheduler.addTask).toHaveBeenCalledWith(
       'download:wetv.vip',
       expect.objectContaining({ episode: episodes[1] }),
-      5000,
+      10000,
     );
   });
 
@@ -245,7 +246,7 @@ describe('QueueManager', () => {
     );
 
     // Should requeue
-    expect(mockScheduler.addTask).toHaveBeenCalledWith(
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(
       'download:wetv.vip',
       expect.objectContaining({
         retryCount: 1,

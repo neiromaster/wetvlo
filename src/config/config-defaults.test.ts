@@ -11,15 +11,16 @@ describe('Config Defaults', () => {
   it('should have correct default check settings', () => {
     expect(DEFAULT_CHECK_SETTINGS).toEqual({
       count: 3,
-      checkInterval: 60,
-      downloadTypes: ['available', 'vip'],
+      checkInterval: 600,
+      downloadTypes: ['available'],
     });
   });
 
   it('should have correct default download settings', () => {
     expect(DEFAULT_DOWNLOAD_SETTINGS).toEqual({
       downloadDir: './downloads',
-      downloadDelay: 5,
+      tempDir: './downloads',
+      downloadDelay: 10,
       maxRetries: 3,
       initialTimeout: 5,
       backoffMultiplier: 2,

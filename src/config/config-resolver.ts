@@ -72,6 +72,7 @@ export class ConfigResolver {
 
     return {
       downloadDir: series?.downloadDir ?? domain?.downloadDir ?? global?.downloadDir ?? defaults.downloadDir,
+      tempDir: series?.tempDir ?? domain?.tempDir ?? global?.tempDir ?? defaults.tempDir,
       downloadDelay: series?.downloadDelay ?? domain?.downloadDelay ?? global?.downloadDelay ?? defaults.downloadDelay,
       maxRetries: series?.maxRetries ?? domain?.maxRetries ?? global?.maxRetries ?? defaults.maxRetries,
       initialTimeout:

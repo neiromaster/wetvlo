@@ -27,7 +27,7 @@ describe('Scheduler', () => {
   const configs = [
     { name: 'Series 1', url: 'http://example.com/1', startTime: '10:00' },
     { name: 'Series 2', url: 'http://example.com/2', startTime: '10:00' },
-    { name: 'Series 3', url: 'http://example.com/3', startTime: '11:00' },
+    { name: 'Series 3', url: 'http://example.com/3', startTime: '10:00' },
   ];
 
   beforeEach(() => {
@@ -48,6 +48,7 @@ describe('Scheduler', () => {
     mockQueueManagerInstance.stop.mockClear();
     mockQueueManagerInstance.addSeriesCheck.mockClear();
     mockQueueManagerInstance.hasActiveProcessing.mockClear();
+    mockQueueManagerInstance.hasActiveProcessing.mockReturnValue(false);
     mockQueueManagerFactory.mockClear();
 
     // Create scheduler
@@ -73,6 +74,16 @@ describe('Scheduler', () => {
   });
 
   it('should start scheduler in scheduled mode', async () => {
+    // Setup to break the infinite loop:
+    // 1. No wait for start time
+    mockGetMsUntilTime.mockReturnValue(0);
+    // 2. Simulate active processing to enter the drain loop
+    mockQueueManagerInstance.hasActiveProcessing.mockReturnValue(true);
+    // 3. Stop scheduler when sleeping in the drain loop
+    mockSleep.mockImplementation(async () => {
+      await scheduler.stop();
+    });
+
     await scheduler.start();
 
     expect(mockQueueManagerInstance.start).toHaveBeenCalled();
@@ -109,10 +120,19 @@ describe('Scheduler', () => {
   });
 
   it('should stop scheduler', async () => {
-    // Start first
-    await scheduler.start();
+    // Make sure it pauses inside the loop so we can stop it safely
+    mockGetMsUntilTime.mockReturnValue(10000);
+    // Real sleep to ensure it yields control
+    mockSleep.mockReturnValue(new Promise((r) => setTimeout(r, 50)));
 
+    // Start without await
+    const startPromise = scheduler.start();
+
+    // Stop while it's sleeping
     await scheduler.stop();
+
+    // Should resolve now
+    await startPromise;
 
     expect(mockQueueManagerInstance.stop).toHaveBeenCalled();
     expect(stateManager.save).toHaveBeenCalled();
@@ -134,6 +154,9 @@ describe('Scheduler', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     await expect(scheduler.start()).rejects.toThrow('Scheduler is already running');
+
+    // Stop the scheduler to break the infinite loop of the first start() call
+    await scheduler.stop();
 
     if (resolveSleep) resolveSleep();
     await startPromise;

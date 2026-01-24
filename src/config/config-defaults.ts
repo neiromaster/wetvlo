@@ -22,6 +22,7 @@ export const DEFAULT_CHECK_SETTINGS: Required<CheckSettings> = {
  */
 export const DEFAULT_DOWNLOAD_SETTINGS: Required<DownloadSettings> = {
   downloadDir: './downloads',
+  tempDir: './downloads', // Default temp dir same as download dir
   downloadDelay: 10, // Seconds between downloads
   maxRetries: 3, // Maximum retry attempts on failure
   initialTimeout: 5, // Initial retry delay in seconds

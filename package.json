@@ -1,11 +1,13 @@
 {
   "name": "wetvlo",
   "version": "0.0.1",
-  "description": "An app for downloading videos from various websites.",
+  "description": "CLI application for monitoring and downloading TV series episodes from Chinese video sites (wetv.vip, iq.com)",
   "module": "dist/index.js",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
+  "bin": "./dist/index.js",
+  "exports": "./dist/index.js",
   "scripts": {
     "start": "bun run src/index.ts",
     "start:once": "bun run src/index.ts --once",
@@ -25,8 +27,30 @@
     "typescript": "^5.9.3"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "keywords": [
+    "video",
+    "downloader",
+    "yt-dlp",
+    "wetv",
+    "iqiyi",
+    "chinese",
+    "tv-series",
+    "cli"
+  ],
+  "author": "Maxim (neiromaster) Gavrilenko",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neiromaster/wetvlo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/neiromaster/wetvlo/issues"
+  },
+  "homepage": "https://github.com/neiromaster/wetvlo#readme",
   "dependencies": {
     "cheerio": "^1.1.2",
     "cmd-ts": "^0.14.3",

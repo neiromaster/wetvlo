@@ -40,9 +40,29 @@ describe('TelegramNotifier', () => {
 
     expect(url).toBe('https://api.telegram.org/botfake-token/sendMessage');
     expect(body.chat_id).toBe('fake-chat-id');
-    expect(body.text).toContain('❌ *wetvlo Error*');
-    expect(body.text).toContain('error message');
-    expect(body.parse_mode).toBe('Markdown');
+    expect(body.text).toContain('❌ <b>wetvlo Error</b>');
+    expect(body.text).toContain('<pre>error message</pre>');
+    expect(body.parse_mode).toBe('HTML');
+  });
+
+  it('should escape HTML characters', async () => {
+    await notifier.notify(NotificationLevel.ERROR, 'Error with <tags> & symbols');
+
+    const calls = (global.fetch as any).mock.calls;
+    const body = JSON.parse(calls[0][1].body);
+
+    expect(body.text).toContain('&lt;tags&gt; &amp; symbols');
+  });
+
+  it('should truncate long messages', async () => {
+    const longMessage = 'a'.repeat(5000);
+    await notifier.notify(NotificationLevel.ERROR, longMessage);
+
+    const calls = (global.fetch as any).mock.calls;
+    const body = JSON.parse(calls[0][1].body);
+
+    expect(body.text.length).toBeLessThan(4200); // 4096 is the limit, plus tags
+    expect(body.text).toContain('(truncated)');
   });
 
   it('should handle fetch errors gracefully', async () => {

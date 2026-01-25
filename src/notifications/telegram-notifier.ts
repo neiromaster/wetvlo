@@ -34,7 +34,18 @@ export class TelegramNotifier implements Notifier {
 
     try {
       const emoji = this.getEmoji(level);
-      const formattedMessage = `${emoji} *wetvlo Error*\n\n${message}`;
+      // Truncate message if it's too long (Telegram limit is 4096 chars)
+      // We reserve ~100 chars for header and tags
+      const MAX_LENGTH = 4000;
+      let safeMessage = message;
+      if (safeMessage.length > MAX_LENGTH) {
+        safeMessage = safeMessage.substring(0, MAX_LENGTH) + '\n... (truncated)';
+      }
+
+      // Escape HTML characters in the message to prevent parsing errors
+      const escapedMessage = this.escapeHtml(safeMessage);
+      // Use <pre> tag for the error message to preserve formatting and monospacing
+      const formattedMessage = `${emoji} <b>wetvlo Error</b>\n\n<pre>${escapedMessage}</pre>`;
 
       const response = await fetch(this.apiUrl, {
         method: 'POST',
@@ -44,7 +55,7 @@ export class TelegramNotifier implements Notifier {
         body: JSON.stringify({
           chat_id: this.config.chatId,
           text: formattedMessage,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
         }),
       });
 
@@ -58,6 +69,13 @@ export class TelegramNotifier implements Notifier {
       // Don't throw for notification errors, just log them
       console.error('Telegram notification failed:', error);
     }
+  }
+
+  /**
+   * Escape HTML special characters
+   */
+  private escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   /**

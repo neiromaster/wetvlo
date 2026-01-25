@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StateError } from '../errors/custom-errors';
-import type { SeriesEpisode, State } from '../types/state.types';
+import type { State } from '../types/state.types';
 import { createEmptyState } from '../types/state.types';
 
 /**
- * State manager class for tracking downloaded episodes (v2.0.0 - series-grouped)
+ * State manager class for tracking downloaded episodes (v3.0.0 - simplified)
  */
 export class StateManager {
   private state: State;
@@ -45,7 +45,20 @@ export class StateManager {
     if (!this.dirty) return;
 
     try {
-      this.state.lastUpdated = new Date().toISOString();
+      // Sort series keys
+      const sortedSeries: Record<string, string[]> = {};
+      Object.keys(this.state.series)
+        .sort()
+        .forEach((key) => {
+          // Sort episode numbers
+          const episodes = this.state.series[key];
+          if (episodes) {
+            sortedSeries[key] = [...episodes].sort();
+          }
+        });
+
+      this.state.series = sortedSeries;
+
       const content = JSON.stringify(this.state, null, 2);
       await writeFile(this.statePath, content, 'utf-8');
       this.dirty = false;
@@ -57,82 +70,52 @@ export class StateManager {
   /**
    * Check if an episode has been downloaded
    */
-  isDownloaded(seriesUrl: string, episodeNumber: number): boolean {
-    const series = this.state.series[seriesUrl];
-    if (!series) return false;
+  isDownloaded(seriesName: string, episodeNumber: number): boolean {
+    const episodes = this.state.series[seriesName];
+    if (!episodes) return false;
 
     const paddedNumber = String(episodeNumber).padStart(2, '0');
-    return !!series.episodes[paddedNumber];
+    return episodes.includes(paddedNumber);
   }
 
   /**
    * Add a downloaded episode to state
    */
-  addDownloadedEpisode(
-    seriesUrl: string,
-    seriesName: string,
-    episode: {
-      number: number;
-      url: string;
-      filename: string;
-      size: number;
-    },
-  ): void {
-    // Get or create series entry
-    if (!this.state.series[seriesUrl]) {
-      this.state.series[seriesUrl] = {
-        name: seriesName,
-        episodes: {},
-      };
+  addDownloadedEpisode(seriesName: string, episodeNumber: number): void {
+    if (!this.state.series[seriesName]) {
+      this.state.series[seriesName] = [];
     }
 
-    const paddedNumber = String(episode.number).padStart(2, '0');
+    const paddedNumber = String(episodeNumber).padStart(2, '0');
 
-    // Skip if already exists
-    if (this.state.series[seriesUrl].episodes[paddedNumber]) {
-      return;
-    }
-
-    this.state.series[seriesUrl].episodes[paddedNumber] = {
-      url: episode.url,
-      filename: episode.filename,
-      downloadedAt: new Date().toISOString(),
-      size: episode.size,
-    };
-
-    this.dirty = true;
-  }
-
-  /**
-   * Get all episodes for a series
-   */
-  getSeriesEpisodes(seriesUrl: string): Record<string, SeriesEpisode> {
-    const series = this.state.series[seriesUrl];
-    return series?.episodes ?? {};
-  }
-
-  /**
-   * Delete a series from state (for finished shows)
-   */
-  deleteSeries(seriesUrl: string): void {
-    if (this.state.series[seriesUrl]) {
-      delete this.state.series[seriesUrl];
+    if (!this.state.series[seriesName].includes(paddedNumber)) {
+      this.state.series[seriesName].push(paddedNumber);
       this.dirty = true;
     }
   }
 
   /**
-   * Get all series URLs
+   * Get all episodes for a series
    */
-  getAllSeriesUrls(): string[] {
-    return Object.keys(this.state.series);
+  getSeriesEpisodes(seriesName: string): string[] {
+    return this.state.series[seriesName] ?? [];
   }
 
   /**
-   * Get series name
+   * Delete a series from state (for finished shows)
    */
-  getSeriesName(seriesUrl: string): string | null {
-    return this.state.series[seriesUrl]?.name ?? null;
+  deleteSeries(seriesName: string): void {
+    if (this.state.series[seriesName]) {
+      delete this.state.series[seriesName];
+      this.dirty = true;
+    }
+  }
+
+  /**
+   * Get all series names
+   */
+  getAllSeriesNames(): string[] {
+    return Object.keys(this.state.series);
   }
 
   /**
@@ -140,8 +123,8 @@ export class StateManager {
    */
   getDownloadedCount(): number {
     let count = 0;
-    for (const series of Object.values(this.state.series)) {
-      count += Object.keys(series.episodes).length;
+    for (const episodes of Object.values(this.state.series)) {
+      count += episodes.length;
     }
     return count;
   }

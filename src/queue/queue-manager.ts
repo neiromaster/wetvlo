@@ -486,7 +486,7 @@ export class QueueManager {
   private async performCheck(
     handler: ReturnType<typeof handlerRegistry.getHandlerOrThrow>,
     seriesUrl: string,
-    _seriesName: string,
+    seriesName: string,
     config: ResolvedSeriesConfig,
     attemptNumber: number,
     domain: string,
@@ -523,7 +523,7 @@ export class QueueManager {
     // Filter for episodes matching download types and not yet downloaded
     const newEpisodes = episodes.filter((ep) => {
       const shouldDownload = downloadTypes.includes(ep.type as EpisodeType);
-      const notDownloaded = !this.stateManager.isDownloaded(seriesUrl, ep.number);
+      const notDownloaded = !this.stateManager.isDownloaded(seriesName, ep.number);
       return shouldDownload && notDownloaded;
     });
 

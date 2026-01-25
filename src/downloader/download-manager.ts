@@ -48,7 +48,7 @@ export class DownloadManager {
    */
   async download(seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
     // Check if already downloaded
-    if (this.stateManager.isDownloaded(seriesUrl, episode.number)) {
+    if (this.stateManager.isDownloaded(seriesName, episode.number)) {
       return false;
     }
 
@@ -108,12 +108,7 @@ export class DownloadManager {
       }
 
       // Add to state
-      this.stateManager.addDownloadedEpisode(seriesUrl, seriesName, {
-        number: episode.number,
-        url: episode.url,
-        filename: result.filename,
-        size: fileSize,
-      });
+      this.stateManager.addDownloadedEpisode(seriesName, episode.number);
       await this.stateManager.save();
 
       this.notifier.notify(

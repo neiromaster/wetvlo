@@ -56,11 +56,46 @@ export class Logger {
   }
 
   /**
+   * Get emoji for log level
+   */
+  private getEmoji(level: LogLevel): string {
+    switch (level) {
+      case LogLevel.DEBUG:
+        return '🔍';
+      case LogLevel.INFO:
+        return 'ℹ️';
+      case LogLevel.SUCCESS:
+        return '✅';
+      case LogLevel.WARNING:
+        return '⚠️';
+      case LogLevel.ERROR:
+        return '❌';
+      case LogLevel.HIGHLIGHT:
+        return '🌟';
+      default:
+        return '•';
+    }
+  }
+
+  /**
+   * Format date to human readable string (MM-DD HH:mm:ss)
+   */
+  private formatDate(date: Date): string {
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hour = date.getHours().toString().padStart(2, '0');
+    const min = date.getMinutes().toString().padStart(2, '0');
+    const sec = date.getSeconds().toString().padStart(2, '0');
+    return `${month}-${day} ${hour}:${min}:${sec}`;
+  }
+
+  /**
    * Format log message with timestamp and level
    */
   private format(level: LogLevel, message: string): string {
-    const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level}] ${message}`;
+    const timestamp = this.formatDate(new Date());
+    const emoji = this.getEmoji(level);
+    return `${timestamp} ${emoji} ${message}`;
   }
 
   /**

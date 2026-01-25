@@ -19,12 +19,12 @@ describe('Logger', () => {
 
   it('should log info messages', () => {
     logger.info('info message');
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('[INFO] info message'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('ℹ️ info message'));
   });
 
   it('should log error messages', () => {
     logger.error('error message');
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('[ERROR] error message'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('❌ error message'));
   });
 
   it('should filter messages based on level', () => {

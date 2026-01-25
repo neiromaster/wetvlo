@@ -45,6 +45,7 @@ describe('QueueManager', () => {
     // Create mock scheduler
     mockScheduler = {
       registerQueue: mock(() => {}),
+      hasQueue: mock(() => false),
       addTask: mock(() => {}),
       addPriorityTask: mock(() => {}),
       resume: mock(() => {}),
@@ -103,7 +104,7 @@ describe('QueueManager', () => {
     queueManager.addSeriesCheck(config);
 
     expect(mockScheduler.addTask).toHaveBeenCalledWith(
-      'check:wetv.vip',
+      expect.stringMatching(/^check:wetv\.vip:[a-f0-9]{12}$/),
       expect.objectContaining({
         seriesUrl: config.url,
         seriesName: config.name,
@@ -113,6 +114,36 @@ describe('QueueManager', () => {
           url: config.url,
         }),
       }),
+    );
+  });
+
+  it('should add episodes to download queue with series config delay', () => {
+    const episodes = [
+      { number: 1, url: 'url1', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
+      { number: 2, url: 'url2', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
+    ];
+
+    const config = {
+      name: 'Test Series',
+      url: 'https://wetv.vip/play/123',
+      startTime: '12:00',
+      download: { downloadDelay: 60 }, // Custom delay
+    };
+
+    queueManager.addEpisodes('https://wetv.vip/play/123', 'Test Series', episodes, config);
+
+    expect(mockScheduler.addTask).toHaveBeenCalledTimes(2);
+    // First episode: 0 delay
+    expect(mockScheduler.addTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ episode: episodes[0] }),
+      0,
+    );
+    // Second episode: delay based on series config (60s) -> 60000ms
+    expect(mockScheduler.addTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ episode: episodes[1] }),
+      60000,
     );
   });
 

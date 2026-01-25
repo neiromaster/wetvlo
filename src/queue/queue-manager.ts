@@ -9,6 +9,7 @@
  * - Proper end-to-start cooldowns
  */
 
+import { createHash } from 'node:crypto';
 import { ConfigResolver } from '../config/config-resolver.js';
 import type { ResolvedSeriesConfig } from '../config/resolved-config.types.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
@@ -99,8 +100,11 @@ export class QueueManager {
   addSeriesCheck(config: SeriesConfig): void {
     const domain = extractDomain(config.url);
 
-    // Register queues for this domain if not already registered
-    this.registerDomainQueues(domain);
+    // Register download queue for this domain (shared across series)
+    this.registerDownloadQueue(domain);
+
+    // Register specific check queue for this series (isolated interval)
+    const queueName = this.registerSeriesCheckQueue(domain, config);
 
     // Add series to check queue with config
     const item: CheckQueueItem = {
@@ -111,7 +115,6 @@ export class QueueManager {
       retryCount: 0,
     };
 
-    const queueName = `check:${domain}`;
     this.scheduler.addTask(queueName, item);
 
     this.notifier.notify(
@@ -135,11 +138,16 @@ export class QueueManager {
 
     const domain = extractDomain(seriesUrl);
 
-    // Register queues for this domain if not already registered
-    this.registerDomainQueues(domain);
+    // Register download queues for this domain if not already registered
+    this.registerDownloadQueue(domain);
 
     // Get download delay from resolved config
-    const resolvedConfig = this.configResolver.resolveDomain(domain);
+    let resolvedConfig: ResolvedSeriesConfig;
+    if (config) {
+      resolvedConfig = this.configResolver.resolve(config);
+    } else {
+      resolvedConfig = this.configResolver.resolveDomain(domain);
+    }
     const { downloadDelay } = resolvedConfig.download;
 
     // Add episodes to download queue with staggered delays
@@ -223,11 +231,18 @@ export class QueueManager {
 
     for (const [queueName, queueStats] of stats.entries()) {
       if (queueName.startsWith('check:')) {
-        const domain = queueName.slice(6); // Remove "check:" prefix
-        checkQueues[domain] = {
-          length: queueStats.queueLength,
-          processing: queueStats.isExecuting,
-        };
+        const parts = queueName.split(':');
+        const domain = parts[1]; // Extract domain from check:domain:hash
+        if (!domain) continue;
+
+        if (!checkQueues[domain]) {
+          checkQueues[domain] = { length: 0, processing: false };
+        }
+
+        checkQueues[domain].length += queueStats.queueLength;
+        if (queueStats.isExecuting) {
+          checkQueues[domain].processing = true;
+        }
       } else if (queueName.startsWith('download:')) {
         const domain = queueName.slice(9); // Remove "download:" prefix
         downloadQueues[domain] = {
@@ -241,34 +256,51 @@ export class QueueManager {
   }
 
   /**
-   * Register queues for a domain if not already registered
-   *
-   * @param domain - Domain name
+   * Register download queue for a domain (shared across series)
    */
-  private registerDomainQueues(domain: string): void {
-    const checkQueueName = `check:${domain}`;
-    const downloadQueueName = `download:${domain}`;
+  private registerDownloadQueue(domain: string): void {
+    const queueName = `download:${domain}`;
 
-    // Check if queues are already registered
-    const existingStats = this.scheduler.getStats();
-    if (existingStats.has(checkQueueName) && existingStats.has(downloadQueueName)) {
+    // Check if queue is already registered
+    if (this.scheduler.hasQueue(queueName)) {
       return;
     }
 
     // Resolve configuration
     const resolvedConfig = this.configResolver.resolveDomain(domain);
-
-    // Get handler for this domain
-    const handler = handlerRegistry.getHandlerOrThrow(`https://${domain}/`);
-    this.domainHandlers.set(domain, handler);
-
-    // Get cooldowns
-    const { checkInterval } = resolvedConfig.check;
     const { downloadDelay } = resolvedConfig.download;
 
-    // Register queues with scheduler
-    this.scheduler.registerQueue(checkQueueName, checkInterval * 1000); // Convert to ms
-    this.scheduler.registerQueue(downloadQueueName, downloadDelay * 1000); // Convert to ms
+    // Register queue with scheduler
+    this.scheduler.registerQueue(queueName, downloadDelay * 1000); // Convert to ms
+  }
+
+  /**
+   * Register specific check queue for a series (isolated interval)
+   */
+  private registerSeriesCheckQueue(domain: string, config: SeriesConfig): string {
+    // Generate a short hash of the URL to ensure uniqueness and safe queue name
+    const hash = createHash('md5').update(config.url).digest('hex').substring(0, 12);
+    const queueName = `check:${domain}:${hash}`;
+
+    // Check if queue is already registered
+    if (this.scheduler.hasQueue(queueName)) {
+      return queueName;
+    }
+
+    // Resolve configuration
+    const resolvedConfig = this.configResolver.resolve(config);
+    const { checkInterval } = resolvedConfig.check;
+
+    // Register queue with scheduler
+    this.scheduler.registerQueue(queueName, checkInterval * 1000); // Convert to ms
+
+    // Ensure we have a handler for this domain
+    if (!this.domainHandlers.has(domain)) {
+      const handler = handlerRegistry.getHandlerOrThrow(`https://${domain}/`);
+      this.domainHandlers.set(domain, handler);
+    }
+
+    return queueName;
   }
 
   /**

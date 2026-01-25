@@ -72,6 +72,16 @@ export class UniversalScheduler<TaskType> {
   }
 
   /**
+   * Check if a queue is registered
+   *
+   * @param typeName - Queue type name
+   * @returns Whether queue is registered
+   */
+  hasQueue(typeName: string): boolean {
+    return this.queues.has(typeName);
+  }
+
+  /**
    * Unregister a queue type
    *
    * @param typeName - Queue type name to unregister

@@ -22,6 +22,7 @@ series:
     # Optional: Override download settings for this series
     download:
       downloadDelay: 10 # Delay between downloads in seconds (default: 5)
+      minDuration: 300 # Minimum duration in seconds (ignore clips/trailers)
       maxRetries: 5 # Maximum retry attempts on failure (default: 3)
       initialTimeout: 15 # Initial retry delay in seconds (default: 5)
       backoffMultiplier: 2 # Exponential backoff multiplier (default: 2)
@@ -46,6 +47,7 @@ domainConfigs:
         - vip
     download:
       downloadDelay: 5 # Default seconds between downloads
+      minDuration: 0 # Minimum duration (0 = disabled)
       maxRetries: 3 # Maximum retry attempts
       initialTimeout: 5 # Initial retry delay in seconds
       backoffMultiplier: 2 # Exponential backoff multiplier
@@ -76,7 +78,9 @@ globalConfigs:
       - vip
   download:
     downloadDir: "./downloads" # Directory where downloads are saved
+    tempDir: "./downloads/temp" # Temporary directory for incomplete downloads (optional)
     downloadDelay: 5 # Seconds between downloads
+    minDuration: 0 # Minimum duration in seconds (0 = disabled)
     maxRetries: 3 # Maximum retry attempts on failure
     initialTimeout: 5 # Initial retry delay in seconds
     backoffMultiplier: 2 # Exponential backoff multiplier

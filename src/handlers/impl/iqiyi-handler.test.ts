@@ -109,5 +109,109 @@ describe('IQiyiHandler', () => {
 
       expect(episodes).toHaveLength(1);
     });
+
+    it('should filter out BTS episodes', async () => {
+      const html = `
+        <html>
+          <body>
+            <ul>
+              <li><a href="/play/ep1">Episode 1</a></li>
+              <li><a href="/play/ep2">BTS1</a></li>
+              <li><a href="/play/ep3">Episode 2</a></li>
+              <li><a href="/play/ep4">BTS2 Behind The Scenes</a></li>
+            </ul>
+          </body>
+        </html>
+      `;
+
+      global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+      const episodes = await handler.extractEpisodes('https://www.iq.com/play/123');
+
+      expect(episodes).toHaveLength(2);
+      expect(episodes[0]?.number).toBe(1);
+      expect(episodes[1]?.number).toBe(2);
+    });
+
+    describe('extractFromNextData', () => {
+      it('should extract all episodes from __NEXT_DATA__', async () => {
+        const pageData = {
+          albumInfo: {
+            albumId: 'test123',
+            title: 'Test Series',
+          },
+          videoList: [
+            {
+              vid: 'abc123',
+              episode: '01',
+              isTrailer: false,
+              payStatus: 8,
+            },
+            {
+              vid: 'def456',
+              episode: '02',
+              isTrailer: false,
+              payStatus: 6,
+            },
+            {
+              vid: 'ghi789',
+              episode: '03',
+              isTrailer: true,
+              payStatus: 8,
+            },
+          ],
+        };
+
+        const nextData = {
+          props: {
+            pageProps: {
+              data: JSON.stringify(pageData),
+            },
+          },
+        };
+
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://www.iq.com/play/test');
+
+        expect(episodes).toHaveLength(2); // Excludes trailer
+
+        expect(episodes[0]?.number).toBe(1);
+        expect(episodes[0]?.type).toBe(EpisodeType.AVAILABLE);
+
+        expect(episodes[1]?.number).toBe(2);
+        expect(episodes[1]?.type).toBe(EpisodeType.VIP);
+      });
+
+      it('should fall back to HTML parsing when __NEXT_DATA__ is invalid', async () => {
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">invalid json</script>
+              <ul>
+                <li>
+                  <a href="/play/ep1">Episode 1</a>
+                </li>
+              </ul>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://www.iq.com/play/test');
+
+        expect(episodes).toHaveLength(1);
+        expect(episodes[0]?.number).toBe(1);
+      });
+    });
   });
 });

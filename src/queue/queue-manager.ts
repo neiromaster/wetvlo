@@ -501,7 +501,21 @@ export class QueueManager {
     // Extract episodes from the series page
     const episodes = await handler.extractEpisodes(seriesUrl);
 
-    this.notifier.notify(NotificationLevel.INFO, `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl}`);
+    // Log episodes by type
+    const episodesByType = new Map<EpisodeType, number>();
+    episodes.forEach((ep) => {
+      const count = episodesByType.get(ep.type) || 0;
+      episodesByType.set(ep.type, count + 1);
+    });
+
+    const typeSummary = Array.from(episodesByType.entries())
+      .map(([type, count]) => `${type}: ${count}`)
+      .join(', ');
+
+    this.notifier.notify(
+      NotificationLevel.INFO,
+      `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl} (${typeSummary})`,
+    );
 
     // Get download types from config
     const downloadTypes = config.check.downloadTypes;
@@ -512,6 +526,15 @@ export class QueueManager {
       const notDownloaded = !this.stateManager.isDownloaded(seriesUrl, ep.number);
       return shouldDownload && notDownloaded;
     });
+
+    // Log how many episodes will be downloaded
+    if (episodes.length !== newEpisodes.length) {
+      const skippedCount = episodes.length - newEpisodes.length;
+      this.notifier.notify(
+        NotificationLevel.INFO,
+        `[${domain}] Filtering to ${downloadTypes.join(' or ')}: ${newEpisodes.length} episodes to download, ${skippedCount} skipped`,
+      );
+    }
 
     if (newEpisodes.length > 0) {
       return {

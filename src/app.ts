@@ -1,3 +1,4 @@
+import * as readline from 'node:readline';
 import { boolean, command, flag, option, string } from 'cmd-ts';
 import { DEFAULT_DOWNLOAD_DIR } from './config/config-defaults.js';
 import { loadConfig } from './config/config-loader.js';
@@ -165,6 +166,41 @@ export async function runApp(
     await handleShutdown(scheduler, stateManager);
     process.exit(0);
   });
+
+  // Setup keyboard input for interactive commands
+  if (mode === 'scheduled' && process.stdin.isTTY) {
+    logger.info('Interactive mode enabled:');
+    logger.info('  [r] Reload configuration');
+    logger.info('  [c] Trigger immediate checks');
+    logger.info('  [q] Quit');
+
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+
+    process.stdin.on('keypress', async (_str, key) => {
+      if (!key) return;
+
+      // q or Ctrl+C to quit
+      if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
+        await handleShutdown(scheduler, stateManager);
+        process.exit(0);
+      }
+      // r to reload config
+      else if (key.name === 'r') {
+        try {
+          logger.info(`Reloading configuration from ${configPath}...`);
+          const newConfig = await deps.loadConfig(configPath);
+          await scheduler.reload(newConfig.series, newConfig.globalConfigs, newConfig.domainConfigs);
+        } catch (error) {
+          logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      // c to trigger checks
+      else if (key.name === 'c') {
+        await scheduler.triggerAllChecks();
+      }
+    });
+  }
 
   // Start the scheduler
   await scheduler.start();

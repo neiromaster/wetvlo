@@ -54,6 +54,7 @@ export class Scheduler {
   private globalConfigs?: GlobalConfigs;
   private domainConfigs?: DomainConfig[];
   private timeProvider: TimeProvider;
+  private scheduleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     configs: SeriesConfig[],
@@ -109,57 +110,61 @@ export class Scheduler {
     if (this.options.mode === 'once') {
       this.notifier.notify(NotificationLevel.INFO, 'Single-run mode: checking all series once');
       await this.runOnce();
+      this.running = false;
     } else {
       this.notifier.notify(NotificationLevel.INFO, 'Scheduler started (queue-based architecture)');
-      // Group configs by start time
-      const groupedConfigs = this.groupConfigsByStartTime();
+      this.scheduleNextBatch();
 
-      while (!this.stopped) {
-        // Find the next start time
-        let nextTime: string | null = null;
-        let minMsUntil = Number.MAX_SAFE_INTEGER;
-
-        for (const startTime of groupedConfigs.keys()) {
-          const msUntil = this.timeProvider.getMsUntilTime(startTime);
-          if (msUntil < minMsUntil) {
-            minMsUntil = msUntil;
-            nextTime = startTime;
+      // Keep promise pending forever for scheduled mode to prevent process exit
+      // In a real app, this is handled by the event loop being active (timers/intervals)
+      // but runApp awaits start(), so we return a promise that only resolves on stop()
+      return new Promise<void>((resolve) => {
+        const checkStop = setInterval(() => {
+          if (!this.running) {
+            clearInterval(checkStop);
+            resolve();
           }
-        }
+        }, 100);
+      });
+    }
+  }
 
-        if (!nextTime) {
-          this.notifier.notify(NotificationLevel.WARNING, 'No scheduled configs found. Exiting loop.');
-          break;
-        }
+  private scheduleNextBatch(): void {
+    if (this.stopped) return;
 
-        const configs = groupedConfigs.get(nextTime);
-        if (!configs) break;
+    const groupedConfigs = this.groupConfigsByStartTime();
+    let nextTime: string | null = null;
+    let minMsUntil = Number.MAX_SAFE_INTEGER;
 
-        // Wait until start time
-        if (minMsUntil > 0) {
-          this.notifier.notify(
-            NotificationLevel.INFO,
-            `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until ${nextTime}...`,
-          );
-          // biome-ignore lint/performance/noAwaitInLoops: Sequential waiting is intentional
-          await this.timeProvider.sleep(minMsUntil);
-        }
-
-        if (this.stopped) break;
-
-        // Add all configs to queue manager
-        await this.runConfigs(configs);
-
-        // Wait for queues to drain (optional - can remove if not needed)
-        while (this.queueManager.hasActiveProcessing()) {
-          if (this.stopped) break;
-          // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-          await this.timeProvider.sleep(1000);
-        }
+    for (const startTime of groupedConfigs.keys()) {
+      const msUntil = this.timeProvider.getMsUntilTime(startTime);
+      if (msUntil < minMsUntil) {
+        minMsUntil = msUntil;
+        nextTime = startTime;
       }
     }
 
-    this.running = false;
+    if (!nextTime) {
+      this.notifier.notify(NotificationLevel.WARNING, 'No scheduled configs found.');
+      return;
+    }
+
+    const configs = groupedConfigs.get(nextTime);
+    if (!configs) return;
+
+    if (minMsUntil > 0) {
+      this.notifier.notify(
+        NotificationLevel.INFO,
+        `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until ${nextTime}...`,
+      );
+    }
+
+    // Schedule next run
+    this.scheduleTimer = setTimeout(async () => {
+      if (this.stopped) return;
+      await this.runConfigs(configs);
+      this.scheduleNextBatch();
+    }, minMsUntil);
   }
 
   /**
@@ -169,6 +174,10 @@ export class Scheduler {
     this.notifier.notify(NotificationLevel.INFO, 'Stopping scheduler...');
 
     this.stopped = true;
+    if (this.scheduleTimer) {
+      clearTimeout(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
 
     // Stop queue manager (drains all queues)
     await this.queueManager.stop();
@@ -179,6 +188,42 @@ export class Scheduler {
     this.running = false;
 
     this.notifier.notify(NotificationLevel.INFO, 'Scheduler stopped');
+  }
+
+  /**
+   * Reload configuration
+   */
+  async reload(configs: SeriesConfig[], globalConfigs?: GlobalConfigs, domainConfigs?: DomainConfig[]): Promise<void> {
+    this.notifier.notify(NotificationLevel.INFO, 'Reloading configuration...');
+
+    // Update internal state
+    this.configs = configs;
+    this.globalConfigs = globalConfigs;
+    this.domainConfigs = domainConfigs;
+
+    // Update queue manager config
+    this.queueManager.updateConfig(domainConfigs, globalConfigs);
+
+    // If running in scheduled mode, restart the schedule
+    if (this.running && this.options.mode === 'scheduled') {
+      if (this.scheduleTimer) {
+        clearTimeout(this.scheduleTimer);
+        this.scheduleTimer = null;
+      }
+      this.scheduleNextBatch();
+    }
+
+    this.notifier.notify(NotificationLevel.SUCCESS, 'Configuration reloaded');
+  }
+
+  /**
+   * Trigger immediate checks for all series
+   */
+  async triggerAllChecks(): Promise<void> {
+    this.notifier.notify(NotificationLevel.INFO, 'Triggering immediate checks for all series...');
+    for (const config of this.configs) {
+      this.queueManager.addSeriesCheck(config);
+    }
   }
 
   /**

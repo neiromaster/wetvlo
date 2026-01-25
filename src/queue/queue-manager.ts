@@ -176,6 +176,17 @@ export class QueueManager {
   }
 
   /**
+   * Update configuration
+   *
+   * @param domainConfigs - Domain configurations
+   * @param globalConfigs - Global configurations
+   */
+  updateConfig(domainConfigs: DomainConfig[] = [], globalConfigs?: GlobalConfigs): void {
+    this.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
+    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration updated');
+  }
+
+  /**
    * Start all queues
    */
   start(): void {

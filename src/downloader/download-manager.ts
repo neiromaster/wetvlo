@@ -46,7 +46,7 @@ export class DownloadManager {
   /**
    * Download an episode using yt-dlp with progress tracking
    */
-  async download(seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
+  async download(_seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
     // Check if already downloaded
     if (this.stateManager.isDownloaded(seriesName, episode.number)) {
       return false;

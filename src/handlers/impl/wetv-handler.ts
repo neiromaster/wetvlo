@@ -83,7 +83,7 @@ export class WeTVHandler extends BaseHandler {
 
       // Process each video
       for (const video of videoList) {
-        const { vid, episode, isTrailer, payStatus, defaultPayStatus, labels } = video;
+        const { vid, episode, isTrailer } = video;
 
         // Skip trailers/teasers
         if (isTrailer) {

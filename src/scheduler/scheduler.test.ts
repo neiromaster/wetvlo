@@ -11,6 +11,7 @@ const mockQueueManagerInstance = {
   start: mock(() => {}),
   stop: mock(() => Promise.resolve()),
   addSeriesCheck: mock(() => {}),
+  updateConfig: mock(() => {}),
   getQueueStats: mock(() => ({})),
   hasActiveProcessing: mock(() => false),
 };
@@ -74,23 +75,32 @@ describe('Scheduler', () => {
   });
 
   it('should start scheduler in scheduled mode', async () => {
-    // Setup to break the infinite loop:
-    // 1. No wait for start time
-    mockGetMsUntilTime.mockReturnValue(0);
-    // 2. Simulate active processing to enter the drain loop
-    mockQueueManagerInstance.hasActiveProcessing.mockReturnValue(true);
-    // 3. Stop scheduler when sleeping in the drain loop
-    mockSleep.mockImplementation(async () => {
-      await scheduler.stop();
+    // Setup:
+    // Return 0 first time to schedule immediately, then large value to wait
+    let firstCall = true;
+    mockGetMsUntilTime.mockImplementation(() => {
+      if (firstCall) {
+        firstCall = false;
+        return 0;
+      }
+      return 100000;
     });
 
-    await scheduler.start();
+    // Start scheduler (don't await yet as it blocks until stop)
+    const startPromise = scheduler.start();
+
+    // Wait for event loop to process setTimeout(0)
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(mockQueueManagerInstance.start).toHaveBeenCalled();
     expect(notifier.notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringContaining('Scheduler started'));
 
-    // Should add all configs to queue
+    // Should add all configs to queue (since delay is 0)
     expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
+
+    // Cleanup
+    await scheduler.stop();
+    await startPromise;
   });
 
   it('should start scheduler in once mode', async () => {

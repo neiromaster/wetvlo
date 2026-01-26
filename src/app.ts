@@ -6,6 +6,7 @@ import { DownloadManager } from './downloader/download-manager.js';
 import { ConfigError } from './errors/custom-errors.js';
 import { handlerRegistry } from './handlers/handler-registry.js';
 import { IQiyiHandler } from './handlers/impl/iqiyi-handler.js';
+import { MGTVHandler } from './handlers/impl/mgtv-handler.js';
 import { WeTVHandler } from './handlers/impl/wetv-handler.js';
 import { ConsoleNotifier } from './notifications/console-notifier.js';
 import type { NotificationLevel, Notifier } from './notifications/notifier.js';
@@ -132,6 +133,7 @@ export async function runApp(
   // Register handlers
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
+  handlerRegistry.register(new MGTVHandler());
   logger.info(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Load cookies if specified

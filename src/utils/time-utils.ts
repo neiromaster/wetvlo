@@ -1,3 +1,5 @@
+import parser from 'cron-parser';
+
 /**
  * Parse time string in HH:MM format
  *
@@ -46,6 +48,25 @@ export function getMsUntilTime(timeStr: string): number {
   }
 
   return targetDate.getTime() - now.getTime();
+}
+
+/**
+ * Get milliseconds until the next occurrence of a cron expression
+ *
+ * @param cronExpression - Cron expression
+ * @returns Milliseconds until the next occurrence
+ */
+export function getMsUntilCron(cronExpression: string): number {
+  try {
+    const interval = parser.parseExpression(cronExpression);
+    const nextDate = interval.next().toDate();
+    const now = new Date();
+    return nextDate.getTime() - now.getTime();
+  } catch (err) {
+    throw new Error(
+      `Invalid cron expression: "${cronExpression}". Error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import { Scheduler } from './scheduler.js';
 
 // Define mutable mocks
 const mockGetMsUntilTime = mock(() => 0);
+const mockGetMsUntilCron = mock(() => 0);
 const mockSleep = mock(() => Promise.resolve());
 
 // Mock dependencies
@@ -34,6 +35,7 @@ describe('Scheduler', () => {
   beforeEach(() => {
     // Reset mocks defaults
     mockGetMsUntilTime.mockReturnValue(0);
+    mockGetMsUntilCron.mockReturnValue(0);
     mockSleep.mockReturnValue(Promise.resolve());
 
     stateManager = {
@@ -64,6 +66,7 @@ describe('Scheduler', () => {
       undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
+        getMsUntilCron: mockGetMsUntilCron,
         sleep: mockSleep,
       },
       mockQueueManagerFactory as any,
@@ -115,6 +118,7 @@ describe('Scheduler', () => {
       undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
+        getMsUntilCron: mockGetMsUntilCron,
         sleep: mockSleep,
       },
       mockQueueManagerFactory as any,
@@ -187,6 +191,7 @@ describe('Scheduler', () => {
       undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
+        getMsUntilCron: mockGetMsUntilCron,
         sleep: mockSleep,
       },
       mockQueueManagerFactory as any,
@@ -195,5 +200,46 @@ describe('Scheduler', () => {
     await scheduler.start();
 
     expect(mockQueueManagerInstance.hasActiveProcessing).toHaveBeenCalled();
+  });
+
+  it('should handle cron schedules', async () => {
+    const cronConfigs = [{ name: 'Cron Series', url: 'http://example.com/cron', cron: '0 0 * * *' }];
+
+    scheduler = new Scheduler(
+      cronConfigs as any,
+      stateManager,
+      downloadManager,
+      notifier,
+      undefined,
+      { mode: 'scheduled' },
+      undefined,
+      undefined,
+      {
+        getMsUntilTime: mockGetMsUntilTime,
+        getMsUntilCron: mockGetMsUntilCron,
+        sleep: mockSleep,
+      },
+      mockQueueManagerFactory as any,
+    );
+
+    // Setup:
+    // Return 0 first time to schedule immediately
+    let firstCall = true;
+    mockGetMsUntilCron.mockImplementation(() => {
+      if (firstCall) {
+        firstCall = false;
+        return 0;
+      }
+      return 100000;
+    });
+
+    const startPromise = scheduler.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(mockGetMsUntilCron).toHaveBeenCalledWith('0 0 * * *');
+    expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(1);
+
+    await scheduler.stop();
+    await startPromise;
   });
 });

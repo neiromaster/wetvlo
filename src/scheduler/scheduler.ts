@@ -16,13 +16,14 @@ import { NotificationLevel } from '../notifications/notifier.js';
 import { QueueManager } from '../queue/queue-manager.js';
 import type { StateManager } from '../state/state-manager.js';
 import type { DomainConfig, GlobalConfigs, SchedulerOptions, SeriesConfig } from '../types/config.types.js';
-import { getMsUntilTime, sleep } from '../utils/time-utils.js';
+import { getMsUntilCron, getMsUntilTime, sleep } from '../utils/time-utils.js';
 
 /**
  * Time provider type for dependency injection
  */
 export type TimeProvider = {
   getMsUntilTime: typeof getMsUntilTime;
+  getMsUntilCron: typeof getMsUntilCron;
   sleep: typeof sleep;
 };
 
@@ -76,7 +77,7 @@ export class Scheduler {
     this.options = options;
     this.globalConfigs = globalConfigs;
     this.domainConfigs = domainConfigs;
-    this.timeProvider = timeProvider || { getMsUntilTime, sleep };
+    this.timeProvider = timeProvider || { getMsUntilTime, getMsUntilCron, sleep };
 
     // Create queue manager
     const createQueueManager =
@@ -132,30 +133,46 @@ export class Scheduler {
   private scheduleNextBatch(): void {
     if (this.stopped) return;
 
-    const groupedConfigs = this.groupConfigsByStartTime();
-    let nextTime: string | null = null;
+    const groupedConfigs = this.groupConfigsBySchedule();
+    let nextScheduleKey: string | null = null;
     let minMsUntil = Number.MAX_SAFE_INTEGER;
 
-    for (const startTime of groupedConfigs.keys()) {
-      const msUntil = this.timeProvider.getMsUntilTime(startTime);
-      if (msUntil < minMsUntil) {
-        minMsUntil = msUntil;
-        nextTime = startTime;
+    for (const scheduleKey of groupedConfigs.keys()) {
+      let msUntil: number;
+
+      try {
+        // Determine if it's HH:MM or cron
+        if (/^\d{1,2}:\d{2}$/.test(scheduleKey)) {
+          msUntil = this.timeProvider.getMsUntilTime(scheduleKey);
+        } else {
+          // Assume cron
+          msUntil = this.timeProvider.getMsUntilCron(scheduleKey);
+        }
+
+        if (msUntil < minMsUntil) {
+          minMsUntil = msUntil;
+          nextScheduleKey = scheduleKey;
+        }
+      } catch (error) {
+        this.notifier.notify(
+          NotificationLevel.ERROR,
+          `Error calculating next run time for schedule "${scheduleKey}": ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
-    if (!nextTime) {
+    if (!nextScheduleKey) {
       this.notifier.notify(NotificationLevel.WARNING, 'No scheduled configs found.');
       return;
     }
 
-    const configs = groupedConfigs.get(nextTime);
+    const configs = groupedConfigs.get(nextScheduleKey);
     if (!configs) return;
 
     if (minMsUntil > 0) {
       this.notifier.notify(
         NotificationLevel.INFO,
-        `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until ${nextTime}...`,
+        `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until next run (${nextScheduleKey})...`,
       );
     }
 
@@ -227,15 +244,24 @@ export class Scheduler {
   }
 
   /**
-   * Group configs by start time
+   * Group configs by schedule (startTime or cron)
    */
-  private groupConfigsByStartTime(): Map<string, SeriesConfig[]> {
+  private groupConfigsBySchedule(): Map<string, SeriesConfig[]> {
     const grouped = new Map<string, SeriesConfig[]>();
 
     for (const config of this.configs) {
-      const existing = grouped.get(config.startTime) || [];
+      const scheduleKey = config.cron || config.startTime;
+      if (!scheduleKey) {
+        this.notifier.notify(
+          NotificationLevel.WARNING,
+          `Series "${config.name}" has no startTime or cron configured. Skipping.`,
+        );
+        continue;
+      }
+
+      const existing = grouped.get(scheduleKey) || [];
       existing.push(config);
-      grouped.set(config.startTime, existing);
+      grouped.set(scheduleKey, existing);
     }
 
     return grouped;

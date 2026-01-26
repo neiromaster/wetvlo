@@ -39,7 +39,7 @@ export class TelegramNotifier implements Notifier {
       const MAX_LENGTH = 4000;
       let safeMessage = message;
       if (safeMessage.length > MAX_LENGTH) {
-        safeMessage = safeMessage.substring(0, MAX_LENGTH) + '\n... (truncated)';
+        safeMessage = `${safeMessage.substring(0, MAX_LENGTH)}\n... (truncated)`;
       }
 
       // Escape HTML characters in the message to prevent parsing errors

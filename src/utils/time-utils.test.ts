@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { formatDuration, getMsUntilTime, parseTime, sleep } from './time-utils.js';
+import { formatDuration, getMsUntilCron, getMsUntilTime, parseTime, sleep } from './time-utils.js';
 
 describe('Time Utils', () => {
   describe('parseTime', () => {
@@ -29,6 +29,17 @@ describe('Time Utils', () => {
       // but strictly "positive" is enough for basic sanity check
       const ms = getMsUntilTime('23:59');
       expect(ms).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getMsUntilCron', () => {
+    it('should return positive milliseconds for valid cron', () => {
+      const ms = getMsUntilCron('0 0 * * *');
+      expect(ms).toBeGreaterThan(0);
+    });
+
+    it('should throw error for invalid cron', () => {
+      expect(() => getMsUntilCron('invalid')).toThrow('Invalid cron expression');
     });
   });
 

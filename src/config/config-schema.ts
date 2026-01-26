@@ -63,15 +63,24 @@ export type DomainConfig = z.infer<typeof DomainConfigSchema>;
 /**
  * Series configuration
  */
-export const SeriesConfigSchema = z.object({
-  name: z.string(),
-  url: z.string().url(),
-  startTime: z.string().regex(/^\d{1,2}:\d{2}$/, {
-    message: 'Must be in HH:MM format (e.g., "20:00")',
-  }),
-  check: CheckSettingsSchema.optional(),
-  download: DownloadSettingsSchema.optional(),
-});
+export const SeriesConfigSchema = z
+  .object({
+    name: z.string(),
+    url: z.string().url(),
+    startTime: z
+      .string()
+      .regex(/^\d{1,2}:\d{2}$/, {
+        message: 'Must be in HH:MM format (e.g., "20:00")',
+      })
+      .optional(),
+    cron: z.string().optional(),
+    check: CheckSettingsSchema.optional(),
+    download: DownloadSettingsSchema.optional(),
+  })
+  .refine((data) => data.startTime || data.cron, {
+    message: 'Either startTime or cron must be provided',
+    path: ['startTime'],
+  });
 
 export type SeriesConfig = z.infer<typeof SeriesConfigSchema>;
 

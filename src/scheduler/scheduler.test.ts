@@ -242,4 +242,47 @@ describe('Scheduler', () => {
     await scheduler.stop();
     await startPromise;
   });
+
+  it('should wait for queue drain and call onIdle when scheduling next batch', async () => {
+    const onIdle = mock(() => {});
+
+    // Re-create scheduler with onIdle
+    scheduler = new Scheduler(
+      configs,
+      stateManager,
+      downloadManager,
+      notifier,
+      undefined,
+      { mode: 'scheduled', onIdle },
+      undefined,
+      undefined,
+      {
+        getMsUntilTime: mockGetMsUntilTime,
+        getMsUntilCron: mockGetMsUntilCron,
+        sleep: mockSleep,
+      },
+      mockQueueManagerFactory as any,
+    );
+
+    // First call: 0ms (immediate)
+    // Second call: 60000ms (wait 1 min)
+    mockGetMsUntilTime.mockReturnValueOnce(0).mockReturnValue(60000);
+
+    // Queue manager: has active processing (true), then drained (false)
+    mockQueueManagerInstance.hasActiveProcessing.mockReturnValueOnce(true).mockReturnValue(false);
+
+    const startPromise = scheduler.start();
+
+    // Wait for execution
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Should have waited for drain
+    expect(mockSleep).toHaveBeenCalled();
+
+    // Should have called onIdle because next wait is > 0
+    expect(onIdle).toHaveBeenCalled();
+
+    await scheduler.stop();
+    await startPromise;
+  });
 });

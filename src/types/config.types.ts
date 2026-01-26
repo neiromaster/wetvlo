@@ -25,6 +25,7 @@ export type SchedulerMode = 'scheduled' | 'once';
  */
 export type SchedulerOptions = {
   mode: SchedulerMode;
+  onIdle?: () => void;
 };
 
 /**

@@ -12,7 +12,13 @@ import type { NotificationLevel, Notifier } from './notifications/notifier.js';
 import { TelegramNotifier } from './notifications/telegram-notifier.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { StateManager } from './state/state-manager.js';
-import type { DomainConfig, GlobalConfigs, SchedulerMode, SeriesConfig } from './types/config.types.js';
+import type {
+  DomainConfig,
+  GlobalConfigs,
+  SchedulerMode,
+  SchedulerOptions,
+  SeriesConfig,
+} from './types/config.types.js';
 import { readCookieFile } from './utils/cookie-extractor.js';
 import { logger } from './utils/logger.js';
 
@@ -34,7 +40,7 @@ export type AppDependencies = {
     downloadManager: DownloadManager,
     notifier: Notifier,
     cookies?: string,
-    options?: { mode: SchedulerMode },
+    options?: SchedulerOptions,
     globalConfigs?: GlobalConfigs,
     domainConfigs?: DomainConfig[],
   ) => Scheduler;
@@ -144,6 +150,20 @@ export async function runApp(
   const tempDir = config.globalConfigs?.download?.tempDir;
   const downloadManager = deps.createDownloadManager(stateManager, notifier, downloadDir, config.cookieFile, tempDir);
 
+  // Setup interactive mode instructions
+  let onIdle: (() => void) | undefined;
+  if (mode === 'scheduled' && process.stdin.isTTY) {
+    const printInstructions = () => {
+      logger.info('Interactive mode enabled:');
+      logger.info('  [r] Reload configuration');
+      logger.info('  [c] Trigger immediate checks');
+      logger.info('  [q] Quit');
+    };
+
+    printInstructions();
+    onIdle = printInstructions;
+  }
+
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');
   const scheduler = deps.createScheduler(
@@ -152,7 +172,7 @@ export async function runApp(
     downloadManager,
     notifier,
     cookies,
-    { mode },
+    { mode, onIdle },
     config.globalConfigs,
     config.domainConfigs,
   );
@@ -167,13 +187,8 @@ export async function runApp(
     process.exit(0);
   });
 
-  // Setup keyboard input for interactive commands
+  // Setup keyboard input listeners
   if (mode === 'scheduled' && process.stdin.isTTY) {
-    logger.info('Interactive mode enabled:');
-    logger.info('  [r] Reload configuration');
-    logger.info('  [c] Trigger immediate checks');
-    logger.info('  [q] Quit');
-
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
 

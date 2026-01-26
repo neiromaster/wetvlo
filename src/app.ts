@@ -194,13 +194,15 @@ export async function runApp(
     process.stdin.on('keypress', async (_str, key) => {
       if (!key) return;
 
-      // q or Ctrl+C to quit
-      if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
+      const name = key.name || '';
+
+      // q, й or Ctrl+C to quit
+      if (name === 'q' || name === 'й' || (key.ctrl && name === 'c')) {
         await handleShutdown(scheduler, stateManager);
         process.exit(0);
       }
-      // r to reload config
-      else if (key.name === 'r') {
+      // r or к to reload config
+      else if (name === 'r' || name === 'к') {
         try {
           logger.info(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
@@ -209,8 +211,8 @@ export async function runApp(
           logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      // c to trigger checks
-      else if (key.name === 'c') {
+      // c or с (Cyrillic) to trigger checks
+      else if (name === 'c' || name === 'с') {
         await scheduler.triggerAllChecks();
       }
     });

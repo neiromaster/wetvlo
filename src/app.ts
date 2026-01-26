@@ -160,7 +160,6 @@ export async function runApp(
       logger.info('  [q] Quit');
     };
 
-    printInstructions();
     onIdle = printInstructions;
   }
 

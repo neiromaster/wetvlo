@@ -1,7 +1,6 @@
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { execa } from 'execa';
 import { DownloadError } from '../errors/custom-errors';
 import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
@@ -9,18 +8,11 @@ import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import { sanitizeFilename } from '../utils/filename-sanitizer';
 import * as VideoValidator from '../utils/video-validator';
+import { downloaderRegistry } from './downloader-registry';
+import { YtDlpDownloader } from './impl/yt-dlp-downloader';
 
 /**
- * Error type returned by execa when a subprocess fails
- */
-type ExecaError = {
-  stderr?: string;
-  stdout?: string;
-  message?: string;
-};
-
-/**
- * Download manager for yt-dlp with progress tracking
+ * Download manager with progress tracking
  */
 export class DownloadManager {
   private stateManager: StateManager;
@@ -44,7 +36,7 @@ export class DownloadManager {
   }
 
   /**
-   * Download an episode using yt-dlp with progress tracking
+   * Download an episode using appropriate downloader
    */
   async download(_seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
     // Check if already downloaded
@@ -52,10 +44,26 @@ export class DownloadManager {
       return false;
     }
 
-    this.notifier.notify(NotificationLevel.HIGHLIGHT, `Downloading Episode ${episode.number} of ${seriesName}`);
+    const downloader = downloaderRegistry.getDownloader(episode.url);
+    this.notifier.notify(
+      NotificationLevel.HIGHLIGHT,
+      `Downloading Episode ${episode.number} of ${seriesName} using ${downloader.getName()}`,
+    );
 
     try {
-      const result = await this.runYtDlp(seriesName, episode);
+      const paddedNumber = String(episode.number).padStart(2, '0');
+      const sanitizedSeriesName = sanitizeFilename(seriesName);
+      const filenameWithoutExt = `${sanitizedSeriesName} - ${paddedNumber}`;
+      const targetDir = this.tempDir || this.downloadDir;
+
+      const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
+        cookieFile: this.cookieFile,
+        onProgress: (progress) => this.notifier.progress(progress),
+        onLog: (message) => this.notifier.notify(NotificationLevel.INFO, message),
+      });
+
+      // End progress display (add newline)
+      this.notifier.endProgress();
 
       // Verify file exists and has size
       const fileSize = this.verifyDownload(result.filename);
@@ -118,6 +126,9 @@ export class DownloadManager {
 
       return true;
     } catch (error) {
+      // End progress display on error
+      this.notifier.endProgress();
+
       const message = `Failed to download Episode ${episode.number}: ${
         error instanceof Error ? error.message : String(error)
       }`;
@@ -140,129 +151,6 @@ export class DownloadManager {
       } catch (e) {
         this.notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
       }
-    }
-  }
-
-  /**
-   * Run yt-dlp with execa and progress tracking
-   */
-  private async runYtDlp(seriesName: string, episode: Episode): Promise<{ filename: string; allFiles: string[] }> {
-    const paddedNumber = String(episode.number).padStart(2, '0');
-    const targetDir = this.tempDir || this.downloadDir;
-
-    // Ensure directory exists
-    await fsPromises.mkdir(targetDir, { recursive: true });
-
-    const sanitizedSeriesName = sanitizeFilename(seriesName);
-    const outputTemplate = join(targetDir, `${sanitizedSeriesName} - ${paddedNumber}.%(ext)s`);
-
-    const args = ['--no-warnings', '--newline', '-o', outputTemplate, episode.url];
-
-    if (this.cookieFile) {
-      args.unshift('--cookies', this.cookieFile);
-    }
-
-    let filename: string | null = null;
-    const allFiles: Set<string> = new Set();
-    const outputBuffer: string[] = [];
-
-    try {
-      const subprocess = execa('yt-dlp', args, { all: true });
-
-      for await (const line of subprocess.all) {
-        const text = line.toString().trim();
-        if (!text) continue;
-
-        // Buffer all output for error debugging
-        outputBuffer.push(text);
-
-        // Capture filename from "[download] Destination: ..." line
-        const destMatch = text.match(/\[download\] Destination:\s*(.+)/);
-        if (destMatch) {
-          filename = destMatch[1];
-          if (filename) allFiles.add(filename);
-        }
-
-        // Capture subtitles from "[info] Writing video subtitles to: ..."
-        const subMatch = text.match(/\[info\] Writing video subtitles to:\s*(.+)/);
-        if (subMatch?.[1]) {
-          allFiles.add(subMatch[1]);
-        }
-
-        // Capture merged file from "[merge] Merging formats into "..."
-        const mergeMatch = text.match(/\[merge\] Merging formats into "(.*)"/);
-        if (mergeMatch) {
-          filename = mergeMatch[1];
-          if (filename) allFiles.add(filename);
-        }
-
-        // Status messages: [info], [ffmpeg], [merge] - check FIRST
-        if (
-          text.includes('[info]') ||
-          text.includes('[ffmpeg]') ||
-          text.includes('[merge]') ||
-          text.includes('[postprocessor]')
-        ) {
-          this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${text}`);
-          continue;
-        }
-
-        // Detailed progress with file size
-        if (text.includes('[download]')) {
-          // Match: [download]  23.8% of ~ 145.41MiB at  563.37KiB/s ETA 03:34 (frag 48/203)
-          // or:    [download]   0.0% of ~  68.02MiB at    2.83KiB/s ETA Unknown (frag 0/203)
-          // The format has:
-          // - Optional ~ before size (indicates estimated)
-          // - (frag X/Y) suffix at end
-          // - Extra whitespace
-          // - ETA can be "Unknown" or a time like "03:34"
-          const progressMatch = text.match(
-            /\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*([\d.]+\w+)\s+at\s+~?\s*([\d.]+\w+\/s)\s+ETA\s+(\S+)/,
-          );
-
-          if (progressMatch) {
-            const [, percentage, totalSize, speed, eta] = progressMatch;
-            // Use progress() to update on same line
-            this.notifier.progress(`[${episode.number}] ${percentage}% of ${totalSize} at ${speed} ETA ${eta}`);
-          } else {
-            // Other download status: Destination, Resuming, etc. - show normally
-            this.notifier.notify(NotificationLevel.INFO, `Episode ${episode.number}: ${text}`);
-          }
-        }
-      }
-
-      await subprocess;
-
-      // End progress display (add newline)
-      this.notifier.endProgress();
-
-      if (!filename) {
-        // Fallback if we couldn't parse the filename
-        filename = join(targetDir, `${sanitizedSeriesName} - ${paddedNumber}.mp4`);
-      }
-
-      // Ensure the main filename is included in allFiles
-      if (filename && !allFiles.has(filename)) {
-        allFiles.add(filename);
-      }
-
-      return { filename, allFiles: Array.from(allFiles) };
-    } catch (error) {
-      // End progress display on error
-      this.notifier.endProgress();
-
-      const err = error as ExecaError;
-      const stderr = err.stderr ?? '';
-      const stdout = err.stdout ?? '';
-      const allOutput = outputBuffer.join('\n');
-
-      throw new Error(
-        `yt-dlp failed:\n` +
-          `stderr: ${stderr}\n` +
-          `stdout: ${stdout}\n` +
-          `captured output:\n${allOutput}\n` +
-          `message: ${err.message}`,
-      );
     }
   }
 
@@ -300,11 +188,6 @@ export class DownloadManager {
    * Check if yt-dlp is installed
    */
   static async checkYtDlpInstalled(): Promise<boolean> {
-    try {
-      await execa('yt-dlp', ['--version']);
-      return true;
-    } catch {
-      return false;
-    }
+    return YtDlpDownloader.checkInstalled();
   }
 }

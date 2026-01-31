@@ -1,4 +1,5 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { AppContext } from '../app-context';
 import type { DomainConfig } from '../config/config-schema';
 import { DownloadManager } from '../downloader/download-manager';
 import type { Notifier } from '../notifications/notifier';
@@ -19,6 +20,11 @@ import { QueueManager } from './queue-manager';
 
 describe('QueueManager Retry Logic', () => {
   let queueManager: QueueManager;
+
+  // Clean up after tests
+  afterEach(() => {
+    AppContext.reset();
+  });
 
   it('should block queue processing during retry delay', async () => {
     // Setup
@@ -46,7 +52,10 @@ describe('QueueManager Retry Logic', () => {
       endProgress: mock(() => {}),
     };
 
-    const downloadManager = new DownloadManager(stateManager, notifier, 'downloads');
+    // Initialize AppContext
+    AppContext.initialize(undefined, [mockConfig], notifier as any);
+
+    const downloadManager = new DownloadManager(stateManager, 'downloads');
 
     // Mock download behavior
     let attempt = 0;
@@ -66,7 +75,7 @@ describe('QueueManager Retry Logic', () => {
     });
 
     // Initialize QueueManager with our config
-    queueManager = new QueueManager(stateManager, downloadManager, notifier, undefined, [mockConfig]);
+    queueManager = new QueueManager(stateManager, downloadManager, undefined);
 
     // Add episodes
     const episodes: Episode[] = [

@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
+import { AppContext } from '../app-context.js';
 import { DownloadError } from '../errors/custom-errors';
-import type { Notifier } from '../notifications/notifier';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
@@ -16,20 +16,12 @@ import { YtDlpDownloader } from './impl/yt-dlp-downloader';
  */
 export class DownloadManager {
   private stateManager: StateManager;
-  private notifier: Notifier;
   private downloadDir: string;
   private tempDir?: string;
   private cookieFile?: string;
 
-  constructor(
-    stateManager: StateManager,
-    notifier: Notifier,
-    downloadDir: string,
-    cookieFile?: string,
-    tempDir?: string,
-  ) {
+  constructor(stateManager: StateManager, downloadDir: string, cookieFile?: string, tempDir?: string) {
     this.stateManager = stateManager;
-    this.notifier = notifier;
     this.downloadDir = resolve(downloadDir);
     this.cookieFile = cookieFile ? resolve(cookieFile) : undefined;
     this.tempDir = tempDir ? resolve(tempDir) : undefined;
@@ -39,13 +31,15 @@ export class DownloadManager {
    * Download an episode using appropriate downloader
    */
   async download(_seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
+    const notifier = AppContext.getNotifier();
+
     // Check if already downloaded
     if (this.stateManager.isDownloaded(seriesName, episode.number)) {
       return false;
     }
 
     const downloader = downloaderRegistry.getDownloader(episode.url);
-    this.notifier.notify(
+    notifier.notify(
       NotificationLevel.HIGHLIGHT,
       `Downloading Episode ${episode.number} of ${seriesName} using ${downloader.getName()}`,
     );
@@ -58,12 +52,12 @@ export class DownloadManager {
 
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
         cookieFile: this.cookieFile,
-        onProgress: (progress) => this.notifier.progress(progress),
-        onLog: (message) => this.notifier.notify(NotificationLevel.INFO, message),
+        onProgress: (progress) => notifier.progress(progress),
+        onLog: (message) => notifier.notify(NotificationLevel.INFO, message),
       });
 
       // End progress display (add newline)
-      this.notifier.endProgress();
+      notifier.endProgress();
 
       // Verify file exists and has size
       const fileSize = this.verifyDownload(result.filename);
@@ -86,7 +80,7 @@ export class DownloadManager {
 
       // Move files from tempDir to downloadDir if needed
       if (this.tempDir && this.tempDir !== this.downloadDir) {
-        this.notifier.notify(NotificationLevel.INFO, `Moving files from temp directory to ${this.downloadDir}...`);
+        notifier.notify(NotificationLevel.INFO, `Moving files from temp directory to ${this.downloadDir}...`);
 
         // Ensure download directory exists
         await fsPromises.mkdir(this.downloadDir, { recursive: true });
@@ -97,7 +91,7 @@ export class DownloadManager {
             const absFile = resolve(file);
 
             if (!fs.existsSync(absFile)) {
-              this.notifier.notify(NotificationLevel.WARNING, `File not found, skipping move: ${absFile}`);
+              notifier.notify(NotificationLevel.WARNING, `File not found, skipping move: ${absFile}`);
               continue;
             }
 
@@ -110,7 +104,7 @@ export class DownloadManager {
               result.filename = newPath;
             }
           } catch (e) {
-            this.notifier.notify(NotificationLevel.ERROR, `Failed to move file ${file}: ${e}`);
+            notifier.notify(NotificationLevel.ERROR, `Failed to move file ${file}: ${e}`);
           }
         }
       }
@@ -119,7 +113,7 @@ export class DownloadManager {
       this.stateManager.addDownloadedEpisode(seriesName, episode.number);
       await this.stateManager.save();
 
-      this.notifier.notify(
+      notifier.notify(
         NotificationLevel.SUCCESS,
         `Downloaded Episode ${episode.number}: ${result.filename} (${this.formatSize(fileSize)})`,
       );
@@ -127,13 +121,13 @@ export class DownloadManager {
       return true;
     } catch (error) {
       // End progress display on error
-      this.notifier.endProgress();
+      notifier.endProgress();
 
       const message = `Failed to download Episode ${episode.number}: ${
         error instanceof Error ? error.message : String(error)
       }`;
 
-      this.notifier.notify(NotificationLevel.ERROR, message);
+      notifier.notify(NotificationLevel.ERROR, message);
       throw new DownloadError(message, episode.url);
     }
   }
@@ -142,6 +136,8 @@ export class DownloadManager {
    * Clean up downloaded files
    */
   private async cleanupFiles(files: string[]): Promise<void> {
+    const notifier = AppContext.getNotifier();
+
     for (const file of files) {
       try {
         const fullPath = resolve(file);
@@ -149,7 +145,7 @@ export class DownloadManager {
           await fsPromises.unlink(fullPath);
         }
       } catch (e) {
-        this.notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
+        notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
       }
     }
   }

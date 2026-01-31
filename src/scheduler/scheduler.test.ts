@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { AppContext } from '../app-context.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import { Scheduler } from './scheduler.js';
 
@@ -44,6 +45,8 @@ describe('Scheduler', () => {
     downloadManager = {};
     notifier = {
       notify: mock(() => {}),
+      progress: mock(() => {}),
+      endProgress: mock(() => {}),
     };
 
     // Reset queue manager mocks
@@ -54,16 +57,17 @@ describe('Scheduler', () => {
     mockQueueManagerInstance.hasActiveProcessing.mockReturnValue(false);
     mockQueueManagerFactory.mockClear();
 
+    // Reset and initialize AppContext
+    AppContext.reset();
+    AppContext.initialize(undefined, [], notifier as any);
+
     // Create scheduler
     scheduler = new Scheduler(
       configs,
       stateManager,
       downloadManager,
-      notifier,
       undefined,
       { mode: 'scheduled' },
-      undefined,
-      undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
         getMsUntilCron: mockGetMsUntilCron,
@@ -71,6 +75,10 @@ describe('Scheduler', () => {
       },
       mockQueueManagerFactory as any,
     );
+  });
+
+  afterEach(() => {
+    AppContext.reset();
   });
 
   it('should initialize queue manager', () => {
@@ -111,11 +119,8 @@ describe('Scheduler', () => {
       configs,
       stateManager,
       downloadManager,
-      notifier,
       undefined,
       { mode: 'once' },
-      undefined,
-      undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
         getMsUntilCron: mockGetMsUntilCron,
@@ -184,11 +189,8 @@ describe('Scheduler', () => {
       configs,
       stateManager,
       downloadManager,
-      notifier,
       undefined,
       { mode: 'once' },
-      undefined,
-      undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
         getMsUntilCron: mockGetMsUntilCron,
@@ -209,11 +211,8 @@ describe('Scheduler', () => {
       cronConfigs as any,
       stateManager,
       downloadManager,
-      notifier,
       undefined,
       { mode: 'scheduled' },
-      undefined,
-      undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
         getMsUntilCron: mockGetMsUntilCron,
@@ -251,11 +250,8 @@ describe('Scheduler', () => {
       configs,
       stateManager,
       downloadManager,
-      notifier,
       undefined,
       { mode: 'scheduled', onIdle },
-      undefined,
-      undefined,
       {
         getMsUntilTime: mockGetMsUntilTime,
         getMsUntilCron: mockGetMsUntilCron,

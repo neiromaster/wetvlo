@@ -10,17 +10,16 @@
  */
 
 import { createHash } from 'node:crypto';
-import { ConfigResolver } from '../config/config-resolver.js';
+import { AppContext } from '../app-context.js';
 import type { ResolvedSeriesConfig } from '../config/resolved-config.types.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { handlerRegistry } from '../handlers/handler-registry.js';
-import type { Notifier } from '../notifications/notifier.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import type { StateManager } from '../state/state-manager.js';
-import type { GlobalConfigs, SeriesConfig } from '../types/config.types.js';
+import type { SeriesConfig } from '../types/config.types.js';
 import type { Episode, EpisodeType } from '../types/episode.types.js';
 import { extractDomain } from '../utils/url-utils.js';
-import type { CheckQueueItem, DomainConfig, DownloadQueueItem } from './types.js';
+import type { CheckQueueItem, DownloadQueueItem } from './types.js';
 import { UniversalScheduler } from './universal-scheduler.js';
 
 /**
@@ -29,13 +28,9 @@ import { UniversalScheduler } from './universal-scheduler.js';
 export class QueueManager {
   private stateManager: StateManager;
   private downloadManager: DownloadManager;
-  private notifier: Notifier;
 
   // Universal scheduler (handles all check and download queues)
   private scheduler: UniversalScheduler<CheckQueueItem | DownloadQueueItem>;
-
-  // Config resolver
-  private configResolver: ConfigResolver;
 
   // Running state
   private running = false;
@@ -48,28 +43,18 @@ export class QueueManager {
    *
    * @param stateManager - State manager instance
    * @param downloadManager - Download manager instance
-   * @param notifier - Notifier instance
    * @param _cookieFile - Optional cookie file path (unused, kept for API compatibility)
-   * @param domainConfigs - Optional domain configurations
-   * @param globalConfigs - Optional global configuration defaults
    */
   constructor(
     stateManager: StateManager,
     downloadManager: DownloadManager,
-    notifier: Notifier,
     _cookieFile: string | undefined,
-    domainConfigs: DomainConfig[] = [],
-    globalConfigs?: GlobalConfigs,
     schedulerFactory?: (
       executor: (task: CheckQueueItem | DownloadQueueItem, queueName: string) => Promise<void>,
     ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,
   ) {
     this.stateManager = stateManager;
     this.downloadManager = downloadManager;
-    this.notifier = notifier;
-
-    // Initialize config resolver
-    this.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
 
     // Create universal scheduler with executor callback
     const createScheduler = schedulerFactory || ((executor) => new UniversalScheduler(executor));
@@ -79,15 +64,16 @@ export class QueueManager {
 
     // Set up wait notification
     this.scheduler.setOnWait((queueName, waitMs) => {
+      const notifier = AppContext.getNotifier();
       const seconds = Math.round(waitMs / 1000);
       const parts = queueName.split(':');
       const type = parts[0];
       const domain = parts[1];
 
       if (type === 'download') {
-        this.notifier.notify(NotificationLevel.INFO, `[${domain}] Next download in ${seconds}s...`);
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download in ${seconds}s...`);
       } else if (type === 'check') {
-        this.notifier.notify(NotificationLevel.INFO, `[${domain}] Next check in ${seconds}s...`);
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check in ${seconds}s...`);
       }
     });
   }
@@ -98,6 +84,7 @@ export class QueueManager {
    * @param config - Series configuration
    */
   addSeriesCheck(config: SeriesConfig): void {
+    const notifier = AppContext.getNotifier();
     const domain = extractDomain(config.url);
 
     // Register download queue for this domain (shared across series)
@@ -117,10 +104,7 @@ export class QueueManager {
 
     this.scheduler.addTask(queueName, item);
 
-    this.notifier.notify(
-      NotificationLevel.INFO,
-      `[QueueManager] Added ${config.name} to check queue for domain ${domain}`,
-    );
+    notifier.notify(NotificationLevel.INFO, `[QueueManager] Added ${config.name} to check queue for domain ${domain}`);
   }
 
   /**
@@ -132,6 +116,9 @@ export class QueueManager {
    * @param config - Series configuration (optional)
    */
   addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[], config?: SeriesConfig): void {
+    const notifier = AppContext.getNotifier();
+    const configResolver = AppContext.getConfig();
+
     if (episodes.length === 0) {
       return;
     }
@@ -144,9 +131,9 @@ export class QueueManager {
     // Get download delay from resolved config
     let resolvedConfig: ResolvedSeriesConfig;
     if (config) {
-      resolvedConfig = this.configResolver.resolve(config);
+      resolvedConfig = configResolver.resolve(config);
     } else {
-      resolvedConfig = this.configResolver.resolveDomain(domain);
+      resolvedConfig = configResolver.resolveDomain(domain);
     }
     const { downloadDelay } = resolvedConfig.download;
 
@@ -169,7 +156,7 @@ export class QueueManager {
       this.scheduler.addTask(queueName, item, delayMs);
     }
 
-    this.notifier.notify(
+    notifier.notify(
       NotificationLevel.SUCCESS,
       `[QueueManager] Added ${episodes.length} episodes to download queue for ${seriesName} (domain ${domain})`,
     );
@@ -177,19 +164,19 @@ export class QueueManager {
 
   /**
    * Update configuration
-   *
-   * @param domainConfigs - Domain configurations
-   * @param globalConfigs - Global configurations
    */
-  updateConfig(domainConfigs: DomainConfig[] = [], globalConfigs?: GlobalConfigs): void {
-    this.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration updated');
+  updateConfig(): void {
+    const notifier = AppContext.getNotifier();
+    AppContext.reloadConfig();
+    notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration updated');
   }
 
   /**
    * Start all queues
    */
   start(): void {
+    const notifier = AppContext.getNotifier();
+
     if (this.running) {
       throw new Error('QueueManager is already running');
     }
@@ -197,7 +184,7 @@ export class QueueManager {
     this.running = true;
     this.scheduler.resume();
 
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Started queue processing');
+    notifier.notify(NotificationLevel.INFO, '[QueueManager] Started queue processing');
   }
 
   /**
@@ -206,16 +193,18 @@ export class QueueManager {
    * Waits for current task to complete.
    */
   async stop(): Promise<void> {
+    const notifier = AppContext.getNotifier();
+
     if (!this.running) {
       return;
     }
 
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Stopping queue processing...');
+    notifier.notify(NotificationLevel.INFO, '[QueueManager] Stopping queue processing...');
 
     this.scheduler.stop();
     this.running = false;
 
-    this.notifier.notify(NotificationLevel.INFO, '[QueueManager] Queue processing stopped');
+    notifier.notify(NotificationLevel.INFO, '[QueueManager] Queue processing stopped');
   }
 
   /**
@@ -270,6 +259,7 @@ export class QueueManager {
    * Register download queue for a domain (shared across series)
    */
   private registerDownloadQueue(domain: string): void {
+    const configResolver = AppContext.getConfig();
     const queueName = `download:${domain}`;
 
     // Check if queue is already registered
@@ -278,7 +268,7 @@ export class QueueManager {
     }
 
     // Resolve configuration
-    const resolvedConfig = this.configResolver.resolveDomain(domain);
+    const resolvedConfig = configResolver.resolveDomain(domain);
     const { downloadDelay } = resolvedConfig.download;
 
     // Register queue with scheduler
@@ -289,6 +279,8 @@ export class QueueManager {
    * Register specific check queue for a series (isolated interval)
    */
   private registerSeriesCheckQueue(domain: string, config: SeriesConfig): string {
+    const configResolver = AppContext.getConfig();
+
     // Generate a short hash of the URL to ensure uniqueness and safe queue name
     const hash = createHash('md5').update(config.url).digest('hex').substring(0, 12);
     const queueName = `check:${domain}:${hash}`;
@@ -299,7 +291,7 @@ export class QueueManager {
     }
 
     // Resolve configuration
-    const resolvedConfig = this.configResolver.resolve(config);
+    const resolvedConfig = configResolver.resolve(config);
     const { checkInterval } = resolvedConfig.check;
 
     // Register queue with scheduler
@@ -348,6 +340,8 @@ export class QueueManager {
    * @param queueName - Queue name for scheduler callbacks
    */
   private async executeCheck(item: CheckQueueItem, domain: string, queueName: string): Promise<void> {
+    const notifier = AppContext.getNotifier();
+    const configResolver = AppContext.getConfig();
     const { seriesUrl, seriesName, config, attemptNumber, retryCount = 0 } = item;
 
     // Get handler for this domain
@@ -357,7 +351,7 @@ export class QueueManager {
     }
 
     // Get settings
-    const resolvedConfig = this.configResolver.resolve(config);
+    const resolvedConfig = configResolver.resolve(config);
     const { count: checksCount, checkInterval } = resolvedConfig.check;
 
     try {
@@ -366,7 +360,7 @@ export class QueueManager {
 
       if (result.hasNewEpisodes) {
         // Episodes found - send to download queue, do NOT requeue
-        this.notifier.notify(
+        notifier.notify(
           NotificationLevel.SUCCESS,
           `[${domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount})`,
         );
@@ -383,7 +377,7 @@ export class QueueManager {
           const intervalMs = checkInterval * 1000;
           const requeueDelay = result.requeueDelay ?? intervalMs;
 
-          this.notifier.notify(
+          notifier.notify(
             NotificationLevel.INFO,
             `[${domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
           );
@@ -399,7 +393,7 @@ export class QueueManager {
           this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
         } else {
           // Checks exhausted - do not requeue
-          this.notifier.notify(
+          notifier.notify(
             NotificationLevel.INFO,
             `[${domain}] Checks exhausted for ${seriesName} (${checksCount} attempts with no new episodes)`,
           );
@@ -421,7 +415,7 @@ export class QueueManager {
           jitterPercentage,
         );
 
-        this.notifier.notify(
+        notifier.notify(
           NotificationLevel.WARNING,
           `[${domain}] Check failed for ${seriesName}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
         );
@@ -436,7 +430,7 @@ export class QueueManager {
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
       } else {
         // Max retries exceeded - log error and give up
-        this.notifier.notify(
+        notifier.notify(
           NotificationLevel.ERROR,
           `[${domain}] Failed to check ${seriesName} after ${retryCount} retry attempts: ${errorMessage}`,
         );
@@ -453,14 +447,16 @@ export class QueueManager {
    * @param queueName - Queue name for scheduler callbacks
    */
   private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
+    const notifier = AppContext.getNotifier();
+    const configResolver = AppContext.getConfig();
     const { seriesUrl, seriesName, episode, config, retryCount = 0 } = item;
 
     // Resolve config
     let resolvedConfig: ResolvedSeriesConfig;
     if (config) {
-      resolvedConfig = this.configResolver.resolve(config);
+      resolvedConfig = configResolver.resolve(config);
     } else {
-      resolvedConfig = this.configResolver.resolveDomain(domain);
+      resolvedConfig = configResolver.resolveDomain(domain);
     }
 
     const { downloadDelay, minDuration } = resolvedConfig.download;
@@ -470,7 +466,7 @@ export class QueueManager {
       await this.downloadManager.download(seriesUrl, seriesName, episode, minDuration);
 
       // Success - log and continue
-      this.notifier.notify(
+      notifier.notify(
         NotificationLevel.SUCCESS,
         `[${domain}] Successfully queued download of Episode ${episode.number} for ${seriesName}`,
       );
@@ -491,7 +487,7 @@ export class QueueManager {
           jitterPercentage,
         );
 
-        this.notifier.notify(
+        notifier.notify(
           NotificationLevel.WARNING,
           `[${domain}] Download failed for Episode ${episode.number}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
         );
@@ -506,7 +502,7 @@ export class QueueManager {
         this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
       } else {
         // Max retries exceeded - log error and give up
-        this.notifier.notify(
+        notifier.notify(
           NotificationLevel.ERROR,
           `[${domain}] Failed to download Episode ${episode.number} after ${retryCount + 1} attempts: ${errorMessage}`,
         );
@@ -534,9 +530,10 @@ export class QueueManager {
     attemptNumber: number,
     domain: string,
   ): Promise<{ hasNewEpisodes: boolean; episodes: Episode[]; requeueDelay?: number }> {
+    const notifier = AppContext.getNotifier();
     const checksCount = config.check.count;
 
-    this.notifier.notify(
+    notifier.notify(
       NotificationLevel.INFO,
       `[${domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${checksCount})`,
     );
@@ -555,7 +552,7 @@ export class QueueManager {
       .map(([type, count]) => `${type}: ${count}`)
       .join(', ');
 
-    this.notifier.notify(
+    notifier.notify(
       NotificationLevel.INFO,
       `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl} (${typeSummary})`,
     );
@@ -573,7 +570,7 @@ export class QueueManager {
     // Log how many episodes will be downloaded
     if (episodes.length !== newEpisodes.length) {
       const skippedCount = episodes.length - newEpisodes.length;
-      this.notifier.notify(
+      notifier.notify(
         NotificationLevel.INFO,
         `[${domain}] Filtering to ${downloadTypes.join(' or ')}: ${newEpisodes.length} episodes to download, ${skippedCount} skipped`,
       );
@@ -622,12 +619,5 @@ export class QueueManager {
     const finalDelay = Math.max(0, baseDelay + jitter);
 
     return Math.floor(finalDelay);
-  }
-
-  /**
-   * Set global configs (for dependency injection)
-   */
-  setGlobalConfigs(globalConfigs: GlobalConfigs): void {
-    this.configResolver.setGlobalConfigs(globalConfigs);
   }
 }

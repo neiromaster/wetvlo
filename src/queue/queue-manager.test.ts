@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { AppContext } from '../app-context.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import { EpisodeType } from '../types/episode.types.js';
 import { QueueManager } from './queue-manager.js';
@@ -14,8 +15,10 @@ const mockDownloadManager = {
 } as any;
 
 const mockNotifier = {
-  notify: mock(() => {}),
-} as any;
+  notify: mock(() => Promise.resolve()),
+  progress: mock(() => {}),
+  endProgress: mock(() => {}),
+};
 
 // Mock HandlerRegistry
 const mockHandler = {
@@ -42,6 +45,9 @@ describe('QueueManager', () => {
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.isDownloaded.mockReturnValue(false);
 
+    // Initialize AppContext for tests
+    AppContext.initialize(undefined, [], mockNotifier as any);
+
     // Create mock scheduler
     mockScheduler = {
       registerQueue: mock(() => {}),
@@ -62,15 +68,7 @@ describe('QueueManager', () => {
       return mockScheduler;
     };
 
-    queueManager = new QueueManager(
-      mockStateManager,
-      mockDownloadManager,
-      mockNotifier,
-      undefined,
-      [],
-      undefined,
-      schedulerFactory as any,
-    );
+    queueManager = new QueueManager(mockStateManager, mockDownloadManager, undefined, schedulerFactory as any);
   });
 
   it('should initialize correctly', () => {

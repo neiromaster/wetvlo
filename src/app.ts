@@ -1,5 +1,6 @@
 import * as readline from 'node:readline';
 import { boolean, command, flag, option, string } from 'cmd-ts';
+import { AppContext } from './app-context.js';
 import { DEFAULT_DOWNLOAD_DIR } from './config/config-defaults.js';
 import { loadConfig } from './config/config-loader.js';
 import { DownloadManager } from './downloader/download-manager.js';
@@ -13,13 +14,7 @@ import type { NotificationLevel, Notifier } from './notifications/notifier.js';
 import { TelegramNotifier } from './notifications/telegram-notifier.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { StateManager } from './state/state-manager.js';
-import type {
-  DomainConfig,
-  GlobalConfigs,
-  SchedulerMode,
-  SchedulerOptions,
-  SeriesConfig,
-} from './types/config.types.js';
+import type { SchedulerMode, SchedulerOptions, SeriesConfig } from './types/config.types.js';
 import { readCookieFile } from './utils/cookie-extractor.js';
 import { logger } from './utils/logger.js';
 
@@ -30,7 +25,6 @@ export type AppDependencies = {
   createStateManager: (path: string) => StateManager;
   createDownloadManager: (
     stateManager: StateManager,
-    notifier: Notifier,
     downloadDir: string,
     cookieFile?: string,
     tempDir?: string,
@@ -39,11 +33,8 @@ export type AppDependencies = {
     configs: SeriesConfig[],
     stateManager: StateManager,
     downloadManager: DownloadManager,
-    notifier: Notifier,
     cookies?: string,
     options?: SchedulerOptions,
-    globalConfigs?: GlobalConfigs,
-    domainConfigs?: DomainConfig[],
   ) => Scheduler;
 };
 
@@ -52,8 +43,8 @@ const defaultDependencies: AppDependencies = {
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
   createStateManager: (path) => new StateManager(path),
-  createDownloadManager: (sm, n, dir, cf, temp) => new DownloadManager(sm, n, dir, cf, temp),
-  createScheduler: (c, sm, dm, n, cook, opt, gc, dc) => new Scheduler(c, sm, dm, n, cook, opt, gc, dc),
+  createDownloadManager: (sm, dir, cf, temp) => new DownloadManager(sm, dir, cf, temp),
+  createScheduler: (c, sm, dm, cook, opt) => new Scheduler(c, sm, dm, cook, opt),
 };
 
 /**
@@ -130,6 +121,10 @@ export async function runApp(
     },
   };
 
+  // Initialize global AppContext with config and notifier
+  AppContext.initialize(config.globalConfigs, config.domainConfigs, notifier);
+  logger.info('AppContext initialized');
+
   // Register handlers
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
@@ -150,7 +145,7 @@ export async function runApp(
   // Create download manager
   const downloadDir = config.globalConfigs?.download?.downloadDir ?? DEFAULT_DOWNLOAD_DIR;
   const tempDir = config.globalConfigs?.download?.tempDir;
-  const downloadManager = deps.createDownloadManager(stateManager, notifier, downloadDir, config.cookieFile, tempDir);
+  const downloadManager = deps.createDownloadManager(stateManager, downloadDir, config.cookieFile, tempDir);
 
   // Setup interactive mode instructions
   let onIdle: (() => void) | undefined;
@@ -167,16 +162,7 @@ export async function runApp(
 
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');
-  const scheduler = deps.createScheduler(
-    config.series,
-    stateManager,
-    downloadManager,
-    notifier,
-    cookies,
-    { mode, onIdle },
-    config.globalConfigs,
-    config.domainConfigs,
-  );
+  const scheduler = deps.createScheduler(config.series, stateManager, downloadManager, cookies, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
   process.on('SIGINT', async () => {
@@ -208,7 +194,8 @@ export async function runApp(
         try {
           logger.info(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
-          await scheduler.reload(newConfig.series, newConfig.globalConfigs, newConfig.domainConfigs);
+          AppContext.reloadConfig(newConfig.globalConfigs, newConfig.domainConfigs);
+          await scheduler.reload(newConfig.series);
         } catch (error) {
           logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
         }

@@ -1,6 +1,7 @@
-import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
+import { AppContext } from '../app-context.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import * as VideoValidator from '../utils/video-validator.js';
 import { DownloadManager } from './download-manager.js';
@@ -13,7 +14,7 @@ const mockStateManager = {
 };
 
 const mockNotifier = {
-  notify: mock(() => {}),
+  notify: mock(() => Promise.resolve()),
   progress: mock(() => {}),
   endProgress: mock(() => {}),
 };
@@ -55,6 +56,10 @@ describe('DownloadManager', () => {
     statSpy.mockRestore();
   });
 
+  afterEach(() => {
+    AppContext.reset();
+  });
+
   beforeEach(() => {
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.addDownloadedEpisode.mockClear();
@@ -81,8 +86,11 @@ describe('DownloadManager', () => {
     statSpy.mockClear();
     statSpy.mockImplementation(async () => ({ size: 1024 }) as any);
 
+    // Initialize AppContext with mock notifier
+    AppContext.initialize(undefined, [], mockNotifier as any);
+
     // @ts-expect-error
-    downloadManager = new DownloadManager(mockStateManager, mockNotifier, '/downloads');
+    downloadManager = new DownloadManager(mockStateManager, '/downloads');
 
     // Mock verifyDownload to avoid file system check logic inside private method?
     // Actually verifyDownload uses Bun.file(path).size.
@@ -120,7 +128,7 @@ describe('DownloadManager', () => {
   it('should download to temp dir and move files', async () => {
     // Re-init with temp dir
     // @ts-expect-error
-    downloadManager = new DownloadManager(mockStateManager, mockNotifier, '/downloads', undefined, '/temp');
+    downloadManager = new DownloadManager(mockStateManager, '/downloads', undefined, '/temp');
     // Mock verifyDownload to avoid file system check
     // @ts-expect-error
     downloadManager.verifyDownload = () => 1024 * 1024; // 1MB

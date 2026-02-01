@@ -22,8 +22,10 @@ describe('Config Schema', () => {
         },
       },
     ],
-    stateFile: 'state.json',
-    browser: 'chrome',
+    globalConfig: {
+      stateFile: 'state.json',
+      browser: 'chrome',
+    },
   };
 
   describe('CheckSettingsSchema', () => {
@@ -158,14 +160,17 @@ describe('Config Schema', () => {
     });
 
     it('should fail if required fields are missing', () => {
-      const invalidConfig = { ...validConfig };
-      delete (invalidConfig as any).stateFile;
+      const invalidConfig = { ...validConfig, globalConfig: { ...validConfig.globalConfig } };
+      delete (invalidConfig.globalConfig as any).stateFile;
       const result = ConfigSchema.safeParse(invalidConfig);
       expect(result.success).toBe(false);
     });
 
     it('should validate browser enum', () => {
-      const invalidConfig = { ...validConfig, browser: 'invalid-browser' };
+      const invalidConfig = {
+        ...validConfig,
+        globalConfig: { ...validConfig.globalConfig, browser: 'invalid-browser' as any },
+      };
       const result = ConfigSchema.safeParse(invalidConfig);
       expect(result.success).toBe(false);
     });
@@ -177,7 +182,10 @@ describe('Config Schema', () => {
     });
 
     it('should throw for invalid config', () => {
-      const invalidConfig = { ...validConfig, browser: 'invalid' };
+      const invalidConfig = {
+        ...validConfig,
+        globalConfig: { ...validConfig.globalConfig, browser: 'invalid' as any },
+      };
       expect(() => validateConfig(invalidConfig as RawConfig)).toThrow();
     });
   });
@@ -189,7 +197,10 @@ describe('Config Schema', () => {
     });
 
     it('should return error for invalid config', () => {
-      const invalidConfig = { ...validConfig, browser: 'invalid' };
+      const invalidConfig = {
+        ...validConfig,
+        globalConfig: { ...validConfig.globalConfig, browser: 'invalid' as any },
+      };
       const result = validateConfigSafe(invalidConfig as RawConfig);
       expect(result.success).toBe(false);
       if (!result.success) {

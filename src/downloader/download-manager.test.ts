@@ -6,11 +6,11 @@ import { NotificationLevel } from '../notifications/notifier.js';
 import * as VideoValidator from '../utils/video-validator.js';
 import { DownloadManager } from './download-manager.js';
 
-// Mock dependencies
+// Mock StateManager
 const mockStateManager = {
   isDownloaded: mock(() => false),
-  addDownloadedEpisode: mock(() => {}),
-  save: mock(async () => {}),
+  addDownloadedEpisode: mock(async () => {}),
+  getSeriesEpisodes: mock(() => []),
 };
 
 const mockNotifier = {
@@ -63,7 +63,6 @@ describe('DownloadManager', () => {
   beforeEach(() => {
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.addDownloadedEpisode.mockClear();
-    mockStateManager.save.mockClear();
     mockNotifier.notify.mockClear();
     mockNotifier.progress.mockClear();
     mockNotifier.endProgress.mockClear();
@@ -86,18 +85,25 @@ describe('DownloadManager', () => {
     statSpy.mockClear();
     statSpy.mockImplementation(async () => ({ size: 1024 }) as any);
 
-    // Initialize AppContext with mock notifier
-    AppContext.initialize(undefined, [], mockNotifier as any);
+    // Mock ConfigRegistry
+    const mockConfigRegistry = {
+      resolve: mock(() => ({
+        stateFile: 'state.json',
+      })),
+      getConfig: mock(() => ({
+        telegram: undefined,
+        cookieFile: undefined,
+        download: { downloadDir: '/downloads', tempDir: undefined },
+      })),
+    };
 
-    // @ts-expect-error
-    downloadManager = new DownloadManager(mockStateManager, '/downloads');
+    // Initialize AppContext
+    AppContext.initialize(mockConfigRegistry as any, mockNotifier as any, mockStateManager as any);
 
-    // Mock verifyDownload to avoid file system check logic inside private method?
-    // Actually verifyDownload uses Bun.file(path).size.
-    // We cannot easily spy on Bun.file.
-    // But since we are testing public methods, we should mock what verifyDownload relies on, OR mock verifyDownload itself.
-    // The original test mocked verifyDownload.
-    // @ts-expect-error
+    downloadManager = new DownloadManager('/downloads');
+
+    // Mock verifyDownload to avoid file system check
+    // @ts-expect-error - testing private method
     downloadManager.verifyDownload = () => 1024 * 1024; // 1MB
   });
 
@@ -117,7 +123,6 @@ describe('DownloadManager', () => {
 
     expect(result).toBe(true);
     expect(mockStateManager.addDownloadedEpisode).toHaveBeenCalled();
-    expect(mockStateManager.save).toHaveBeenCalled();
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.HIGHLIGHT,
       expect.stringContaining('Downloading'),
@@ -127,10 +132,9 @@ describe('DownloadManager', () => {
 
   it('should download to temp dir and move files', async () => {
     // Re-init with temp dir
-    // @ts-expect-error
-    downloadManager = new DownloadManager(mockStateManager, '/downloads', undefined, '/temp');
+    downloadManager = new DownloadManager('/downloads', undefined, '/temp');
     // Mock verifyDownload to avoid file system check
-    // @ts-expect-error
+    // @ts-expect-error - testing private method
     downloadManager.verifyDownload = () => 1024 * 1024; // 1MB
 
     mockStateManager.isDownloaded.mockReturnValue(false);

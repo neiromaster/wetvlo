@@ -20,8 +20,9 @@ export class DownloadManager {
   private tempDir?: string;
   private cookieFile?: string;
 
-  constructor(stateManager: StateManager, downloadDir: string, cookieFile?: string, tempDir?: string) {
-    this.stateManager = stateManager;
+  constructor(downloadDir: string, cookieFile?: string, tempDir?: string) {
+    // Get StateManager from AppContext
+    this.stateManager = AppContext.getStateManager();
     this.downloadDir = resolve(downloadDir);
     this.cookieFile = cookieFile ? resolve(cookieFile) : undefined;
     this.tempDir = tempDir ? resolve(tempDir) : undefined;
@@ -30,11 +31,16 @@ export class DownloadManager {
   /**
    * Download an episode using appropriate downloader
    */
-  async download(_seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
+  async download(seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
     const notifier = AppContext.getNotifier();
+    const registry = AppContext.getConfig();
+
+    // Get state path from resolved config
+    const resolved = registry.resolve(seriesUrl, 'series');
+    const statePath = resolved.stateFile;
 
     // Check if already downloaded
-    if (this.stateManager.isDownloaded(seriesName, episode.number)) {
+    if (this.stateManager.isDownloaded(statePath, seriesName, episode.number)) {
       return false;
     }
 
@@ -110,8 +116,7 @@ export class DownloadManager {
       }
 
       // Add to state
-      this.stateManager.addDownloadedEpisode(seriesName, episode.number);
-      await this.stateManager.save();
+      await this.stateManager.addDownloadedEpisode(statePath, seriesName, episode.number);
 
       notifier.notify(
         NotificationLevel.SUCCESS,

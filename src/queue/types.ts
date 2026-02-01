@@ -5,7 +5,7 @@
  * queue items, configurations, and processor interfaces.
  */
 
-import type { SeriesConfig } from '../types/config.types.js';
+import type { SeriesConfig } from '../config/config-schema.js';
 import type { Episode } from '../types/episode.types.js';
 
 /**

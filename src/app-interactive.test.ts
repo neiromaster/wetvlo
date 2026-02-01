@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { type AppDependencies, runApp } from './app.js';
-import type { Config } from './types/config.types.js';
+import type { Config } from './config/config-schema.js';
 
 describe('App Interactive Mode', () => {
   let _exitSpy: any;
   let mockScheduler: any;
-  let mockStateManager: any;
   let mockDownloadManager: any;
   let mockConfig: Config;
   let stdinListeners: Record<string, Function> = {};
@@ -22,19 +21,13 @@ describe('App Interactive Mode', () => {
       reload: mock(() => Promise.resolve()),
     };
 
-    mockStateManager = {
-      load: mock(() => Promise.resolve()),
-      save: mock(() => Promise.resolve()),
-      getDownloadedCount: mock(() => 0),
-    };
-
     mockDownloadManager = {};
 
     mockConfig = {
       series: [],
       stateFile: 'state.json',
-      browser: 'chrome',
-    };
+      browser: 'chrome' as const,
+    } as any;
 
     // Mock process.stdin
     originalIsTTY = process.stdin.isTTY;
@@ -68,7 +61,6 @@ describe('App Interactive Mode', () => {
     loadConfig: mock(() => Promise.resolve(mockConfig)) as any,
     checkYtDlpInstalled: mock(() => Promise.resolve(true)),
     readCookieFile: mock(() => Promise.resolve('cookies')),
-    createStateManager: mock(() => mockStateManager),
     createDownloadManager: mock(() => mockDownloadManager),
     createScheduler: mock(() => mockScheduler),
     ...overrides,
@@ -126,7 +118,6 @@ describe('App Interactive Mode', () => {
     emitKeypress('q');
     await waitForAsync();
     expect(mockScheduler.stop).toHaveBeenCalled();
-    expect(mockStateManager.save).toHaveBeenCalled();
     expect(process.exit).toHaveBeenCalledWith(0);
   });
 
@@ -137,7 +128,6 @@ describe('App Interactive Mode', () => {
     emitKeypress('й');
     await waitForAsync();
     expect(mockScheduler.stop).toHaveBeenCalled();
-    expect(mockStateManager.save).toHaveBeenCalled();
     expect(process.exit).toHaveBeenCalledWith(0);
   });
 });

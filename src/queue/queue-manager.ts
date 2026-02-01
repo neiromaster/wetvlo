@@ -11,12 +11,11 @@
 
 import { createHash } from 'node:crypto';
 import { AppContext } from '../app-context.js';
-import type { ResolvedSeriesConfig } from '../config/resolved-config.types.js';
+import type { ResolvedConfig, SeriesConfig } from '../config/config-schema.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { handlerRegistry } from '../handlers/handler-registry.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import type { StateManager } from '../state/state-manager.js';
-import type { SeriesConfig } from '../types/config.types.js';
 import type { Episode, EpisodeType } from '../types/episode.types.js';
 import { extractDomain } from '../utils/url-utils.js';
 import type { CheckQueueItem, DownloadQueueItem } from './types.js';
@@ -41,19 +40,19 @@ export class QueueManager {
   /**
    * Create a new QueueManager
    *
-   * @param stateManager - State manager instance
    * @param downloadManager - Download manager instance
    * @param _cookieFile - Optional cookie file path (unused, kept for API compatibility)
+   * @param schedulerFactory - Optional factory for creating scheduler (for testing)
    */
   constructor(
-    stateManager: StateManager,
     downloadManager: DownloadManager,
     _cookieFile: string | undefined,
     schedulerFactory?: (
       executor: (task: CheckQueueItem | DownloadQueueItem, queueName: string) => Promise<void>,
     ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,
   ) {
-    this.stateManager = stateManager;
+    // Get StateManager from AppContext
+    this.stateManager = AppContext.getStateManager();
     this.downloadManager = downloadManager;
 
     // Create universal scheduler with executor callback
@@ -117,7 +116,7 @@ export class QueueManager {
    */
   addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[], config?: SeriesConfig): void {
     const notifier = AppContext.getNotifier();
-    const configResolver = AppContext.getConfig();
+    const registry = AppContext.getConfig();
 
     if (episodes.length === 0) {
       return;
@@ -129,12 +128,7 @@ export class QueueManager {
     this.registerDownloadQueue(domain);
 
     // Get download delay from resolved config
-    let resolvedConfig: ResolvedSeriesConfig;
-    if (config) {
-      resolvedConfig = configResolver.resolve(config);
-    } else {
-      resolvedConfig = configResolver.resolveDomain(domain);
-    }
+    const resolvedConfig = registry.resolve(seriesUrl, 'series');
     const { downloadDelay } = resolvedConfig.download;
 
     // Add episodes to download queue with staggered delays
@@ -167,8 +161,8 @@ export class QueueManager {
    */
   updateConfig(): void {
     const notifier = AppContext.getNotifier();
-    AppContext.reloadConfig();
-    notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration updated');
+    // Config is reloaded in AppContext, we just need to notify
+    notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration will be reloaded from AppContext');
   }
 
   /**
@@ -259,7 +253,7 @@ export class QueueManager {
    * Register download queue for a domain (shared across series)
    */
   private registerDownloadQueue(domain: string): void {
-    const configResolver = AppContext.getConfig();
+    const registry = AppContext.getConfig();
     const queueName = `download:${domain}`;
 
     // Check if queue is already registered
@@ -267,8 +261,9 @@ export class QueueManager {
       return;
     }
 
-    // Resolve configuration
-    const resolvedConfig = configResolver.resolveDomain(domain);
+    // Resolve configuration - use any URL from this domain to get domain-level config
+    const testUrl = `https://${domain}/`;
+    const resolvedConfig = registry.resolve(testUrl, 'domain');
     const { downloadDelay } = resolvedConfig.download;
 
     // Register queue with scheduler
@@ -279,7 +274,7 @@ export class QueueManager {
    * Register specific check queue for a series (isolated interval)
    */
   private registerSeriesCheckQueue(domain: string, config: SeriesConfig): string {
-    const configResolver = AppContext.getConfig();
+    const registry = AppContext.getConfig();
 
     // Generate a short hash of the URL to ensure uniqueness and safe queue name
     const hash = createHash('md5').update(config.url).digest('hex').substring(0, 12);
@@ -291,7 +286,7 @@ export class QueueManager {
     }
 
     // Resolve configuration
-    const resolvedConfig = configResolver.resolve(config);
+    const resolvedConfig = registry.resolve(config.url, 'series');
     const { checkInterval } = resolvedConfig.check;
 
     // Register queue with scheduler
@@ -341,7 +336,7 @@ export class QueueManager {
    */
   private async executeCheck(item: CheckQueueItem, domain: string, queueName: string): Promise<void> {
     const notifier = AppContext.getNotifier();
-    const configResolver = AppContext.getConfig();
+    const registry = AppContext.getConfig();
     const { seriesUrl, seriesName, config, attemptNumber, retryCount = 0 } = item;
 
     // Get handler for this domain
@@ -351,7 +346,7 @@ export class QueueManager {
     }
 
     // Get settings
-    const resolvedConfig = configResolver.resolve(config);
+    const resolvedConfig = registry.resolve(seriesUrl, 'series');
     const { count: checksCount, checkInterval } = resolvedConfig.check;
 
     try {
@@ -448,17 +443,11 @@ export class QueueManager {
    */
   private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
     const notifier = AppContext.getNotifier();
-    const configResolver = AppContext.getConfig();
-    const { seriesUrl, seriesName, episode, config, retryCount = 0 } = item;
+    const registry = AppContext.getConfig();
+    const { seriesUrl, seriesName, episode, retryCount = 0 } = item;
 
     // Resolve config
-    let resolvedConfig: ResolvedSeriesConfig;
-    if (config) {
-      resolvedConfig = configResolver.resolve(config);
-    } else {
-      resolvedConfig = configResolver.resolveDomain(domain);
-    }
-
+    const resolvedConfig = registry.resolve(seriesUrl, 'series');
     const { downloadDelay, minDuration } = resolvedConfig.download;
 
     try {
@@ -516,8 +505,8 @@ export class QueueManager {
    *
    * @param handler - Domain handler
    * @param seriesUrl - Series URL
-   * @param _seriesName - Series name
-   * @param config - Series configuration
+   * @param seriesName - Series name
+   * @param config - Resolved series configuration
    * @param attemptNumber - Current attempt number
    * @param domain - Domain name
    * @returns Check result
@@ -526,7 +515,7 @@ export class QueueManager {
     handler: ReturnType<typeof handlerRegistry.getHandlerOrThrow>,
     seriesUrl: string,
     seriesName: string,
-    config: ResolvedSeriesConfig,
+    config: ResolvedConfig<'series'>,
     attemptNumber: number,
     domain: string,
   ): Promise<{ hasNewEpisodes: boolean; episodes: Episode[]; requeueDelay?: number }> {
@@ -558,12 +547,14 @@ export class QueueManager {
     );
 
     // Get download types from config
-    const downloadTypes = config.check.downloadTypes;
+    const { downloadTypes } = config.check;
 
     // Filter for episodes matching download types and not yet downloaded
     const newEpisodes = episodes.filter((ep) => {
       const shouldDownload = downloadTypes.includes(ep.type as EpisodeType);
-      const notDownloaded = !this.stateManager.isDownloaded(seriesName, ep.number);
+      // Get state path from config
+      const statePath = config.stateFile;
+      const notDownloaded = !this.stateManager.isDownloaded(statePath, seriesName, ep.number);
       return shouldDownload && notDownloaded;
     });
 

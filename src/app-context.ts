@@ -9,49 +9,44 @@
  *   2. Access anywhere: import { AppContext } from './app-context'
  */
 
-import { ConfigResolver } from './config/config-resolver.js';
+import type { ConfigRegistry } from './config/config-registry.js';
 import type { Notifier } from './notifications/notifier.js';
-import type { DomainConfig, GlobalConfigs } from './types/config.types.js';
+import { StateManager } from './state/state-manager.js';
 
 /**
  * Global application context singleton
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Intentional singleton pattern for global app context
 export class AppContext {
-  private static configResolver?: ConfigResolver;
+  private static configRegistry?: ConfigRegistry;
   private static notifier?: Notifier;
-  private static domainConfigs?: DomainConfig[];
-  private static globalConfigs?: GlobalConfigs;
+  private static stateManager?: StateManager;
 
   /**
-   * Initialize the application context
+   * Initialize the application context with pre-created services
    *
    * Called once during app startup to set up shared services.
    *
-   * @param globalConfigs - Global configuration defaults
-   * @param domainConfigs - Domain-specific configurations
+   * @param configRegistry - Config registry instance
    * @param notifier - Notifier instance
+   * @param stateManager - State manager instance (optional, created from notifier if not provided)
    */
-  static initialize(globalConfigs?: GlobalConfigs, domainConfigs?: DomainConfig[], notifier?: Notifier): void {
-    AppContext.globalConfigs = globalConfigs;
-    AppContext.domainConfigs = domainConfigs;
-    AppContext.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
-
-    if (notifier) {
-      AppContext.notifier = notifier;
-    }
+  static initialize(configRegistry: ConfigRegistry, notifier: Notifier, stateManager?: StateManager): void {
+    AppContext.configRegistry = configRegistry;
+    AppContext.notifier = notifier;
+    AppContext.stateManager = stateManager || (notifier ? new StateManager(notifier) : undefined);
   }
 
   /**
-   * Get the config resolver instance
+   * Get the config registry instance
    *
    * @throws Error if context not initialized
    */
-  static getConfig(): ConfigResolver {
-    if (!AppContext.configResolver) {
+  static getConfig(): ConfigRegistry {
+    if (!AppContext.configRegistry) {
       throw new Error('AppContext not initialized. Call AppContext.initialize() first.');
     }
-    return AppContext.configResolver;
+    return AppContext.configRegistry;
   }
 
   /**
@@ -67,18 +62,27 @@ export class AppContext {
   }
 
   /**
+   * Get the state manager instance
+   *
+   * @throws Error if context not initialized
+   */
+  static getStateManager(): StateManager {
+    if (!AppContext.stateManager) {
+      throw new Error('AppContext not initialized. Call AppContext.initialize() first.');
+    }
+    return AppContext.stateManager;
+  }
+
+  /**
    * Reload configuration
    *
-   * Creates a new ConfigResolver with updated configuration.
+   * Updates the ConfigRegistry with new configuration.
    * Useful for runtime config reloading.
    *
-   * @param globalConfigs - New global configuration defaults
-   * @param domainConfigs - New domain-specific configurations
+   * @param configRegistry - New config registry instance
    */
-  static reloadConfig(globalConfigs?: GlobalConfigs, domainConfigs?: DomainConfig[]): void {
-    AppContext.globalConfigs = globalConfigs;
-    AppContext.domainConfigs = domainConfigs;
-    AppContext.configResolver = new ConfigResolver(domainConfigs, globalConfigs);
+  static reloadConfig(configRegistry: ConfigRegistry): void {
+    AppContext.configRegistry = configRegistry;
   }
 
   /**
@@ -93,33 +97,18 @@ export class AppContext {
   }
 
   /**
-   * Get current global configs (for inspection)
-   */
-  static getGlobalConfigs(): GlobalConfigs | undefined {
-    return AppContext.globalConfigs;
-  }
-
-  /**
-   * Get current domain configs (for inspection)
-   */
-  static getDomainConfigs(): DomainConfig[] | undefined {
-    return AppContext.domainConfigs;
-  }
-
-  /**
    * Check if context is initialized
    */
   static isInitialized(): boolean {
-    return AppContext.configResolver !== undefined;
+    return AppContext.configRegistry !== undefined;
   }
 
   /**
    * Reset the context (useful for testing)
    */
   static reset(): void {
-    AppContext.configResolver = undefined;
+    AppContext.configRegistry = undefined;
     AppContext.notifier = undefined;
-    AppContext.domainConfigs = undefined;
-    AppContext.globalConfigs = undefined;
+    AppContext.stateManager = undefined;
   }
 }

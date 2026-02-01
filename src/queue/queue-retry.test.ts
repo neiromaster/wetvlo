@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
+import { ConfigRegistry } from '../config/config-registry';
 import type { DomainConfig } from '../config/config-schema';
 import { DownloadManager } from '../downloader/download-manager';
 import type { Notifier } from '../notifications/notifier';
@@ -33,6 +34,7 @@ describe('QueueManager Retry Logic', () => {
     const retryDelay = 0.5; // 500ms (longer than downloadDelay)
 
     const mockConfig: DomainConfig = {
+      stateFile: 'test-state.json',
       domain,
       check: { count: 1 },
       download: {
@@ -45,17 +47,30 @@ describe('QueueManager Retry Logic', () => {
     };
 
     // Mocks
-    const stateManager = new StateManager('test-state.json');
+    const stateManager = new StateManager();
     const notifier: Notifier = {
       notify: mock(() => {}),
       progress: mock(() => {}),
       endProgress: mock(() => {}),
     };
 
-    // Initialize AppContext
-    AppContext.initialize(undefined, [mockConfig], notifier as any);
+    // Initialize AppContext with proper Config structure
+    const mockRootConfig = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'http://test.com/series',
+          startTime: '20:00',
+        },
+      ],
+      domainConfigs: [mockConfig],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    const configRegistry = new ConfigRegistry(mockRootConfig as any);
+    AppContext.initialize(configRegistry, notifier, stateManager);
 
-    const downloadManager = new DownloadManager(stateManager, 'downloads');
+    const downloadManager = new DownloadManager('downloads');
 
     // Mock download behavior
     let attempt = 0;
@@ -75,7 +90,7 @@ describe('QueueManager Retry Logic', () => {
     });
 
     // Initialize QueueManager with our config
-    queueManager = new QueueManager(stateManager, downloadManager, undefined);
+    queueManager = new QueueManager(downloadManager, undefined);
 
     // Add episodes
     const episodes: Episode[] = [

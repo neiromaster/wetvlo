@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as yaml from 'js-yaml';
+import type { Config, RawConfig } from '../config/config-schema.js';
 import { ConfigError } from '../errors/custom-errors';
-import type { Config, RawConfig } from '../types/config.types';
 import { resolveEnvRecursive } from '../utils/env-resolver';
 import { validateConfig } from './config-schema';
 
@@ -52,12 +52,5 @@ export async function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Prom
  * Load config with defaults for optional fields
  */
 export async function loadConfigWithDefaults(configPath: string = DEFAULT_CONFIG_PATH): Promise<Config> {
-  const config = await loadConfig(configPath);
-
-  // Set defaults for optional fields
-  if (!config.telegram) {
-    delete config.telegram;
-  }
-
-  return config;
+  return loadConfig(configPath);
 }

@@ -23,7 +23,7 @@ const mockQueueManagerFactory = mock(() => mockQueueManagerInstance);
 
 describe('Scheduler', () => {
   let scheduler: Scheduler;
-  let stateManager: any;
+  let _stateManager: any;
   let downloadManager: any;
   let notifier: any;
 
@@ -39,9 +39,6 @@ describe('Scheduler', () => {
     mockGetMsUntilCron.mockReturnValue(0);
     mockSleep.mockReturnValue(Promise.resolve());
 
-    stateManager = {
-      save: mock(() => Promise.resolve()),
-    };
     downloadManager = {};
     notifier = {
       notify: mock(() => {}),
@@ -59,12 +56,16 @@ describe('Scheduler', () => {
 
     // Reset and initialize AppContext
     AppContext.reset();
-    AppContext.initialize(undefined, [], notifier as any);
+    // Mock ConfigRegistry
+    const mockConfigRegistry = {
+      resolve: mock(() => ({})),
+      getConfig: mock(() => ({})),
+    } as any;
+    AppContext.initialize(mockConfigRegistry, notifier as any);
 
     // Create scheduler
     scheduler = new Scheduler(
       configs,
-      stateManager,
       downloadManager,
       undefined,
       { mode: 'scheduled' },
@@ -117,7 +118,6 @@ describe('Scheduler', () => {
   it('should start scheduler in once mode', async () => {
     scheduler = new Scheduler(
       configs,
-      stateManager,
       downloadManager,
       undefined,
       { mode: 'once' },
@@ -135,7 +135,6 @@ describe('Scheduler', () => {
     expect(notifier.notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringContaining('Single-run mode'));
 
     expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
-    expect(stateManager.save).toHaveBeenCalled();
   });
 
   it('should stop scheduler', async () => {
@@ -154,7 +153,6 @@ describe('Scheduler', () => {
     await startPromise;
 
     expect(mockQueueManagerInstance.stop).toHaveBeenCalled();
-    expect(stateManager.save).toHaveBeenCalled();
     expect(scheduler.isRunning()).toBe(false);
   });
 
@@ -187,7 +185,6 @@ describe('Scheduler', () => {
 
     scheduler = new Scheduler(
       configs,
-      stateManager,
       downloadManager,
       undefined,
       { mode: 'once' },
@@ -209,7 +206,6 @@ describe('Scheduler', () => {
 
     scheduler = new Scheduler(
       cronConfigs as any,
-      stateManager,
       downloadManager,
       undefined,
       { mode: 'scheduled' },
@@ -248,7 +244,6 @@ describe('Scheduler', () => {
     // Re-create scheduler with onIdle
     scheduler = new Scheduler(
       configs,
-      stateManager,
       downloadManager,
       undefined,
       { mode: 'scheduled', onIdle },

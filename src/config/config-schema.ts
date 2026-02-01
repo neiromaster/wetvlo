@@ -6,93 +6,59 @@
  */
 
 import { z } from 'zod';
+import type { DeepMerge } from '../utils/deep-merge';
+import type { DefaultConfig } from './config-defaults';
 
 /**
  * Episode types
  */
-const EpisodeTypeSchema = z.enum(['available', 'vip', 'teaser', 'express', 'preview', 'locked']);
+const EpisodeTypeSchema = z.enum(['available', 'vip', 'svip', 'teaser', 'express', 'preview', 'locked']);
 
+export type EpisodeType = z.infer<typeof EpisodeTypeSchema>;
 /**
  * Check settings for series/domain
  */
 export const CheckSettingsSchema = z.object({
-  count: z.number().positive().optional(),
-  checkInterval: z.number().positive().optional(),
-  downloadTypes: z.array(EpisodeTypeSchema).optional(),
+  count: z.number().positive().optional().describe('Number of episodes to check'),
+  checkInterval: z.number().positive().optional().describe('Interval between checks in seconds'),
+  downloadTypes: z.array(EpisodeTypeSchema).optional().describe('Episode types to download'),
 });
 
 export type CheckSettings = z.infer<typeof CheckSettingsSchema>;
 
+export type CheckSettingsResolved = DeepMerge<DefaultConfig['check'], CheckSettings>;
 /**
  * Download settings for series/domain
  */
 export const DownloadSettingsSchema = z.object({
-  downloadDir: z.string().optional(),
-  tempDir: z.string().optional(),
-  downloadDelay: z.number().nonnegative().optional(),
-  maxRetries: z.number().int().nonnegative().optional(),
-  initialTimeout: z.number().positive().optional(),
-  backoffMultiplier: z.number().positive().optional(),
-  jitterPercentage: z.number().int().min(0).max(100).optional(),
-  minDuration: z.number().nonnegative().optional(),
+  downloadDir: z.string().optional().describe('Directory to save downloaded episodes'),
+  tempDir: z.string().optional().describe('Directory for temporary files'),
+  downloadDelay: z.number().nonnegative().optional().describe('Delay between downloads in milliseconds'),
+  maxRetries: z.number().int().nonnegative().optional().describe('Maximum number of retry attempts'),
+  initialTimeout: z.number().positive().optional().describe('Initial timeout for operations in milliseconds'),
+  backoffMultiplier: z.number().positive().optional().describe('Multiplier for exponential backoff'),
+  jitterPercentage: z.number().int().min(0).max(100).optional().describe('Jitter percentage for retry delays'),
+  minDuration: z.number().nonnegative().optional().describe('Minimum duration in seconds for downloads'),
 });
 
 export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;
+
+export type DownloadSettingsResolved = DeepMerge<DefaultConfig['download'], DownloadSettings>;
+
+const CommonSettingsSchema = z.object({
+  check: CheckSettingsSchema.optional().describe('Check settings'),
+  download: DownloadSettingsSchema.optional().describe('Download settings'),
+});
 
 /**
  * Telegram notification configuration
  */
 export const TelegramConfigSchema = z.object({
-  botToken: z.string(),
-  chatId: z.string(),
+  botToken: z.string().describe('Telegram bot token'),
+  chatId: z.string().describe('Telegram chat ID'),
 });
 
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
-
-/**
- * Domain-specific configuration
- */
-export const DomainConfigSchema = z.object({
-  domain: z.string(),
-  check: CheckSettingsSchema.optional(),
-  download: DownloadSettingsSchema.optional(),
-});
-
-export type DomainConfig = z.infer<typeof DomainConfigSchema>;
-
-/**
- * Series configuration
- */
-export const SeriesConfigSchema = z
-  .object({
-    name: z.string(),
-    url: z.string().url(),
-    startTime: z
-      .string()
-      .regex(/^\d{1,2}:\d{2}$/, {
-        message: 'Must be in HH:MM format (e.g., "20:00")',
-      })
-      .optional(),
-    cron: z.string().optional(),
-    check: CheckSettingsSchema.optional(),
-    download: DownloadSettingsSchema.optional(),
-  })
-  .refine((data) => data.startTime || data.cron, {
-    message: 'Either startTime or cron must be provided',
-    path: ['startTime'],
-  });
-
-export type SeriesConfig = z.infer<typeof SeriesConfigSchema>;
-
-/**
- * Global configuration defaults
- */
-export const GlobalConfigsSchema = z.object({
-  check: CheckSettingsSchema.optional(),
-  download: DownloadSettingsSchema.optional(),
-});
-
-export type GlobalConfigs = z.infer<typeof GlobalConfigsSchema>;
 
 /**
  * Browser options
@@ -100,16 +66,57 @@ export type GlobalConfigs = z.infer<typeof GlobalConfigsSchema>;
 const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']);
 
 /**
+ * Global configuration defaults
+ */
+export const GlobalConfigSchema = CommonSettingsSchema.extend({
+  telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
+  stateFile: z.string().describe('Path to state file'),
+  browser: BrowserSchema.optional().describe('Browser to use for scraping'),
+  cookieFile: z.string().optional().describe('Path to cookie file'),
+});
+
+export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
+
+export type GlobalConfigResolved = DeepMerge<DefaultConfig, GlobalConfig>;
+
+/**
+ * Domain-specific configuration
+ */
+export const DomainConfigSchema = GlobalConfigSchema.extend({
+  domain: z.string().describe('Domain name (e.g., "weTV")'),
+});
+
+export type DomainConfig = z.infer<typeof DomainConfigSchema>;
+
+export type DomainConfigResolved = DeepMerge<GlobalConfigResolved, DomainConfig>;
+
+/**
+ * Series configuration
+ */
+export const SeriesConfigSchema = CommonSettingsSchema.extend({
+  name: z.string().describe('Series name'),
+  url: z.url().describe('Series URL'),
+  startTime: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}$/, {
+      message: 'Must be in HH:MM format (e.g., "20:00")',
+    })
+    .optional()
+    .describe('Start time in HH:MM format'),
+  cron: z.string().optional().describe('Cron expression for scheduling'),
+});
+
+export type SeriesConfig = z.infer<typeof SeriesConfigSchema>;
+
+export type SeriesConfigResolved = DeepMerge<DomainConfigResolved, SeriesConfig>;
+
+/**
  * Main configuration schema
  */
-export const ConfigSchema = z.object({
-  series: z.array(SeriesConfigSchema).min(1, 'Cannot be empty'),
-  telegram: TelegramConfigSchema.optional(),
-  globalConfigs: GlobalConfigsSchema.optional(),
-  stateFile: z.string(),
-  browser: BrowserSchema,
-  cookieFile: z.string().optional(),
-  domainConfigs: z.array(DomainConfigSchema).optional(),
+export const ConfigSchema = CommonSettingsSchema.extend({
+  series: z.array(SeriesConfigSchema).min(1, 'Cannot be empty').describe('List of series to monitor'),
+  domainConfigs: z.array(DomainConfigSchema).optional().describe('Domain-specific configurations'),
+  globalConfig: GlobalConfigSchema.optional().describe('Global configuration defaults'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -118,6 +125,20 @@ export type Config = z.infer<typeof ConfigSchema>;
  * Raw configuration before env var resolution
  */
 export type RawConfig = Record<string, unknown>;
+
+/**
+ * Configuration level for resolution
+ */
+export type Level = 'global' | 'domain' | 'series';
+
+/**
+ * Resolved configuration type based on level
+ */
+export type ResolvedConfig<L extends Level> = L extends 'global'
+  ? GlobalConfigResolved
+  : L extends 'domain'
+    ? DomainConfigResolved
+    : SeriesConfigResolved;
 
 /**
  * Validate configuration using Zod

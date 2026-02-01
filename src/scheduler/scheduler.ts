@@ -10,12 +10,12 @@
  */
 
 import { AppContext } from '../app-context.js';
+import type { SeriesConfig } from '../config/config-schema.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { SchedulerError } from '../errors/custom-errors.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import { QueueManager } from '../queue/queue-manager.js';
-import type { StateManager } from '../state/state-manager.js';
-import type { SchedulerOptions, SeriesConfig } from '../types/config.types.js';
+import type { SchedulerOptions } from '../types/config.types.js';
 import { getMsUntilCron, getMsUntilTime, sleep } from '../utils/time-utils.js';
 
 /**
@@ -30,18 +30,13 @@ export type TimeProvider = {
 /**
  * QueueManager factory type for dependency injection
  */
-export type QueueManagerFactory = (
-  stateManager: StateManager,
-  downloadManager: DownloadManager,
-  cookies: string | undefined,
-) => QueueManager;
+export type QueueManagerFactory = (downloadManager: DownloadManager, cookies: string | undefined) => QueueManager;
 
 /**
  * Scheduler for managing periodic checks with queue-based architecture
  */
 export class Scheduler {
   private configs: SeriesConfig[];
-  private stateManager: StateManager;
   private downloadManager: DownloadManager;
   private cookies?: string;
   private options: SchedulerOptions;
@@ -53,7 +48,6 @@ export class Scheduler {
 
   constructor(
     configs: SeriesConfig[],
-    stateManager: StateManager,
     downloadManager: DownloadManager,
     cookies?: string,
     options: SchedulerOptions = { mode: 'scheduled' },
@@ -61,16 +55,15 @@ export class Scheduler {
     queueManagerFactory?: QueueManagerFactory,
   ) {
     this.configs = configs;
-    this.stateManager = stateManager;
     this.downloadManager = downloadManager;
     this.cookies = cookies;
     this.options = options;
     this.timeProvider = timeProvider || { getMsUntilTime, getMsUntilCron, sleep };
 
     // Create queue manager
-    const createQueueManager = queueManagerFactory || ((sm, dm, cook) => new QueueManager(sm, dm, cook));
+    const createQueueManager = queueManagerFactory || ((dm, cook) => new QueueManager(dm, cook));
 
-    this.queueManager = createQueueManager(this.stateManager, this.downloadManager, this.cookies);
+    this.queueManager = createQueueManager(this.downloadManager, this.cookies);
   }
 
   /**
@@ -195,9 +188,6 @@ export class Scheduler {
     // Stop queue manager (drains all queues)
     await this.queueManager.stop();
 
-    // Save state
-    await this.stateManager.save();
-
     this.running = false;
 
     notifier.notify(NotificationLevel.INFO, 'Scheduler stopped');
@@ -304,8 +294,6 @@ export class Scheduler {
       await this.timeProvider.sleep(1000);
     }
 
-    // Save state after all checks
-    await this.stateManager.save();
     notifier.notify(NotificationLevel.SUCCESS, 'Single-run complete');
   }
 

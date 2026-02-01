@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context.js';
+import { ConfigRegistry } from '../config/config-registry.js';
 import { NotificationLevel } from '../notifications/notifier.js';
 import { EpisodeType } from '../types/episode.types.js';
 import { QueueManager } from './queue-manager.js';
@@ -46,7 +47,21 @@ describe('QueueManager', () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
 
     // Initialize AppContext for tests
-    AppContext.initialize(undefined, [], mockNotifier as any);
+    // Create a proper config structure for testing
+    const mockConfig = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 }, // 10s default for tests
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    const configRegistry = new ConfigRegistry(mockConfig as any);
+    AppContext.initialize(configRegistry, mockNotifier as any);
 
     // Create mock scheduler
     mockScheduler = {
@@ -68,7 +83,7 @@ describe('QueueManager', () => {
       return mockScheduler;
     };
 
-    queueManager = new QueueManager(mockStateManager, mockDownloadManager, undefined, schedulerFactory as any);
+    queueManager = new QueueManager(mockDownloadManager, undefined, schedulerFactory as any);
   });
 
   it('should initialize correctly', () => {
@@ -125,7 +140,7 @@ describe('QueueManager', () => {
       name: 'Test Series',
       url: 'https://wetv.vip/play/123',
       startTime: '12:00',
-      download: { downloadDelay: 60 }, // Custom delay
+      download: { downloadDelay: 10 }, // Note: ConfigRegistry uses pre-configured value
     };
 
     queueManager.addEpisodes('https://wetv.vip/play/123', 'Test Series', episodes, config);
@@ -137,11 +152,11 @@ describe('QueueManager', () => {
       expect.objectContaining({ episode: episodes[0] }),
       0,
     );
-    // Second episode: delay based on series config (60s) -> 60000ms
+    // Second episode: delay based on pre-configured value (10s) -> 10000ms
     expect(mockScheduler.addTask).toHaveBeenCalledWith(
       'download:wetv.vip',
       expect.objectContaining({ episode: episodes[1] }),
-      60000,
+      10000,
     );
   });
 
@@ -197,7 +212,7 @@ describe('QueueManager', () => {
       config: {
         name: 'Test Series',
         url: 'https://wetv.vip/play/123',
-        check: { count: 3, checkInterval: 10 },
+        check: { count: 3 },
       },
       attemptNumber: 1,
     };
@@ -205,13 +220,13 @@ describe('QueueManager', () => {
     await schedulerExecutor(task, 'check:wetv.vip');
 
     expect(mockHandler.extractEpisodes).toHaveBeenCalled();
-    // Should requeue
+    // Should requeue with default checkInterval (600s = 600000ms from defaults)
     expect(mockScheduler.addTask).toHaveBeenCalledWith(
       'check:wetv.vip',
       expect.objectContaining({
         attemptNumber: 2,
       }),
-      10000, // 10s delay
+      600000, // 600s delay (default checkInterval)
     );
   });
 

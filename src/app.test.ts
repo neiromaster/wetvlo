@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { type AppDependencies, handleShutdown, runApp } from './app.js';
-import type { Config } from './types/config.types.js';
+import type { Config } from './config/config-schema.js';
 
 describe('App', () => {
   let _exitSpy: any;
   let mockScheduler: any;
-  let mockStateManager: any;
   let mockDownloadManager: any;
   let mockConfig: Config;
 
@@ -17,19 +16,13 @@ describe('App', () => {
       stop: mock(() => Promise.resolve()),
     };
 
-    mockStateManager = {
-      load: mock(() => Promise.resolve()),
-      save: mock(() => Promise.resolve()),
-      getDownloadedCount: mock(() => 0),
-    };
-
     mockDownloadManager = {};
 
     mockConfig = {
       series: [],
       stateFile: 'state.json',
-      browser: 'chrome',
-    };
+      browser: 'chrome' as const,
+    } as any;
   });
 
   afterEach(() => {
@@ -40,7 +33,6 @@ describe('App', () => {
     loadConfig: mock(() => Promise.resolve(mockConfig)) as any,
     checkYtDlpInstalled: mock(() => Promise.resolve(true)),
     readCookieFile: mock(() => Promise.resolve('cookies')),
-    createStateManager: mock(() => mockStateManager),
     createDownloadManager: mock(() => mockDownloadManager),
     createScheduler: mock(() => mockScheduler),
     ...overrides,
@@ -52,8 +44,6 @@ describe('App', () => {
 
     expect(deps.checkYtDlpInstalled).toHaveBeenCalled();
     expect(deps.loadConfig).toHaveBeenCalledWith('config.yaml');
-    expect(deps.createStateManager).toHaveBeenCalledWith('state.json');
-    expect(mockStateManager.load).toHaveBeenCalled();
     expect(deps.createDownloadManager).toHaveBeenCalled();
     expect(deps.createScheduler).toHaveBeenCalled();
     expect(mockScheduler.start).toHaveBeenCalled();
@@ -67,10 +57,9 @@ describe('App', () => {
     await expect(runApp('config.yaml', 'once', deps)).rejects.toThrow('yt-dlp is not installed');
   });
 
-  it('handleShutdown should stop scheduler and save state', async () => {
-    await handleShutdown(mockScheduler, mockStateManager);
+  it('handleShutdown should stop scheduler', async () => {
+    await handleShutdown(mockScheduler);
 
     expect(mockScheduler.stop).toHaveBeenCalled();
-    expect(mockStateManager.save).toHaveBeenCalled();
   });
 });

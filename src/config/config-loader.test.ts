@@ -24,8 +24,10 @@ describe('Config', () => {
             startTime: '20:00',
           },
         ],
-        stateFile: 'state.json',
-        browser: 'chrome',
+        globalConfig: {
+          stateFile: 'state.json',
+          browser: 'chrome',
+        },
       };
 
       expect(() => validateConfig(validConfig)).not.toThrow();
@@ -35,8 +37,10 @@ describe('Config', () => {
     it('should fail on invalid series', () => {
       const invalidConfig = {
         series: [], // Empty array not allowed
-        stateFile: 'state.json',
-        browser: 'chrome',
+        globalConfig: {
+          stateFile: 'state.json',
+          browser: 'chrome',
+        },
       };
 
       expect(() => validateConfig(invalidConfig)).toThrow();
@@ -47,10 +51,12 @@ describe('Config', () => {
       }
     });
 
-    it('should fail on missing required fields', () => {
+    it('should fail on missing required fields in globalConfig', () => {
       const invalidConfig = {
         series: [{ name: 'Test', url: 'https://ex.com', startTime: '20:00' }],
-        // Missing stateFile and browser
+        globalConfig: {
+          // Missing stateFile
+        },
       };
 
       expect(() => validateConfig(invalidConfig)).toThrow();
@@ -64,18 +70,19 @@ series:
   - name: Test Series
     url: https://example.com
     startTime: "20:00"
-stateFile: state.json
-browser: chrome
-telegram:
-  botToken: token123
-  chatId: chat123
+globalConfig:
+  stateFile: state.json
+  browser: chrome
+  telegram:
+    botToken: token123
+    chatId: chat123
 `;
       writeFileSync(absolutePath, yamlContent);
 
       const config = await loadConfig(testConfigFile);
       expect(config.series).toHaveLength(1);
       expect(config.series[0]?.name).toBe('Test Series');
-      expect(config.telegram?.botToken).toBe('token123');
+      expect(config.globalConfig?.telegram?.botToken).toBe('token123');
     });
 
     it('should throw if file not found', async () => {
@@ -89,16 +96,17 @@ series:
   - name: Test Series
     url: https://example.com
     startTime: "20:00"
-stateFile: state.json
-browser: chrome
-telegram:
-  botToken: "\${TEST_TOKEN}"
-  chatId: chat123
+globalConfig:
+  stateFile: state.json
+  browser: chrome
+  telegram:
+    botToken: "\${TEST_TOKEN}"
+    chatId: chat123
 `;
       writeFileSync(absolutePath, yamlContent);
 
       const config = await loadConfig(testConfigFile);
-      expect(config.telegram?.botToken).toBe('env-token-123');
+      expect(config.globalConfig?.telegram?.botToken).toBe('env-token-123');
     });
   });
 });

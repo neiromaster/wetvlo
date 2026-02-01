@@ -1,8 +1,9 @@
 import * as readline from 'node:readline';
 import { boolean, command, flag, option, string } from 'cmd-ts';
 import { AppContext } from './app-context.js';
-import { DEFAULT_DOWNLOAD_DIR } from './config/config-defaults.js';
 import { loadConfig } from './config/config-loader.js';
+import { ConfigRegistry } from './config/config-registry.js';
+import type { SeriesConfig } from './config/config-schema.js';
 import { DownloadManager } from './downloader/download-manager.js';
 import { ConfigError } from './errors/custom-errors.js';
 import { handlerRegistry } from './handlers/handler-registry.js';
@@ -14,7 +15,7 @@ import type { NotificationLevel, Notifier } from './notifications/notifier.js';
 import { TelegramNotifier } from './notifications/telegram-notifier.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { StateManager } from './state/state-manager.js';
-import type { SchedulerMode, SchedulerOptions, SeriesConfig } from './types/config.types.js';
+import type { SchedulerMode, SchedulerOptions } from './types/config.types.js';
 import { readCookieFile } from './utils/cookie-extractor.js';
 import { logger } from './utils/logger.js';
 
@@ -22,16 +23,9 @@ export type AppDependencies = {
   loadConfig: typeof loadConfig;
   checkYtDlpInstalled: () => Promise<boolean>;
   readCookieFile: typeof readCookieFile;
-  createStateManager: (path: string) => StateManager;
-  createDownloadManager: (
-    stateManager: StateManager,
-    downloadDir: string,
-    cookieFile?: string,
-    tempDir?: string,
-  ) => DownloadManager;
+  createDownloadManager: (downloadDir: string, cookieFile?: string, tempDir?: string) => DownloadManager;
   createScheduler: (
     configs: SeriesConfig[],
-    stateManager: StateManager,
     downloadManager: DownloadManager,
     cookies?: string,
     options?: SchedulerOptions,
@@ -42,20 +36,18 @@ const defaultDependencies: AppDependencies = {
   loadConfig,
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
-  createStateManager: (path) => new StateManager(path),
-  createDownloadManager: (sm, dir, cf, temp) => new DownloadManager(sm, dir, cf, temp),
-  createScheduler: (c, sm, dm, cook, opt) => new Scheduler(c, sm, dm, cook, opt),
+  createDownloadManager: (dir, cf, temp) => new DownloadManager(dir, cf, temp),
+  createScheduler: (c, dm, cook, opt) => new Scheduler(c, dm, cook, opt),
 };
 
 /**
  * Handle graceful shutdown
  */
-export async function handleShutdown(scheduler: Scheduler, stateManager: StateManager): Promise<void> {
+export async function handleShutdown(scheduler: Scheduler): Promise<void> {
   logger.info('Shutting down gracefully...');
 
   try {
     await scheduler.stop();
-    await stateManager.save();
     logger.success('Shutdown complete');
   } catch (error) {
     logger.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
@@ -87,17 +79,16 @@ export async function runApp(
   const config = await deps.loadConfig(configPath);
   logger.success('Configuration loaded');
 
-  // Initialize state manager
-  const stateManager = deps.createStateManager(config.stateFile);
-  await stateManager.load();
-  logger.info(`State loaded: ${stateManager.getDownloadedCount()} downloaded episodes`);
+  // Create config registry
+  const configRegistry = new ConfigRegistry(config);
 
-  // Set up notifiers
+  // Set up notifiers using configRegistry
   const notifiers: Array<ConsoleNotifier | TelegramNotifier> = [new ConsoleNotifier()];
+  const globalConfig = configRegistry.getConfig('global');
 
-  if (config.telegram) {
+  if (globalConfig.telegram) {
     try {
-      notifiers.push(new TelegramNotifier(config.telegram));
+      notifiers.push(new TelegramNotifier(globalConfig.telegram));
       logger.info('Telegram notifications enabled for errors');
     } catch (error) {
       logger.warning(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
@@ -121,8 +112,11 @@ export async function runApp(
     },
   };
 
-  // Initialize global AppContext with config and notifier
-  AppContext.initialize(config.globalConfigs, config.domainConfigs, notifier);
+  // Create state manager
+  const stateManager = new StateManager(notifier);
+
+  // Initialize AppContext with all services
+  AppContext.initialize(configRegistry, notifier, stateManager);
   logger.info('AppContext initialized');
 
   // Register handlers
@@ -133,9 +127,9 @@ export async function runApp(
 
   // Load cookies if specified
   let cookies: string | undefined;
-  if (config.cookieFile) {
+  if (globalConfig.cookieFile) {
     try {
-      cookies = await deps.readCookieFile(config.cookieFile);
+      cookies = await deps.readCookieFile(globalConfig.cookieFile);
       logger.success('Cookies loaded from file');
     } catch (error) {
       logger.warning(`Failed to load cookies: ${error instanceof Error ? error.message : String(error)}`);
@@ -143,9 +137,10 @@ export async function runApp(
   }
 
   // Create download manager
-  const downloadDir = config.globalConfigs?.download?.downloadDir ?? DEFAULT_DOWNLOAD_DIR;
-  const tempDir = config.globalConfigs?.download?.tempDir;
-  const downloadManager = deps.createDownloadManager(stateManager, downloadDir, config.cookieFile, tempDir);
+  const downloadDir = globalConfig.download.downloadDir;
+  const tempDir = globalConfig.download.tempDir;
+  const cookieFile = globalConfig.cookieFile;
+  const downloadManager = deps.createDownloadManager(downloadDir, cookieFile, tempDir);
 
   // Setup interactive mode instructions
   let onIdle: (() => void) | undefined;
@@ -162,15 +157,15 @@ export async function runApp(
 
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');
-  const scheduler = deps.createScheduler(config.series, stateManager, downloadManager, cookies, { mode, onIdle });
+  const scheduler = deps.createScheduler(config.series, downloadManager, cookies, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
   process.on('SIGINT', async () => {
-    await handleShutdown(scheduler, stateManager);
+    await handleShutdown(scheduler);
     process.exit(0);
   });
   process.on('SIGTERM', async () => {
-    await handleShutdown(scheduler, stateManager);
+    await handleShutdown(scheduler);
     process.exit(0);
   });
 
@@ -186,7 +181,7 @@ export async function runApp(
 
       // q, й or Ctrl+C to quit
       if (name === 'q' || name === 'й' || (key.ctrl && name === 'c')) {
-        await handleShutdown(scheduler, stateManager);
+        await handleShutdown(scheduler);
         process.exit(0);
       }
       // r or к to reload config
@@ -194,7 +189,8 @@ export async function runApp(
         try {
           logger.info(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
-          AppContext.reloadConfig(newConfig.globalConfigs, newConfig.domainConfigs);
+          const newConfigRegistry = new ConfigRegistry(newConfig);
+          AppContext.reloadConfig(newConfigRegistry);
           await scheduler.reload(newConfig.series);
         } catch (error) {
           logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);

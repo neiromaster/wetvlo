@@ -13,7 +13,7 @@ describe('StateManager', () => {
     if (existsSync(absolutePath)) {
       unlinkSync(absolutePath);
     }
-    stateManager = new StateManager(testStateFile);
+    stateManager = new StateManager();
   });
 
   afterEach(() => {
@@ -23,60 +23,62 @@ describe('StateManager', () => {
     }
   });
 
-  it('should initialize with empty state if file does not exist', async () => {
-    await stateManager.load();
-    expect(stateManager.getAllSeriesNames()).toEqual([]);
-    expect(stateManager.getDownloadedCount()).toBe(0);
+  it('should initialize with empty state if file does not exist', () => {
+    const episodes = stateManager.getSeriesEpisodes(testStateFile, 'Test Series');
+    expect(episodes).toEqual([]);
+    // Should NOT create the file until we write to it
+    expect(existsSync(absolutePath)).toBe(false);
+  });
+
+  it('should add and track downloaded episodes', async () => {
+    const seriesName = 'Test Series';
+
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
+
+    expect(stateManager.isDownloaded(testStateFile, seriesName, 1)).toBe(true);
+    expect(stateManager.isDownloaded(testStateFile, seriesName, 2)).toBe(false);
+
+    const episodes = stateManager.getSeriesEpisodes(testStateFile, seriesName);
+    expect(episodes).toEqual(['01']);
     // Should have created the file
     expect(existsSync(absolutePath)).toBe(true);
   });
 
-  it('should add and track downloaded episodes', async () => {
-    await stateManager.load();
-
-    const seriesName = 'Test Series';
-
-    stateManager.addDownloadedEpisode(seriesName, 1);
-
-    expect(stateManager.isDownloaded(seriesName, 1)).toBe(true);
-    expect(stateManager.isDownloaded(seriesName, 2)).toBe(false);
-    expect(stateManager.getDownloadedCount()).toBe(1);
-  });
-
   it('should persist state to disk', async () => {
-    await stateManager.load();
-
     const seriesName = 'Series 1';
-    stateManager.addDownloadedEpisode(seriesName, 1);
-
-    // Explicit save
-    await stateManager.save();
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
 
     // Create new instance to load from disk
-    const newManager = new StateManager(testStateFile);
-    await newManager.load();
-
-    expect(newManager.isDownloaded(seriesName, 1)).toBe(true);
+    const newManager = new StateManager();
+    expect(newManager.isDownloaded(testStateFile, seriesName, 1)).toBe(true);
   });
 
-  it('should delete series', async () => {
-    await stateManager.load();
+  it('should handle multiple episodes', async () => {
     const seriesName = 'Series 1';
-    stateManager.addDownloadedEpisode(seriesName, 1);
-    await stateManager.save();
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 5);
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 3);
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
 
-    expect(stateManager.isDownloaded(seriesName, 1)).toBe(true);
-
-    stateManager.deleteSeries(seriesName);
-    expect(stateManager.isDownloaded(seriesName, 1)).toBe(false);
-    expect(stateManager.getAllSeriesNames()).toHaveLength(0);
+    const episodes = stateManager.getSeriesEpisodes(testStateFile, seriesName);
+    // Episodes should be sorted
+    expect(episodes).toEqual(['01', '03', '05']);
   });
 
-  it('should clear all state', async () => {
-    await stateManager.load();
-    stateManager.addDownloadedEpisode('Series 1', 1);
+  it('should not duplicate episodes', async () => {
+    const seriesName = 'Series 1';
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
+    await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
 
-    stateManager.clearAll();
-    expect(stateManager.getDownloadedCount()).toBe(0);
+    const episodes = stateManager.getSeriesEpisodes(testStateFile, seriesName);
+    expect(episodes).toEqual(['01']);
+  });
+
+  it('should handle multiple series', async () => {
+    await stateManager.addDownloadedEpisode(testStateFile, 'Series 1', 1);
+    await stateManager.addDownloadedEpisode(testStateFile, 'Series 2', 2);
+
+    expect(stateManager.isDownloaded(testStateFile, 'Series 1', 1)).toBe(true);
+    expect(stateManager.isDownloaded(testStateFile, 'Series 2', 2)).toBe(true);
+    expect(stateManager.isDownloaded(testStateFile, 'Series 1', 2)).toBe(false);
   });
 });

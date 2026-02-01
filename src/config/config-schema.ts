@@ -70,7 +70,7 @@ const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']
  */
 export const GlobalConfigSchema = CommonSettingsSchema.extend({
   telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
-  stateFile: z.string().describe('Path to state file'),
+  stateFile: z.string().optional().describe('Path to state file'),
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),
   cookieFile: z.string().optional().describe('Path to cookie file'),
 });

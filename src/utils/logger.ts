@@ -120,7 +120,7 @@ export class Logger {
    */
   info(message: string): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.log(this.format(LogLevel.INFO, this.colorize(message, colors.blue)));
+      console.log(this.format(LogLevel.INFO, this.colorize(message, colors.dim + colors.white)));
     }
   }
 

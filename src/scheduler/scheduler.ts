@@ -30,7 +30,7 @@ export type TimeProvider = {
 /**
  * QueueManager factory type for dependency injection
  */
-export type QueueManagerFactory = (downloadManager: DownloadManager, cookies: string | undefined) => QueueManager;
+export type QueueManagerFactory = (downloadManager: DownloadManager) => QueueManager;
 
 /**
  * Scheduler for managing periodic checks with queue-based architecture
@@ -38,7 +38,6 @@ export type QueueManagerFactory = (downloadManager: DownloadManager, cookies: st
 export class Scheduler {
   private configs: SeriesConfig[];
   private downloadManager: DownloadManager;
-  private cookies?: string;
   private options: SchedulerOptions;
   private queueManager: QueueManager;
   private running: boolean = false;
@@ -49,21 +48,19 @@ export class Scheduler {
   constructor(
     configs: SeriesConfig[],
     downloadManager: DownloadManager,
-    cookies?: string,
     options: SchedulerOptions = { mode: 'scheduled' },
     timeProvider?: TimeProvider,
     queueManagerFactory?: QueueManagerFactory,
   ) {
     this.configs = configs;
     this.downloadManager = downloadManager;
-    this.cookies = cookies;
     this.options = options;
     this.timeProvider = timeProvider || { getMsUntilTime, getMsUntilCron, sleep };
 
     // Create queue manager
-    const createQueueManager = queueManagerFactory || ((dm, cook) => new QueueManager(dm, cook));
+    const createQueueManager = queueManagerFactory || ((dm) => new QueueManager(dm));
 
-    this.queueManager = createQueueManager(this.downloadManager, this.cookies);
+    this.queueManager = createQueueManager(this.downloadManager);
   }
 
   /**
@@ -216,6 +213,15 @@ export class Scheduler {
     }
 
     notifier.notify(NotificationLevel.SUCCESS, 'Configuration reloaded');
+  }
+
+  /**
+   * Update the download manager instance
+   * Used during config reload when download settings change
+   */
+  updateDownloadManager(downloadManager: DownloadManager): void {
+    this.downloadManager = downloadManager;
+    // QueueManager gets DownloadManager through AppContext, no need to update
   }
 
   /**

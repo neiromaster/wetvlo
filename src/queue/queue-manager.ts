@@ -41,12 +41,10 @@ export class QueueManager {
    * Create a new QueueManager
    *
    * @param downloadManager - Download manager instance
-   * @param _cookieFile - Optional cookie file path (unused, kept for API compatibility)
    * @param schedulerFactory - Optional factory for creating scheduler (for testing)
    */
   constructor(
     downloadManager: DownloadManager,
-    _cookieFile: string | undefined,
     schedulerFactory?: (
       executor: (task: CheckQueueItem | DownloadQueueItem, queueName: string) => Promise<void>,
     ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,

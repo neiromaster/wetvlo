@@ -83,7 +83,7 @@ describe('QueueManager', () => {
       return mockScheduler;
     };
 
-    queueManager = new QueueManager(mockDownloadManager, undefined, schedulerFactory as any);
+    queueManager = new QueueManager(mockDownloadManager, schedulerFactory as any);
   });
 
   it('should initialize correctly', () => {

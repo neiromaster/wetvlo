@@ -24,12 +24,7 @@ export type AppDependencies = {
   checkYtDlpInstalled: () => Promise<boolean>;
   readCookieFile: typeof readCookieFile;
   createDownloadManager: (downloadDir: string, cookieFile?: string, tempDir?: string) => DownloadManager;
-  createScheduler: (
-    configs: SeriesConfig[],
-    downloadManager: DownloadManager,
-    cookies?: string,
-    options?: SchedulerOptions,
-  ) => Scheduler;
+  createScheduler: (configs: SeriesConfig[], downloadManager: DownloadManager, options?: SchedulerOptions) => Scheduler;
 };
 
 const defaultDependencies: AppDependencies = {
@@ -37,7 +32,7 @@ const defaultDependencies: AppDependencies = {
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
   createDownloadManager: (dir, cf, temp) => new DownloadManager(dir, cf, temp),
-  createScheduler: (c, dm, cook, opt) => new Scheduler(c, dm, cook, opt),
+  createScheduler: (c, dm, opt) => new Scheduler(c, dm, opt),
 };
 
 /**
@@ -82,35 +77,45 @@ export async function runApp(
   // Create config registry
   const configRegistry = new ConfigRegistry(config);
 
-  // Set up notifiers using configRegistry
-  const notifiers: Array<ConsoleNotifier | TelegramNotifier> = [new ConsoleNotifier()];
-  const globalConfig = configRegistry.getConfig('global');
+  // Get global config (stored in let for config reload comparison)
+  let globalConfig = configRegistry.getConfig('global');
 
-  if (globalConfig.telegram) {
-    try {
-      notifiers.push(new TelegramNotifier(globalConfig.telegram));
-      logger.info('Telegram notifications enabled for errors');
-    } catch (error) {
-      logger.warning(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
+  /**
+   * Create notifier instance from config
+   * Extracted to factory function for reuse during config reload
+   */
+  const createNotifier = (registry: ConfigRegistry): Notifier => {
+    const notifiers: Array<ConsoleNotifier | TelegramNotifier> = [new ConsoleNotifier()];
+    const cfg = registry.getConfig('global');
+
+    if (cfg.telegram) {
+      try {
+        notifiers.push(new TelegramNotifier(cfg.telegram));
+        logger.info('Telegram notifications enabled for errors');
+      } catch (error) {
+        logger.warning(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-  }
 
-  // Create composite notifier
-  const notifier: Notifier = {
-    notify: async (level: NotificationLevel, message: string): Promise<void> => {
-      await Promise.all(notifiers.map((n) => n.notify(level, message)));
-    },
-    progress: (message: string): void => {
-      for (const n of notifiers) {
-        n.progress(message);
-      }
-    },
-    endProgress: (): void => {
-      for (const n of notifiers) {
-        n.endProgress();
-      }
-    },
+    // Create composite notifier
+    return {
+      notify: async (level: NotificationLevel, message: string): Promise<void> => {
+        await Promise.all(notifiers.map((n) => n.notify(level, message)));
+      },
+      progress: (message: string): void => {
+        for (const n of notifiers) {
+          n.progress(message);
+        }
+      },
+      endProgress: (): void => {
+        for (const n of notifiers) {
+          n.endProgress();
+        }
+      },
+    };
   };
+
+  const notifier = createNotifier(configRegistry);
 
   // Create state manager
   const stateManager = new StateManager(notifier);
@@ -125,22 +130,11 @@ export async function runApp(
   handlerRegistry.register(new MGTVHandler());
   logger.info(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
-  // Load cookies if specified
-  let cookies: string | undefined;
-  if (globalConfig.cookieFile) {
-    try {
-      cookies = await deps.readCookieFile(globalConfig.cookieFile);
-      logger.success('Cookies loaded from file');
-    } catch (error) {
-      logger.warning(`Failed to load cookies: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
   // Create download manager
   const downloadDir = globalConfig.download.downloadDir;
   const tempDir = globalConfig.download.tempDir;
   const cookieFile = globalConfig.cookieFile;
-  const downloadManager = deps.createDownloadManager(downloadDir, cookieFile, tempDir);
+  let downloadManager = deps.createDownloadManager(downloadDir, cookieFile, tempDir);
 
   // Setup interactive mode instructions
   let onIdle: (() => void) | undefined;
@@ -157,7 +151,7 @@ export async function runApp(
 
   // Create and start scheduler with queue-based architecture
   logger.info('Using queue-based scheduler');
-  const scheduler = deps.createScheduler(config.series, downloadManager, cookies, { mode, onIdle });
+  const scheduler = deps.createScheduler(config.series, downloadManager, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
   process.on('SIGINT', async () => {
@@ -190,8 +184,35 @@ export async function runApp(
           logger.info(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
           const newConfigRegistry = new ConfigRegistry(newConfig);
+          const newGlobalConfig = newConfigRegistry.getConfig('global');
+
+          // Reload notifier (Telegram settings, etc.)
+          const newNotifier = createNotifier(newConfigRegistry);
+          AppContext.setNotifier(newNotifier);
+
+          // Reload download manager if settings changed
+          const downloadSettingsChanged =
+            newGlobalConfig.download.downloadDir !== globalConfig.download.downloadDir ||
+            newGlobalConfig.download.tempDir !== globalConfig.download.tempDir ||
+            newGlobalConfig.cookieFile !== globalConfig.cookieFile;
+
+          if (downloadSettingsChanged) {
+            const newDownloadDir = newGlobalConfig.download.downloadDir;
+            const newTempDir = newGlobalConfig.download.tempDir;
+            const newCookieFile = newGlobalConfig.cookieFile;
+            downloadManager = deps.createDownloadManager(newDownloadDir, newCookieFile, newTempDir);
+            scheduler.updateDownloadManager(downloadManager);
+            logger.info('Download manager reloaded');
+          }
+
+          // Update global config reference
+          globalConfig = newGlobalConfig;
+
+          // Reload config registry and scheduler
           AppContext.reloadConfig(newConfigRegistry);
           await scheduler.reload(newConfig.series);
+
+          logger.success('Configuration reloaded successfully');
         } catch (error) {
           logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
         }

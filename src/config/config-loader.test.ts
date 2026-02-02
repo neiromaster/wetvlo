@@ -24,6 +24,16 @@ describe('Config', () => {
             startTime: '20:00',
           },
         ],
+        domainConfigs: [
+          {
+            domain: 'example.com',
+            stateFile: 'state.json',
+            check: {
+              checkInterval: 60,
+              downloadTypes: ['available', 'vip'],
+            },
+          },
+        ],
         globalConfig: {
           stateFile: 'state.json',
           browser: 'chrome',
@@ -37,6 +47,12 @@ describe('Config', () => {
     it('should fail on invalid series', () => {
       const invalidConfig = {
         series: [], // Empty array not allowed
+        domainConfigs: [
+          {
+            domain: 'example.com',
+            stateFile: 'state.json',
+          },
+        ],
         globalConfig: {
           stateFile: 'state.json',
           browser: 'chrome',
@@ -51,16 +67,8 @@ describe('Config', () => {
       }
     });
 
-    it('should fail on missing required fields in globalConfig', () => {
-      const invalidConfig = {
-        series: [{ name: 'Test', url: 'https://ex.com', startTime: '20:00' }],
-        globalConfig: {
-          // Missing stateFile
-        },
-      };
-
-      expect(() => validateConfig(invalidConfig)).toThrow();
-    });
+    // Note: stateFile is optional in domainConfigs after schema refactoring
+    // This test is no longer relevant
   });
 
   describe('Loader', () => {

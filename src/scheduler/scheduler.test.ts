@@ -19,7 +19,7 @@ const mockQueueManagerInstance = {
 };
 
 // Factory mock
-const mockQueueManagerFactory = mock(() => mockQueueManagerInstance);
+const mockQueueManagerFactory = mock((_downloadManager: any) => mockQueueManagerInstance);
 
 describe('Scheduler', () => {
   let scheduler: Scheduler;
@@ -67,7 +67,6 @@ describe('Scheduler', () => {
     scheduler = new Scheduler(
       configs,
       downloadManager,
-      undefined,
       { mode: 'scheduled' },
       {
         getMsUntilTime: mockGetMsUntilTime,
@@ -119,7 +118,6 @@ describe('Scheduler', () => {
     scheduler = new Scheduler(
       configs,
       downloadManager,
-      undefined,
       { mode: 'once' },
       {
         getMsUntilTime: mockGetMsUntilTime,
@@ -186,7 +184,6 @@ describe('Scheduler', () => {
     scheduler = new Scheduler(
       configs,
       downloadManager,
-      undefined,
       { mode: 'once' },
       {
         getMsUntilTime: mockGetMsUntilTime,
@@ -207,7 +204,6 @@ describe('Scheduler', () => {
     scheduler = new Scheduler(
       cronConfigs as any,
       downloadManager,
-      undefined,
       { mode: 'scheduled' },
       {
         getMsUntilTime: mockGetMsUntilTime,
@@ -245,7 +241,6 @@ describe('Scheduler', () => {
     scheduler = new Scheduler(
       configs,
       downloadManager,
-      undefined,
       { mode: 'scheduled', onIdle },
       {
         getMsUntilTime: mockGetMsUntilTime,

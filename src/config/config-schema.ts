@@ -45,11 +45,6 @@ export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;
 
 export type DownloadSettingsResolved = DeepMerge<DefaultConfig['download'], DownloadSettings>;
 
-const CommonSettingsSchema = z.object({
-  check: CheckSettingsSchema.optional().describe('Check settings'),
-  download: DownloadSettingsSchema.optional().describe('Download settings'),
-});
-
 /**
  * Telegram notification configuration
  */
@@ -65,15 +60,19 @@ export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
  */
 const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']);
 
-/**
- * Global configuration defaults
- */
-export const GlobalConfigSchema = CommonSettingsSchema.extend({
+const CommonSettingsSchema = z.object({
+  check: CheckSettingsSchema.optional().describe('Check settings'),
+  download: DownloadSettingsSchema.optional().describe('Download settings'),
   telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
   stateFile: z.string().optional().describe('Path to state file'),
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),
   cookieFile: z.string().optional().describe('Path to cookie file'),
 });
+
+/**
+ * Global configuration defaults
+ */
+export const GlobalConfigSchema = CommonSettingsSchema;
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 
@@ -82,7 +81,7 @@ export type GlobalConfigResolved = DeepMerge<DefaultConfig, GlobalConfig>;
 /**
  * Domain-specific configuration
  */
-export const DomainConfigSchema = GlobalConfigSchema.extend({
+export const DomainConfigSchema = CommonSettingsSchema.extend({
   domain: z.string().describe('Domain name (e.g., "weTV")'),
 });
 
@@ -113,7 +112,7 @@ export type SeriesConfigResolved = DeepMerge<DomainConfigResolved, SeriesConfig>
 /**
  * Main configuration schema
  */
-export const ConfigSchema = CommonSettingsSchema.extend({
+export const ConfigSchema = z.object({
   series: z.array(SeriesConfigSchema).min(1, 'Cannot be empty').describe('List of series to monitor'),
   domainConfigs: z.array(DomainConfigSchema).optional().describe('Domain-specific configurations'),
   globalConfig: GlobalConfigSchema.optional().describe('Global configuration defaults'),

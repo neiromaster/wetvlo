@@ -14,6 +14,13 @@ import { downloaderRegistry } from './downloader-registry';
 import { YtDlpDownloader } from './impl/yt-dlp-downloader';
 
 /**
+ * Escape special characters in a string for use in a regular expression
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Download manager with progress tracking
  */
 export class DownloadManager {
@@ -48,11 +55,15 @@ export class DownloadManager {
       `Downloading Episode ${episode.number} of ${seriesName} using ${downloader.getName()}`,
     );
 
+    // Calculate filename once (used in both try and catch)
+    const paddedNumber = String(episode.number).padStart(2, '0');
+    const sanitizedSeriesName = sanitizeFilename(seriesName);
+    const filenameWithoutExt = `${sanitizedSeriesName} - ${paddedNumber}`;
+    const targetDir = downloadOptions.tempDir || downloadOptions.downloadDir;
+
     try {
-      const paddedNumber = String(episode.number).padStart(2, '0');
-      const sanitizedSeriesName = sanitizeFilename(seriesName);
-      const filenameWithoutExt = `${sanitizedSeriesName} - ${paddedNumber}`;
-      const targetDir = downloadOptions.tempDir || downloadOptions.downloadDir;
+      // Clean up any artifacts from previous failed attempts
+      await this.cleanupEpisodeArtifacts(targetDir, filenameWithoutExt);
 
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
         cookieFile: downloadOptions.cookieFile,
@@ -129,6 +140,9 @@ export class DownloadManager {
       // End progress display on error
       notifier.endProgress();
 
+      // Clean up any artifacts from this failed attempt
+      await this.cleanupEpisodeArtifacts(targetDir, filenameWithoutExt);
+
       const message = `Failed to download Episode ${episode.number}: ${
         error instanceof Error ? error.message : String(error)
       }`;
@@ -153,6 +167,46 @@ export class DownloadManager {
       } catch (e) {
         notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
       }
+    }
+  }
+
+  /**
+   * Clean up all files matching episode pattern (artifacts from failed downloads)
+   *
+   * @param dir - Directory to clean (tempDir or downloadDir)
+   * @param filenameWithoutExt - Episode filename without extension (e.g., "SeriesName - 01")
+   */
+  private async cleanupEpisodeArtifacts(dir: string, filenameWithoutExt: string): Promise<void> {
+    const notifier = AppContext.getNotifier();
+
+    try {
+      const absDir = resolve(dir);
+      if (!fs.existsSync(absDir)) {
+        return; // Directory doesn't exist, nothing to clean
+      }
+
+      const files = await fsPromises.readdir(absDir);
+      const pattern = new RegExp(`^${escapeRegExp(filenameWithoutExt)}\\..*$`);
+
+      let cleanedCount = 0;
+      for (const file of files) {
+        if (pattern.test(file)) {
+          const filePath = join(absDir, file);
+          try {
+            await fsPromises.unlink(filePath);
+            cleanedCount++;
+            notifier.notify(NotificationLevel.INFO, `Cleaned up artifact: ${file}`);
+          } catch (e) {
+            notifier.notify(NotificationLevel.WARNING, `Failed to delete artifact ${file}: ${e}`);
+          }
+        }
+      }
+
+      if (cleanedCount > 0) {
+        notifier.notify(NotificationLevel.INFO, `Cleaned up ${cleanedCount} artifact(s) for ${filenameWithoutExt}`);
+      }
+    } catch (e) {
+      notifier.notify(NotificationLevel.WARNING, `Failed to cleanup artifacts in ${dir}: ${e}`);
     }
   }
 

@@ -26,7 +26,7 @@ bun run dist/index.js --once             # Single-run mode
 
 ## Architecture Overview
 
-This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com) using yt-dlp.
+This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com) using yt-dlp.
 
 ### Flow
 
@@ -46,8 +46,14 @@ This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip
   - Maintains per-domain queues with cooldowns
   - Round-robin queue selection for fairness
   - Timer-based scheduling (clears timer on scheduling attempt)
-- **ConfigResolver** (`src/config/config-resolver.ts`): Merges config hierarchy (series > domain > global > defaults)
+- **ConfigRegistry** (`src/config/config-registry.ts`): Pre-merged config registry with resolution (defaults → global → domain → series)
+  - Use `registry.resolve(url, 'series')` to get series-level config
+  - Use `registry.resolve(url, 'domain')` to get domain-level config
+  - Use `registry.resolve(url, 'global')` to get global config
 - **DownloadManager** (`src/downloader/download-manager.ts`): Wraps yt-dlp with execa, validates duration/size, supports tempDir
+  - **Artifact cleanup**: Automatically cleans up partial files on failed downloads before retry
+  - Uses pattern matching `${filenameWithoutExt}.*` to find and remove `.part`, `.tmp`, etc.
+  - Cleans before download (removes old artifacts) and on error (removes failed attempt)
 - **StateManager** (`src/state/state-manager.ts`): JSON file persistence, series-grouped structure, dirty-checking for saves
 - **Handlers** (`src/handlers/`): Domain-specific episode extractors extending `BaseHandler`
 
@@ -114,6 +120,22 @@ globalConfigs:
 ```
 
 Episode keys are zero-padded strings (`"01"`, `"02"`) for proper sorting.
+
+### Interactive Mode
+
+When running in scheduled mode with a TTY, interactive mode is enabled:
+
+```bash
+bun start
+# Press keys to trigger actions:
+# [r] Reload configuration from config.yaml
+# [c] Trigger immediate checks for all series
+# [q] Quit gracefully
+```
+
+**Config reload behavior**: Pressing `[r]` reloads config.yaml and rebuilds the ConfigRegistry. Only one message "Configuration reloaded successfully" should appear (from app.ts). If you see duplicate messages, check scheduler.ts for redundant logging.
+
+The app handles `SIGINT` (Ctrl+C) and `SIGTERM` for graceful shutdown, allowing current downloads to complete.
 
 ## Bun Notes
 

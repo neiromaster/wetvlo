@@ -69,16 +69,17 @@ domainConfigs:
 # Optional: Global configuration defaults
 # =============================================================================
 # These settings apply to all series unless overridden at domain/series level
-globalConfigs:
+globalConfig:
   check:
     count: 3 # Number of times to check for new episodes
     checkInterval: 60 # Seconds between checks
     downloadTypes: # Episode types to download
       - available
       - vip
+
   download:
     downloadDir: "./downloads" # Directory where downloads are saved
-    tempDir: "./downloads/temp" # Temporary directory for incomplete downloads (optional)
+    tempDir: "./temp" # Temporary directory for incomplete downloads (optional)
     downloadDelay: 5 # Seconds between downloads
     minDuration: 0 # Minimum duration in seconds (0 = disabled)
     maxRetries: 3 # Maximum retry attempts on failure
@@ -86,33 +87,33 @@ globalConfigs:
     backoffMultiplier: 2 # Exponential backoff multiplier
     jitterPercentage: 10 # Random jitter (0-100%)
 
-# =============================================================================
-# Optional: Telegram notifications for errors
-# =============================================================================
-# Leave this section out to disable Telegram notifications
-telegram:
-  # Bot token from @BotFather
-  # Supports ${VAR_NAME} syntax to use environment variables
-  botToken: "${TELEGRAM_BOT_TOKEN}"
+  # =============================================================================
+  # State file for tracking downloaded episodes (auto-created)
+  # =============================================================================
+  stateFile: "./wetvlo-state.json"
 
-  # Chat ID to send notifications to
-  # Use @userinfobot on Telegram to get your chat ID
-  chatId: "${TELEGRAM_CHAT_ID}"
+  # =============================================================================
+  # Browser settings
+  # =============================================================================
+  # Browser to extract cookies from
+  # Options: chrome, firefox, safari, chromium, edge
+  # Note: Automatic extraction not yet implemented - use cookieFile instead
+  browser: "chrome"
 
-# =============================================================================
-# State file for tracking downloaded episodes (auto-created)
-# =============================================================================
-stateFile: "./wetvlo-state.json"
+  # Optional: Manual cookie file path
+  # Export cookies using "Get cookies.txt LOCALLY" browser extension
+  # File should be in Netscape cookie format
+  # cookieFile: "./cookies.txt"
 
-# =============================================================================
-# Browser settings
-# =============================================================================
-# Browser to extract cookies from
-# Options: chrome, firefox, safari, chromium, edge
-# Note: Automatic extraction not yet implemented - use cookieFile instead
-browser: "chrome"
-
-# Optional: Manual cookie file path
-# Export cookies using "Get cookies.txt LOCALLY" browser extension
-# File should be in Netscape cookie format
-# cookieFile: "./cookies.txt"
+  # =============================================================================
+  # Optional: Telegram notifications for errors
+  # =============================================================================
+  # Leave this section out to disable Telegram notifications
+  # telegram:
+  #   # Bot token from @BotFather
+  #   # Supports ${VAR_NAME} syntax to use environment variables
+  #   botToken: "${TELEGRAM_BOT_TOKEN}"
+  #
+  #   # Chat ID to send notifications to
+  #   # Use @userinfobot on Telegram to get your chat ID
+  #   chatId: "${TELEGRAM_CHAT_ID}"

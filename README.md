@@ -1,12 +1,12 @@
 # wetvlo
 
-**wetvlo** is a powerful CLI application for automatically monitoring and downloading TV series episodes from popular Asian streaming platforms (WeTV, iQIYI).
+**wetvlo** is a powerful CLI application for automatically monitoring and downloading TV series episodes from popular Asian streaming platforms (WeTV, iQIYI, MGTV).
 
 ## 🚀 Features
 
 *   **Automatic Monitoring**: Checks for new episodes at scheduled times.
 *   **Smart Queue**: Sequential downloading and checking to prevent IP bans and ensure stability.
-*   **Platform Support**: Built-in support for WeTV and iQIYI.
+*   **Platform Support**: Built-in support for WeTV, iQIYI, and MGTV.
 *   **Reliability**: Retry system with exponential backoff for network errors.
 *   **Notifications**: Telegram integration for error alerts.
 *   **Flexible Configuration**: Per-series, per-domain, or global settings.
@@ -41,8 +41,8 @@
 
     *   **series**: List of series to monitor (highest priority).
     *   **domainConfigs**: Settings for specific sites (e.g., delays for WeTV).
-    *   **globalConfigs**: Global default settings.
-    *   **telegram**: Bot settings for notifications (optional).
+    *   **globalConfig**: Global default settings.
+    *   **telegram**: Bot settings for notifications (optional, inside globalConfig).
 
     Example series configuration:
     ```yaml
@@ -105,7 +105,7 @@ The application is built on a task queue (`QueueManager`) that manages update ch
 *   **Scheduler**: Triggers check tasks according to schedule.
 *   **Handlers**: Modules for parsing specific site pages (in `src/handlers`).
 *   **DownloadManager**: Wrapper around `yt-dlp` for downloading videos.
-*   **StateManager**: Persists progress in `downloads_state.json`.
+*   **StateManager**: Persists progress in `wetvlo-state.json` (configurable via `stateFile`).
 
 ## 📝 License
 

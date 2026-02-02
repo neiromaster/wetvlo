@@ -44,6 +44,21 @@ const renameSpy = spyOn(fsPromises, 'rename');
 const unlinkSpy = spyOn(fsPromises, 'unlink');
 const statSpy = spyOn(fsPromises, 'stat');
 
+// Mock ConfigRegistry
+const mockConfigRegistry = {
+  resolve: mock(() => ({
+    stateFile: 'state.json',
+    name: 'Test Series',
+    download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0 },
+    cookieFile: undefined,
+  })),
+  getConfig: mock(() => ({
+    telegram: undefined,
+    cookieFile: undefined,
+    download: { downloadDir: '/downloads', tempDir: undefined },
+  })),
+};
+
 describe('DownloadManager', () => {
   let downloadManager: DownloadManager;
 
@@ -85,22 +100,19 @@ describe('DownloadManager', () => {
     statSpy.mockClear();
     statSpy.mockImplementation(async () => ({ size: 1024 }) as any);
 
-    // Mock ConfigRegistry
-    const mockConfigRegistry = {
-      resolve: mock(() => ({
-        stateFile: 'state.json',
-      })),
-      getConfig: mock(() => ({
-        telegram: undefined,
-        cookieFile: undefined,
-        download: { downloadDir: '/downloads', tempDir: undefined },
-      })),
-    };
+    // Reset mockConfigRegistry to default
+    mockConfigRegistry.resolve.mockReset();
+    mockConfigRegistry.resolve.mockImplementation(() => ({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0 },
+      cookieFile: undefined,
+    }));
 
     // Initialize AppContext
     AppContext.initialize(mockConfigRegistry as any, mockNotifier as any, mockStateManager as any);
 
-    downloadManager = new DownloadManager('/downloads');
+    downloadManager = new DownloadManager();
 
     // Mock verifyDownload to avoid file system check
     // @ts-expect-error - testing private method
@@ -110,7 +122,7 @@ describe('DownloadManager', () => {
   it('should skip download if already downloaded', async () => {
     mockStateManager.isDownloaded.mockReturnValue(true);
 
-    const result = await downloadManager.download('url', 'Series', { number: 1, url: 'url' } as any);
+    const result = await downloadManager.download('url', { number: 1, url: 'url' } as any);
 
     expect(result).toBe(false);
     expect(mockNotifier.notify).not.toHaveBeenCalled();
@@ -119,7 +131,7 @@ describe('DownloadManager', () => {
   it('should download if not present', async () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
 
-    const result = await downloadManager.download('url', 'Series', { number: 1, url: 'url' } as any);
+    const result = await downloadManager.download('url', { number: 1, url: 'url' } as any);
 
     expect(result).toBe(true);
     expect(mockStateManager.addDownloadedEpisode).toHaveBeenCalled();
@@ -131,15 +143,17 @@ describe('DownloadManager', () => {
   });
 
   it('should download to temp dir and move files', async () => {
-    // Re-init with temp dir
-    downloadManager = new DownloadManager('/downloads', undefined, '/temp');
-    // Mock verifyDownload to avoid file system check
-    // @ts-expect-error - testing private method
-    downloadManager.verifyDownload = () => 1024 * 1024; // 1MB
+    // Update mock to return tempDir
+    mockConfigRegistry.resolve.mockReturnValue({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: '/temp', minDuration: 0 },
+      cookieFile: undefined,
+    } as any);
 
     mockStateManager.isDownloaded.mockReturnValue(false);
 
-    const result = await downloadManager.download('url', 'Series', { number: 1, url: 'url' } as any);
+    const result = await downloadManager.download('url', { number: 1, url: 'url' } as any);
 
     expect(result).toBe(true);
     // Check if directories were created
@@ -154,32 +168,38 @@ describe('DownloadManager', () => {
   });
 
   it('should validate video duration if minDuration > 0', async () => {
+    // Update mock to return minDuration > 0
+    mockConfigRegistry.resolve.mockReturnValue({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50 },
+      cookieFile: undefined,
+    } as any);
+
     mockStateManager.isDownloaded.mockReturnValue(false);
     getVideoDurationSpy.mockResolvedValue(100);
 
-    const result = await downloadManager.download(
-      'url',
-      'Series',
-      { number: 1, url: 'url' } as any,
-      50, // minDuration
-    );
+    const result = await downloadManager.download('url', { number: 1, url: 'url' } as any);
 
     expect(result).toBe(true);
     expect(getVideoDurationSpy).toHaveBeenCalled();
   });
 
   it('should throw error and delete file if video duration is too short', async () => {
+    // Update mock to return minDuration > 0
+    mockConfigRegistry.resolve.mockReturnValue({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50 },
+      cookieFile: undefined,
+    } as any);
+
     mockStateManager.isDownloaded.mockReturnValue(false);
     getVideoDurationSpy.mockResolvedValue(30); // 30s < 50s
 
-    await expect(
-      downloadManager.download(
-        'url',
-        'Series',
-        { number: 1, url: 'url' } as any,
-        50, // minDuration
-      ),
-    ).rejects.toThrow('Video duration 30s is less than minimum 50s');
+    await expect(downloadManager.download('url', { number: 1, url: 'url' } as any)).rejects.toThrow(
+      'Video duration 30s is less than minimum 50s',
+    );
 
     expect(getVideoDurationSpy).toHaveBeenCalled();
     // Verify file deletion

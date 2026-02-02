@@ -8,6 +8,8 @@ import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import { sanitizeFilename } from '../utils/filename-sanitizer';
 import * as VideoValidator from '../utils/video-validator';
+import type { DownloadOptions } from './download-options.js';
+import { extractDownloadOptions } from './download-options.js';
 import { downloaderRegistry } from './downloader-registry';
 import { YtDlpDownloader } from './impl/yt-dlp-downloader';
 
@@ -16,28 +18,24 @@ import { YtDlpDownloader } from './impl/yt-dlp-downloader';
  */
 export class DownloadManager {
   private stateManager: StateManager;
-  private downloadDir: string;
-  private tempDir?: string;
-  private cookieFile?: string;
 
-  constructor(downloadDir: string, cookieFile?: string, tempDir?: string) {
+  constructor() {
     // Get StateManager from AppContext
     this.stateManager = AppContext.getStateManager();
-    this.downloadDir = resolve(downloadDir);
-    this.cookieFile = cookieFile ? resolve(cookieFile) : undefined;
-    this.tempDir = tempDir ? resolve(tempDir) : undefined;
   }
 
   /**
    * Download an episode using appropriate downloader
    */
-  async download(seriesUrl: string, seriesName: string, episode: Episode, minDuration: number = 0): Promise<boolean> {
+  async download(seriesUrl: string, episode: Episode): Promise<boolean> {
     const notifier = AppContext.getNotifier();
     const registry = AppContext.getConfig();
 
-    // Get state path from resolved config
+    // Get resolved config
     const resolved = registry.resolve(seriesUrl, 'series');
     const statePath = resolved.stateFile;
+    const seriesName = resolved.name;
+    const downloadOptions: DownloadOptions = extractDownloadOptions(resolved);
 
     // Check if already downloaded
     if (this.stateManager.isDownloaded(statePath, seriesName, episode.number)) {
@@ -54,10 +52,10 @@ export class DownloadManager {
       const paddedNumber = String(episode.number).padStart(2, '0');
       const sanitizedSeriesName = sanitizeFilename(seriesName);
       const filenameWithoutExt = `${sanitizedSeriesName} - ${paddedNumber}`;
-      const targetDir = this.tempDir || this.downloadDir;
+      const targetDir = downloadOptions.tempDir || downloadOptions.downloadDir;
 
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
-        cookieFile: this.cookieFile,
+        cookieFile: downloadOptions.cookieFile,
         onProgress: (progress) => notifier.progress(progress),
         onLog: (message) => notifier.notify(NotificationLevel.INFO, message),
       });
@@ -74,22 +72,25 @@ export class DownloadManager {
       }
 
       // Verify duration if required
-      if (minDuration > 0) {
+      if (downloadOptions.minDuration > 0) {
         const fullPath = resolve(result.filename);
         const duration = await VideoValidator.getVideoDuration(fullPath);
-        if (duration < minDuration) {
+        if (duration < downloadOptions.minDuration) {
           // Delete all downloaded files
           await this.cleanupFiles(result.allFiles);
-          throw new Error(`Video duration ${duration}s is less than minimum ${minDuration}s`);
+          throw new Error(`Video duration ${duration}s is less than minimum ${downloadOptions.minDuration}s`);
         }
       }
 
       // Move files from tempDir to downloadDir if needed
-      if (this.tempDir && this.tempDir !== this.downloadDir) {
-        notifier.notify(NotificationLevel.INFO, `Moving files from temp directory to ${this.downloadDir}...`);
+      if (downloadOptions.tempDir && downloadOptions.tempDir !== downloadOptions.downloadDir) {
+        notifier.notify(
+          NotificationLevel.INFO,
+          `Moving files from temp directory to ${downloadOptions.downloadDir}...`,
+        );
 
         // Ensure download directory exists
-        await fsPromises.mkdir(this.downloadDir, { recursive: true });
+        await fsPromises.mkdir(downloadOptions.downloadDir, { recursive: true });
 
         for (const file of result.allFiles) {
           try {
@@ -102,7 +103,7 @@ export class DownloadManager {
             }
 
             const fileName = basename(absFile);
-            const newPath = join(this.downloadDir, fileName);
+            const newPath = join(downloadOptions.downloadDir, fileName);
             await fsPromises.rename(absFile, newPath);
 
             // Update filename if it matches the main file

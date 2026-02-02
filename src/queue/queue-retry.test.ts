@@ -70,13 +70,13 @@ describe('QueueManager Retry Logic', () => {
     const configRegistry = new ConfigRegistry(mockRootConfig as any);
     AppContext.initialize(configRegistry, notifier, stateManager);
 
-    const downloadManager = new DownloadManager('downloads');
+    const downloadManager = new DownloadManager();
 
     // Mock download behavior
     let attempt = 0;
     const downloadSequence: string[] = [];
 
-    downloadManager.download = mock(async (_url: string, _name: string, ep: Episode) => {
+    downloadManager.download = mock(async (_url: string, ep: Episode) => {
       const timestamp = Date.now();
       downloadSequence.push(`Start Ep${ep.number} at ${timestamp}`);
 

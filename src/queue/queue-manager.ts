@@ -446,11 +446,11 @@ export class QueueManager {
 
     // Resolve config
     const resolvedConfig = registry.resolve(seriesUrl, 'series');
-    const { downloadDelay, minDuration } = resolvedConfig.download;
+    const { downloadDelay } = resolvedConfig.download;
 
     try {
       // Attempt download
-      await this.downloadManager.download(seriesUrl, seriesName, episode, minDuration);
+      await this.downloadManager.download(seriesUrl, episode);
 
       // Success - log and continue
       notifier.notify(

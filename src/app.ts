@@ -23,7 +23,7 @@ export type AppDependencies = {
   loadConfig: typeof loadConfig;
   checkYtDlpInstalled: () => Promise<boolean>;
   readCookieFile: typeof readCookieFile;
-  createDownloadManager: (downloadDir: string, cookieFile?: string, tempDir?: string) => DownloadManager;
+  createDownloadManager: () => DownloadManager;
   createScheduler: (configs: SeriesConfig[], downloadManager: DownloadManager, options?: SchedulerOptions) => Scheduler;
 };
 
@@ -31,7 +31,7 @@ const defaultDependencies: AppDependencies = {
   loadConfig,
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
-  createDownloadManager: (dir, cf, temp) => new DownloadManager(dir, cf, temp),
+  createDownloadManager: () => new DownloadManager(),
   createScheduler: (c, dm, opt) => new Scheduler(c, dm, opt),
 };
 
@@ -78,7 +78,7 @@ export async function runApp(
   const configRegistry = new ConfigRegistry(config);
 
   // Get global config (stored in let for config reload comparison)
-  let globalConfig = configRegistry.getConfig('global');
+  let _globalConfig = configRegistry.getConfig('global');
 
   /**
    * Create notifier instance from config
@@ -131,10 +131,7 @@ export async function runApp(
   logger.info(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Create download manager
-  const downloadDir = globalConfig.download.downloadDir;
-  const tempDir = globalConfig.download.tempDir;
-  const cookieFile = globalConfig.cookieFile;
-  let downloadManager = deps.createDownloadManager(downloadDir, cookieFile, tempDir);
+  const downloadManager = deps.createDownloadManager();
 
   // Setup interactive mode instructions
   let onIdle: (() => void) | undefined;
@@ -190,23 +187,8 @@ export async function runApp(
           const newNotifier = createNotifier(newConfigRegistry);
           AppContext.setNotifier(newNotifier);
 
-          // Reload download manager if settings changed
-          const downloadSettingsChanged =
-            newGlobalConfig.download.downloadDir !== globalConfig.download.downloadDir ||
-            newGlobalConfig.download.tempDir !== globalConfig.download.tempDir ||
-            newGlobalConfig.cookieFile !== globalConfig.cookieFile;
-
-          if (downloadSettingsChanged) {
-            const newDownloadDir = newGlobalConfig.download.downloadDir;
-            const newTempDir = newGlobalConfig.download.tempDir;
-            const newCookieFile = newGlobalConfig.cookieFile;
-            downloadManager = deps.createDownloadManager(newDownloadDir, newCookieFile, newTempDir);
-            scheduler.updateDownloadManager(downloadManager);
-            logger.info('Download manager reloaded');
-          }
-
           // Update global config reference
-          globalConfig = newGlobalConfig;
+          _globalConfig = newGlobalConfig;
 
           // Reload config registry and scheduler
           AppContext.reloadConfig(newConfigRegistry);

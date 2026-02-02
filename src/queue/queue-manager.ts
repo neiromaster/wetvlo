@@ -11,7 +11,7 @@
 
 import { createHash } from 'node:crypto';
 import { AppContext } from '../app-context.js';
-import type { ResolvedConfig, SeriesConfig } from '../config/config-schema.js';
+import type { ResolvedConfig } from '../config/config-schema.js';
 import type { DownloadManager } from '../downloader/download-manager.js';
 import { handlerRegistry } from '../handlers/handler-registry.js';
 import { NotificationLevel } from '../notifications/notifier.js';
@@ -78,41 +78,42 @@ export class QueueManager {
   /**
    * Add a series to the check queue
    *
-   * @param config - Series configuration
+   * @param seriesUrl - Series URL
    */
-  addSeriesCheck(config: SeriesConfig): void {
+  addSeriesCheck(seriesUrl: string): void {
     const notifier = AppContext.getNotifier();
-    const domain = extractDomain(config.url);
+    const registry = AppContext.getConfig();
+    const domain = extractDomain(seriesUrl);
+
+    // Get series name from resolved config for notification
+    const config = registry.resolve(seriesUrl, 'series');
+    const seriesName = config.name;
 
     // Register download queue for this domain (shared across series)
     this.registerDownloadQueue(domain);
 
     // Register specific check queue for this series (isolated interval)
-    const queueName = this.registerSeriesCheckQueue(domain, config);
+    const queueName = this.registerSeriesCheckQueue(domain, seriesUrl);
 
-    // Add series to check queue with config
+    // Add series to check queue
     const item: CheckQueueItem = {
-      seriesUrl: config.url,
-      seriesName: config.name,
-      config: config,
+      seriesUrl,
       attemptNumber: 1,
       retryCount: 0,
     };
 
     this.scheduler.addTask(queueName, item);
 
-    notifier.notify(NotificationLevel.INFO, `[QueueManager] Added ${config.name} to check queue for domain ${domain}`);
+    notifier.notify(NotificationLevel.INFO, `[QueueManager] Added ${seriesName} to check queue for domain ${domain}`);
   }
 
   /**
    * Add episodes to the download queue
    *
    * @param seriesUrl - Series URL
-   * @param seriesName - Series name
    * @param episodes - Episodes to download
-   * @param config - Series configuration (optional)
    */
-  addEpisodes(seriesUrl: string, seriesName: string, episodes: Episode[], config?: SeriesConfig): void {
+  addEpisodes(seriesUrl: string, episodes: Episode[]): void {
     const notifier = AppContext.getNotifier();
     const registry = AppContext.getConfig();
 
@@ -120,13 +121,15 @@ export class QueueManager {
       return;
     }
 
+    // Get series name from resolved config for notification
+    const resolvedConfig = registry.resolve(seriesUrl, 'series');
+    const seriesName = resolvedConfig.name;
     const domain = extractDomain(seriesUrl);
 
     // Register download queues for this domain if not already registered
     this.registerDownloadQueue(domain);
 
     // Get download delay from resolved config
-    const resolvedConfig = registry.resolve(seriesUrl, 'series');
     const { downloadDelay } = resolvedConfig.download;
 
     // Add episodes to download queue with staggered delays
@@ -136,9 +139,7 @@ export class QueueManager {
 
       const item: DownloadQueueItem = {
         seriesUrl,
-        seriesName,
         episode,
-        config,
         retryCount: 0,
       };
 
@@ -271,11 +272,11 @@ export class QueueManager {
   /**
    * Register specific check queue for a series (isolated interval)
    */
-  private registerSeriesCheckQueue(domain: string, config: SeriesConfig): string {
+  private registerSeriesCheckQueue(domain: string, seriesUrl: string): string {
     const registry = AppContext.getConfig();
 
     // Generate a short hash of the URL to ensure uniqueness and safe queue name
-    const hash = createHash('md5').update(config.url).digest('hex').substring(0, 12);
+    const hash = createHash('md5').update(seriesUrl).digest('hex').substring(0, 12);
     const queueName = `check:${domain}:${hash}`;
 
     // Check if queue is already registered
@@ -284,7 +285,7 @@ export class QueueManager {
     }
 
     // Resolve configuration
-    const resolvedConfig = registry.resolve(config.url, 'series');
+    const resolvedConfig = registry.resolve(seriesUrl, 'series');
     const { checkInterval } = resolvedConfig.check;
 
     // Register queue with scheduler
@@ -335,7 +336,7 @@ export class QueueManager {
   private async executeCheck(item: CheckQueueItem, domain: string, queueName: string): Promise<void> {
     const notifier = AppContext.getNotifier();
     const registry = AppContext.getConfig();
-    const { seriesUrl, seriesName, config, attemptNumber, retryCount = 0 } = item;
+    const { seriesUrl, attemptNumber, retryCount = 0 } = item;
 
     // Get handler for this domain
     const handler = this.domainHandlers.get(domain);
@@ -345,11 +346,12 @@ export class QueueManager {
 
     // Get settings
     const resolvedConfig = registry.resolve(seriesUrl, 'series');
+    const seriesName = resolvedConfig.name;
     const { count: checksCount, checkInterval } = resolvedConfig.check;
 
     try {
       // Perform the check
-      const result = await this.performCheck(handler, seriesUrl, seriesName, resolvedConfig, attemptNumber, domain);
+      const result = await this.performCheck(handler, seriesUrl, resolvedConfig, attemptNumber, domain);
 
       if (result.hasNewEpisodes) {
         // Episodes found - send to download queue, do NOT requeue
@@ -359,7 +361,7 @@ export class QueueManager {
         );
 
         // Add episodes to download queue
-        this.addEpisodes(seriesUrl, seriesName, result.episodes, config);
+        this.addEpisodes(seriesUrl, result.episodes);
 
         // Session complete - do not requeue
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
@@ -377,7 +379,7 @@ export class QueueManager {
 
           // Requeue with incremented attempt number
           const requeuedItem: CheckQueueItem = {
-            ...item,
+            seriesUrl,
             attemptNumber: attemptNumber + 1,
             retryCount: 0,
           };
@@ -415,7 +417,8 @@ export class QueueManager {
 
         // Requeue with incremented retry count (same attempt number)
         const requeuedItem: CheckQueueItem = {
-          ...item,
+          seriesUrl,
+          attemptNumber,
           retryCount: retryCount + 1,
         };
 
@@ -442,10 +445,11 @@ export class QueueManager {
   private async executeDownload(item: DownloadQueueItem, domain: string, queueName: string): Promise<void> {
     const notifier = AppContext.getNotifier();
     const registry = AppContext.getConfig();
-    const { seriesUrl, seriesName, episode, retryCount = 0 } = item;
+    const { seriesUrl, episode, retryCount = 0 } = item;
 
     // Resolve config
     const resolvedConfig = registry.resolve(seriesUrl, 'series');
+    const seriesName = resolvedConfig.name;
     const { downloadDelay } = resolvedConfig.download;
 
     try {
@@ -481,7 +485,8 @@ export class QueueManager {
 
         // Requeue with incremented retry count
         const requeuedItem: DownloadQueueItem = {
-          ...item,
+          seriesUrl,
+          episode,
           retryCount: retryCount + 1,
         };
 
@@ -503,7 +508,6 @@ export class QueueManager {
    *
    * @param handler - Domain handler
    * @param seriesUrl - Series URL
-   * @param seriesName - Series name
    * @param config - Resolved series configuration
    * @param attemptNumber - Current attempt number
    * @param domain - Domain name
@@ -512,12 +516,12 @@ export class QueueManager {
   private async performCheck(
     handler: ReturnType<typeof handlerRegistry.getHandlerOrThrow>,
     seriesUrl: string,
-    seriesName: string,
     config: ResolvedConfig<'series'>,
     attemptNumber: number,
     domain: string,
   ): Promise<{ hasNewEpisodes: boolean; episodes: Episode[]; requeueDelay?: number }> {
     const notifier = AppContext.getNotifier();
+    const seriesName = config.name;
     const checksCount = config.check.count;
 
     notifier.notify(

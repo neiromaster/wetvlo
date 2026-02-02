@@ -5,7 +5,6 @@
  * queue items, configurations, and processor interfaces.
  */
 
-import type { SeriesConfig } from '../config/config-schema.js';
 import type { Episode } from '../types/episode.types.js';
 
 /**
@@ -73,10 +72,6 @@ export type DomainConfig = {
 export type CheckQueueItem = {
   /** URL of the series to check */
   seriesUrl: string;
-  /** Name of the series */
-  seriesName: string;
-  /** Configuration for this series */
-  config: SeriesConfig;
   /** Current attempt number (1..config.check.count) */
   attemptNumber: number;
   /** Current retry count for errors */
@@ -91,12 +86,8 @@ export type CheckQueueItem = {
 export type DownloadQueueItem = {
   /** URL of the series */
   seriesUrl: string;
-  /** Name of the series */
-  seriesName: string;
   /** Episode to download */
   episode: Episode;
-  /** Configuration for this series (optional, for passing series-level overrides) */
-  config?: SeriesConfig;
   /** Timestamp when this download should occur */
   scheduledTime?: Date;
   /** Current retry count for errors */

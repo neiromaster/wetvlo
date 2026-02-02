@@ -231,7 +231,7 @@ export class Scheduler {
     const notifier = AppContext.getNotifier();
     notifier.notify(NotificationLevel.INFO, 'Triggering immediate checks for all series...');
     for (const config of this.configs) {
-      this.queueManager.addSeriesCheck(config);
+      this.queueManager.addSeriesCheck(config.url);
     }
   }
 
@@ -270,7 +270,7 @@ export class Scheduler {
     for (const config of configs) {
       if (this.stopped) break;
 
-      this.queueManager.addSeriesCheck(config);
+      this.queueManager.addSeriesCheck(config.url);
     }
 
     // Log queue stats
@@ -290,7 +290,7 @@ export class Scheduler {
     for (const config of this.configs) {
       if (this.stopped) break;
 
-      this.queueManager.addSeriesCheck(config);
+      this.queueManager.addSeriesCheck(config.url);
     }
 
     // Wait for all queues to drain

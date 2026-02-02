@@ -114,18 +114,13 @@ describe('QueueManager', () => {
       startTime: '12:00',
     };
 
-    queueManager.addSeriesCheck(config);
+    queueManager.addSeriesCheck(config.url);
 
     expect(mockScheduler.addTask).toHaveBeenCalledWith(
       expect.stringMatching(/^check:wetv\.vip:[a-f0-9]{12}$/),
       expect.objectContaining({
         seriesUrl: config.url,
-        seriesName: config.name,
         attemptNumber: 1,
-        config: expect.objectContaining({
-          name: config.name,
-          url: config.url,
-        }),
       }),
     );
   });
@@ -136,14 +131,7 @@ describe('QueueManager', () => {
       { number: 2, url: 'url2', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
     ];
 
-    const config = {
-      name: 'Test Series',
-      url: 'https://wetv.vip/play/123',
-      startTime: '12:00',
-      download: { downloadDelay: 10 }, // Note: ConfigRegistry uses pre-configured value
-    };
-
-    queueManager.addEpisodes('https://wetv.vip/play/123', 'Test Series', episodes, config);
+    queueManager.addEpisodes('https://wetv.vip/play/123', episodes);
 
     expect(mockScheduler.addTask).toHaveBeenCalledTimes(2);
     // First episode: 0 delay
@@ -166,7 +154,7 @@ describe('QueueManager', () => {
       { number: 2, url: 'url2', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
     ];
 
-    queueManager.addEpisodes('https://wetv.vip/play/123', 'Test Series', episodes);
+    queueManager.addEpisodes('https://wetv.vip/play/123', episodes);
 
     expect(mockScheduler.addTask).toHaveBeenCalledTimes(2);
     // First episode: 0 delay
@@ -189,8 +177,6 @@ describe('QueueManager', () => {
 
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',
-      seriesName: 'Test Series',
-      config: { name: 'Test Series', url: 'https://wetv.vip/play/123' },
       attemptNumber: 1,
     };
 
@@ -208,12 +194,6 @@ describe('QueueManager', () => {
 
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',
-      seriesName: 'Test Series',
-      config: {
-        name: 'Test Series',
-        url: 'https://wetv.vip/play/123',
-        check: { count: 3 },
-      },
       attemptNumber: 1,
     };
 
@@ -236,8 +216,6 @@ describe('QueueManager', () => {
 
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',
-      seriesName: 'Test Series',
-      config: { name: 'Test Series', url: 'https://wetv.vip/play/123' },
       attemptNumber: 1,
     };
 
@@ -262,7 +240,6 @@ describe('QueueManager', () => {
   it('should execute download task successfully', async () => {
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',
-      seriesName: 'Test Series',
       episode: { number: 1, url: 'url1', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
     };
 
@@ -275,7 +252,6 @@ describe('QueueManager', () => {
   it('should retry download on failure', async () => {
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',
-      seriesName: 'Test Series',
       episode: { number: 1, url: 'url1', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
       retryCount: 0,
     };

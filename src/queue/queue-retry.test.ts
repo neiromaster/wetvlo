@@ -98,7 +98,7 @@ describe('QueueManager Retry Logic', () => {
       { number: 2, url: 'http://test.com/2', type: 'vip' as EpisodeType, title: 'Ep 2', extractedAt: new Date() },
     ];
 
-    queueManager.addEpisodes('http://test.com/series', 'Test Series', episodes);
+    queueManager.addEpisodes('http://test.com/series', episodes);
 
     // Wait for processing (approx 2 seconds to be safe)
     await new Promise((resolve) => setTimeout(resolve, 2000));

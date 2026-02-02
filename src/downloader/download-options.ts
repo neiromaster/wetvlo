@@ -5,6 +5,7 @@ export type DownloadOptions = {
   tempDir?: string;
   cookieFile?: string;
   minDuration: number;
+  subLangs?: string[];
 };
 
 export function extractDownloadOptions(resolvedConfig: ResolvedConfig<'series'>): DownloadOptions {
@@ -13,5 +14,6 @@ export function extractDownloadOptions(resolvedConfig: ResolvedConfig<'series'>)
     tempDir: resolvedConfig.download.tempDir,
     cookieFile: resolvedConfig.cookieFile,
     minDuration: resolvedConfig.download.minDuration,
+    subLangs: resolvedConfig.subLangs,
   };
 }

@@ -67,6 +67,7 @@ const CommonSettingsSchema = z.object({
   stateFile: z.string().optional().describe('Path to state file'),
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),
   cookieFile: z.string().optional().describe('Path to cookie file'),
+  subLangs: z.array(z.string()).optional().describe('List of subtitle languages to download'),
 });
 
 /**

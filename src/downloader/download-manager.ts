@@ -67,6 +67,7 @@ export class DownloadManager {
 
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
         cookieFile: downloadOptions.cookieFile,
+        subLangs: downloadOptions.subLangs,
         onProgress: (progress) => notifier.progress(progress),
         onLog: (message) => notifier.notify(NotificationLevel.INFO, message),
       });

@@ -9,6 +9,8 @@ export type DownloadResult = {
 
 export type DownloaderOptions = {
   cookieFile?: string;
+  /** List of subtitle languages to download (e.g., ['en', 'ru']) */
+  subLangs?: string[];
   /** Callback for progress updates (e.g. percentage, ETA) - usually printed on same line */
   onProgress?: (progress: string) => void;
   /** Callback for log messages (e.g. info, extracting) - printed as new lines */

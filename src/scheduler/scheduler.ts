@@ -211,8 +211,6 @@ export class Scheduler {
       }
       this.scheduleNextBatch();
     }
-
-    notifier.notify(NotificationLevel.SUCCESS, 'Configuration reloaded');
   }
 
   /**

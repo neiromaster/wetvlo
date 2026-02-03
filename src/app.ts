@@ -167,18 +167,19 @@ export async function runApp(
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
 
-    process.stdin.on('keypress', async (_str, key) => {
+    process.stdin.on('keypress', async (str, key) => {
       if (!key) return;
 
       const name = key.name || '';
+      const char = str || '';
 
       // q, й or Ctrl+C to quit
-      if (name === 'q' || name === 'й' || (key.ctrl && name === 'c')) {
+      if (name === 'q' || name === 'й' || char === 'й' || (key.ctrl && name === 'c')) {
         await handleShutdown(scheduler);
         process.exit(0);
       }
       // r or к to reload config
-      else if (name === 'r' || name === 'к') {
+      else if (name === 'r' || name === 'к' || char === 'к') {
         try {
           logger.info(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
@@ -202,7 +203,7 @@ export async function runApp(
         }
       }
       // c or с (Cyrillic) to trigger checks
-      else if (name === 'c' || name === 'с') {
+      else if (name === 'c' || name === 'с' || char === 'с') {
         await scheduler.triggerAllChecks();
       }
     });

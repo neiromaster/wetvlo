@@ -141,6 +141,84 @@ export type ResolvedConfig<L extends Level> = L extends 'global'
     : SeriesConfigResolved;
 
 /**
+ * Validate configuration and check for common mistakes
+ *
+ * @param rawConfig - Raw configuration object from YAML
+ * @throws ConfigError if validation fails or common mistakes are found
+ */
+export function validateConfigWithWarnings(rawConfig: RawConfig): void {
+  // First, do the basic validation
+  ConfigSchema.parse(rawConfig);
+
+  // Then check for common configuration mistakes
+  const warnings: string[] = [];
+
+  // Check for misplaced download settings
+  if (rawConfig.globalConfig) {
+    const globalConfig = rawConfig.globalConfig as any;
+
+    // Check if downloadDir or tempDir are directly under globalConfig
+    if (globalConfig.downloadDir && !globalConfig.download?.downloadDir) {
+      warnings.push(
+        `'downloadDir' found directly under 'globalConfig'. ` +
+          `It should be placed under 'globalConfig.download'. ` +
+          `Current value: "${globalConfig.downloadDir}"`,
+      );
+    }
+
+    if (globalConfig.tempDir && !globalConfig.download?.tempDir) {
+      warnings.push(
+        `'tempDir' found directly under 'globalConfig'. ` +
+          `It should be placed under 'globalConfig.download'. ` +
+          `Current value: "${globalConfig.tempDir}"`,
+      );
+    }
+
+    // Check for misplaced check settings
+    if (globalConfig.count && !globalConfig.check?.count) {
+      warnings.push(
+        `'count' found directly under 'globalConfig'. ` + `It should be placed under 'globalConfig.check'.`,
+      );
+    }
+
+    if (globalConfig.checkInterval && !globalConfig.check?.checkInterval) {
+      warnings.push(
+        `'checkInterval' found directly under 'globalConfig'. ` + `It should be placed under 'globalConfig.check'.`,
+      );
+    }
+  }
+
+  // Check for common typo: globalConfigs instead of globalConfig
+  if ((rawConfig as any).globalConfigs) {
+    warnings.push(`'globalConfigs' found. Did you mean 'globalConfig'?`);
+  }
+
+  // Check for misplaced settings in domain configs
+  if (rawConfig.domainConfigs && Array.isArray(rawConfig.domainConfigs)) {
+    rawConfig.domainConfigs.forEach((domainConfig: any, index: number) => {
+      const dc = domainConfig as any;
+
+      if (dc.downloadDir && !dc.download?.downloadDir) {
+        warnings.push(
+          `'downloadDir' found directly under 'domainConfigs[${index}]. ` +
+            `It should be placed under 'domainConfigs[${index}].download'.`,
+        );
+      }
+    });
+  }
+
+  // If there are warnings, log them
+  if (warnings.length > 0) {
+    console.warn('\n⚠️  Configuration Warnings:');
+    console.warn('The following configuration issues were detected:');
+    warnings.forEach((warning, index) => {
+      console.warn(`${index + 1}. ${warning}`);
+    });
+    console.warn('Please fix these issues in your config.yaml file.\n');
+  }
+}
+
+/**
  * Validate configuration using Zod
  *
  * @param rawConfig - Raw configuration object from YAML

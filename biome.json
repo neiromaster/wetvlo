@@ -48,6 +48,9 @@
           "suspicious": {
             "noExplicitAny": "off",
             "noTemplateCurlyInString": "off"
+          },
+          "complexity": {
+            "noBannedTypes": "off"
           }
         }
       }

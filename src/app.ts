@@ -10,6 +10,7 @@ import { handlerRegistry } from './handlers/handler-registry.js';
 import { IQiyiHandler } from './handlers/impl/iqiyi-handler.js';
 import { MGTVHandler } from './handlers/impl/mgtv-handler.js';
 import { WeTVHandler } from './handlers/impl/wetv-handler.js';
+import { YoukuHandler } from './handlers/impl/youku-handler.js';
 import { ConsoleNotifier } from './notifications/console-notifier.js';
 import type { NotificationLevel, Notifier } from './notifications/notifier.js';
 import { TelegramNotifier } from './notifications/telegram-notifier.js';
@@ -128,6 +129,7 @@ export async function runApp(
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
   handlerRegistry.register(new MGTVHandler());
+  handlerRegistry.register(new YoukuHandler());
   logger.info(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Create download manager

@@ -66,9 +66,9 @@ describe('App Interactive Mode', () => {
     ...overrides,
   });
 
-  const emitKeypress = (name: string, ctrl = false) => {
+  const emitKeypress = (name: string, ctrl = false, strOverride?: string) => {
     if (stdinListeners.keypress) {
-      stdinListeners.keypress(name, { name, ctrl });
+      stdinListeners.keypress(strOverride !== undefined ? strOverride : name, { name, ctrl });
     }
   };
 
@@ -88,6 +88,16 @@ describe('App Interactive Mode', () => {
     await runApp('config.yaml', 'scheduled', deps);
 
     emitKeypress('с');
+    await waitForAsync();
+    expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
+  });
+
+  it('should trigger checks on "с" (Cyrillic) key when key.name is undefined', async () => {
+    const deps = createMockDeps();
+    await runApp('config.yaml', 'scheduled', deps);
+
+    // Simulate behavior where key.name is undefined but str is 'с'
+    emitKeypress(undefined as any, false, 'с');
     await waitForAsync();
     expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
   });

@@ -188,6 +188,11 @@ export function validateConfigWithWarnings(rawConfig: RawConfig): void {
     }
   }
 
+  // Check for common typo: globalConfigs instead of globalConfig
+  if ((rawConfig as any).globalConfigs) {
+    warnings.push(`'globalConfigs' found. Did you mean 'globalConfig'?`);
+  }
+
   // Check for misplaced settings in domain configs
   if (rawConfig.domainConfigs && Array.isArray(rawConfig.domainConfigs)) {
     rawConfig.domainConfigs.forEach((domainConfig: any, index: number) => {

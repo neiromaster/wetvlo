@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { run } from 'cmd-ts';
-import { cli } from './app.js';
+import { cli } from './app';
 
 /**
  * Main entry point

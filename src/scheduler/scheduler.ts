@@ -9,14 +9,15 @@
  * - Graceful shutdown
  */
 
-import { AppContext } from '../app-context.js';
-import type { SeriesConfig } from '../config/config-schema.js';
-import type { DownloadManager } from '../downloader/download-manager.js';
-import { SchedulerError } from '../errors/custom-errors.js';
-import { NotificationLevel } from '../notifications/notifier.js';
-import { QueueManager } from '../queue/queue-manager.js';
-import type { SchedulerOptions } from '../types/config.types.js';
-import { getMsUntilCron, getMsUntilTime, sleep } from '../utils/time-utils.js';
+import { AppContext } from '../app-context';
+import type { SeriesConfig } from '../config/config-schema';
+import type { DownloadManager } from '../downloader/download-manager';
+import { SchedulerError } from '../errors/custom-errors';
+import { NotificationLevel } from '../notifications/notifier';
+import { QueueManager } from '../queue/queue-manager';
+import type { SchedulerOptions } from '../types/config.types';
+import { logger } from '../utils/logger';
+import { getMsUntilCron, getMsUntilTime, sleep } from '../utils/time-utils';
 
 /**
  * Time provider type for dependency injection
@@ -80,11 +81,11 @@ export class Scheduler {
     const notifier = AppContext.getNotifier();
 
     if (this.options.mode === 'once') {
-      notifier.notify(NotificationLevel.INFO, 'Single-run mode: checking all series once');
+      logger.debug('Single-run mode: checking all series once');
       await this.runOnce();
       this.running = false;
     } else {
-      notifier.notify(NotificationLevel.INFO, 'Scheduler started (queue-based architecture)');
+      notifier.notify(NotificationLevel.INFO, 'Scheduler started');
       this.scheduleNextBatch();
 
       // Keep promise pending forever for scheduled mode to prevent process exit
@@ -143,10 +144,7 @@ export class Scheduler {
 
     if (minMsUntil > 0) {
       this.options.onIdle?.();
-      notifier.notify(
-        NotificationLevel.INFO,
-        `Waiting ${Math.floor(minMsUntil / 1000 / 60)} minutes until next run (${nextScheduleKey})...`,
-      );
+      notifier.notify(NotificationLevel.INFO, `Next run: ${nextScheduleKey} in ${Math.floor(minMsUntil / 1000 / 60)}m`);
     }
 
     // Schedule next run
@@ -173,8 +171,7 @@ export class Scheduler {
    * Stop the scheduler
    */
   async stop(): Promise<void> {
-    const notifier = AppContext.getNotifier();
-    notifier.notify(NotificationLevel.INFO, 'Stopping scheduler...');
+    logger.debug('Stopping scheduler...');
 
     this.stopped = true;
     if (this.scheduleTimer) {
@@ -187,15 +184,14 @@ export class Scheduler {
 
     this.running = false;
 
-    notifier.notify(NotificationLevel.INFO, 'Scheduler stopped');
+    logger.debug('Scheduler stopped');
   }
 
   /**
    * Reload configuration
    */
   async reload(configs: SeriesConfig[]): Promise<void> {
-    const notifier = AppContext.getNotifier();
-    notifier.notify(NotificationLevel.INFO, 'Reloading configuration...');
+    logger.debug('Reloading configuration...');
 
     // Update internal state
     this.configs = configs;
@@ -226,8 +222,7 @@ export class Scheduler {
    * Trigger immediate checks for all series
    */
   async triggerAllChecks(): Promise<void> {
-    const notifier = AppContext.getNotifier();
-    notifier.notify(NotificationLevel.INFO, 'Triggering immediate checks for all series...');
+    logger.debug('Triggering immediate checks for all series...');
     for (const config of this.configs) {
       this.queueManager.addSeriesCheck(config.url);
     }
@@ -243,10 +238,7 @@ export class Scheduler {
     for (const config of this.configs) {
       const scheduleKey = config.cron || config.startTime;
       if (!scheduleKey) {
-        notifier.notify(
-          NotificationLevel.WARNING,
-          `Series "${config.name}" has no startTime or cron configured. Skipping.`,
-        );
+        notifier.notify(NotificationLevel.WARNING, `Skip ${config.name}: no schedule`);
         continue;
       }
 
@@ -273,18 +265,14 @@ export class Scheduler {
 
     // Log queue stats
     const stats = this.queueManager.getQueueStats();
-    notifier.notify(
-      NotificationLevel.INFO,
-      `Added ${configs.length} series to check queues. Queue stats: ${JSON.stringify(stats)}`,
-    );
+    logger.debug(`Queue stats: ${JSON.stringify(stats)}`);
+    notifier.notify(NotificationLevel.INFO, `Added ${configs.length} series to queue`);
   }
 
   /**
    * Run all configs in single-run mode
    */
   private async runOnce(): Promise<void> {
-    const notifier = AppContext.getNotifier();
-
     for (const config of this.configs) {
       if (this.stopped) break;
 
@@ -298,7 +286,7 @@ export class Scheduler {
       await this.timeProvider.sleep(1000);
     }
 
-    notifier.notify(NotificationLevel.SUCCESS, 'Single-run complete');
+    logger.debug('Single-run complete');
   }
 
   /**

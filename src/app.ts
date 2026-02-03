@@ -1,24 +1,24 @@
 import * as readline from 'node:readline';
 import { boolean, command, flag, option, string } from 'cmd-ts';
-import { AppContext } from './app-context.js';
-import { loadConfig } from './config/config-loader.js';
-import { ConfigRegistry } from './config/config-registry.js';
-import type { SeriesConfig } from './config/config-schema.js';
-import { DownloadManager } from './downloader/download-manager.js';
-import { ConfigError } from './errors/custom-errors.js';
-import { handlerRegistry } from './handlers/handler-registry.js';
-import { IQiyiHandler } from './handlers/impl/iqiyi-handler.js';
-import { MGTVHandler } from './handlers/impl/mgtv-handler.js';
-import { WeTVHandler } from './handlers/impl/wetv-handler.js';
-import { YoukuHandler } from './handlers/impl/youku-handler.js';
-import { ConsoleNotifier } from './notifications/console-notifier.js';
-import type { NotificationLevel, Notifier } from './notifications/notifier.js';
-import { TelegramNotifier } from './notifications/telegram-notifier.js';
-import { Scheduler } from './scheduler/scheduler.js';
-import { StateManager } from './state/state-manager.js';
-import type { SchedulerMode, SchedulerOptions } from './types/config.types.js';
-import { readCookieFile } from './utils/cookie-extractor.js';
-import { logger } from './utils/logger.js';
+import { AppContext } from './app-context';
+import { loadConfig } from './config/config-loader';
+import { ConfigRegistry } from './config/config-registry';
+import type { SeriesConfig } from './config/config-schema';
+import { DownloadManager } from './downloader/download-manager';
+import { ConfigError } from './errors/custom-errors';
+import { handlerRegistry } from './handlers/handler-registry';
+import { IQiyiHandler } from './handlers/impl/iqiyi-handler';
+import { MGTVHandler } from './handlers/impl/mgtv-handler';
+import { WeTVHandler } from './handlers/impl/wetv-handler';
+import { YoukuHandler } from './handlers/impl/youku-handler';
+import { ConsoleNotifier } from './notifications/console-notifier';
+import type { NotificationLevel, Notifier } from './notifications/notifier';
+import { TelegramNotifier } from './notifications/telegram-notifier';
+import { Scheduler } from './scheduler/scheduler';
+import { StateManager } from './state/state-manager';
+import type { SchedulerMode, SchedulerOptions } from './types/config.types';
+import { readCookieFile } from './utils/cookie-extractor';
+import { LogLevel, logger } from './utils/logger';
 
 export type AppDependencies = {
   loadConfig: typeof loadConfig;
@@ -40,11 +40,11 @@ const defaultDependencies: AppDependencies = {
  * Handle graceful shutdown
  */
 export async function handleShutdown(scheduler: Scheduler): Promise<void> {
-  logger.info('Shutting down gracefully...');
+  logger.debug('Shutting down gracefully...');
 
   try {
     await scheduler.stop();
-    logger.success('Shutdown complete');
+    logger.debug('Shutdown complete');
   } catch (error) {
     logger.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -54,11 +54,16 @@ export async function runApp(
   configPath: string,
   mode: SchedulerMode,
   deps: AppDependencies = defaultDependencies,
+  debug: boolean = false,
 ): Promise<void> {
-  logger.info(`Mode: ${mode === 'once' ? 'Single-run (checks once, exits)' : 'Scheduled (waits for startTime)'}`);
+  // Set log level based on debug flag
+  const currentLevel = debug ? LogLevel.DEBUG : LogLevel.INFO;
+  logger.setLevel(currentLevel);
+
+  logger.info(`Mode: ${mode}`);
 
   // Check if yt-dlp is installed
-  logger.info('Checking yt-dlp installation...');
+  logger.debug('Checking yt-dlp installation...');
   const ytDlpInstalled = await deps.checkYtDlpInstalled();
 
   if (!ytDlpInstalled) {
@@ -71,9 +76,9 @@ export async function runApp(
   }
 
   // Load configuration
-  logger.info(`Loading configuration from ${configPath}...`);
+  logger.debug(`Loading configuration from ${configPath}...`);
   const config = await deps.loadConfig(configPath);
-  logger.success('Configuration loaded');
+  logger.debug('Configuration loaded');
 
   // Create config registry
   const configRegistry = new ConfigRegistry(config);
@@ -92,7 +97,7 @@ export async function runApp(
     if (cfg.telegram) {
       try {
         notifiers.push(new TelegramNotifier(cfg.telegram));
-        logger.info('Telegram notifications enabled for errors');
+        logger.debug('Telegram notifications enabled for errors');
       } catch (error) {
         logger.warning(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -123,14 +128,14 @@ export async function runApp(
 
   // Initialize AppContext with all services
   AppContext.initialize(configRegistry, notifier, stateManager);
-  logger.info('AppContext initialized');
+  logger.debug('AppContext initialized');
 
   // Register handlers
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
   handlerRegistry.register(new MGTVHandler());
   handlerRegistry.register(new YoukuHandler());
-  logger.info(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
+  logger.debug(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Create download manager
   const downloadManager = deps.createDownloadManager();
@@ -149,7 +154,7 @@ export async function runApp(
   }
 
   // Create and start scheduler with queue-based architecture
-  logger.info('Using queue-based scheduler');
+  logger.debug('Using queue-based scheduler');
   const scheduler = deps.createScheduler(config.series, downloadManager, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
@@ -181,7 +186,7 @@ export async function runApp(
       // r or к to reload config
       else if (name === 'r' || name === 'к' || char === 'к') {
         try {
-          logger.info(`Reloading configuration from ${configPath}...`);
+          logger.debug(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
           const newConfigRegistry = new ConfigRegistry(newConfig);
           const newGlobalConfig = newConfigRegistry.getConfig('global');
@@ -232,11 +237,17 @@ export const cli = command({
       short: 'o',
       description: 'Run in single-run mode (check once and exit)',
     }),
+    debug: flag({
+      type: boolean,
+      long: 'debug',
+      short: 'd',
+      description: 'Enable debug logging',
+    }),
   },
-  handler: async ({ config, once }: { config: string; once: boolean }) => {
+  handler: async ({ config, once, debug }: { config: string; once: boolean; debug: boolean }) => {
     try {
       const mode: SchedulerMode = once ? 'once' : 'scheduled';
-      await runApp(config, mode);
+      await runApp(config, mode, defaultDependencies, debug);
     } catch (error) {
       if (error instanceof ConfigError) {
         logger.error(`Configuration error: ${error.message}`);

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { AppContext } from '../app-context.js';
-import { ConfigRegistry } from '../config/config-registry.js';
-import { NotificationLevel } from '../notifications/notifier.js';
-import { EpisodeType } from '../types/episode.types.js';
-import { QueueManager } from './queue-manager.js';
+import { AppContext } from '../app-context';
+import { ConfigRegistry } from '../config/config-registry';
+import { NotificationLevel } from '../notifications/notifier';
+import { EpisodeType } from '../types/episode.types';
+import { QueueManager } from './queue-manager';
 
 // Mock dependencies
 const mockStateManager = {
@@ -94,12 +94,10 @@ describe('QueueManager', () => {
   it('should start and stop scheduler', async () => {
     queueManager.start();
     expect(mockScheduler.resume).toHaveBeenCalled();
-    expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringContaining('Started'));
+    // Note: Started/Stopped messages are now DEBUG, so we don't expect them to be notified
 
     await queueManager.stop();
     expect(mockScheduler.stop).toHaveBeenCalled();
-    // Case insensitive match or correct case
-    expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringMatching(/stopped/i));
   });
 
   it('should throw if started when already running', () => {
@@ -226,7 +224,7 @@ describe('QueueManager', () => {
 
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.SUCCESS,
-      expect.stringContaining('Found 1 new episodes'),
+      expect.stringContaining('1 new episodes'),
     );
 
     // Should add to download queue
@@ -260,10 +258,7 @@ describe('QueueManager', () => {
 
     await schedulerExecutor(task, 'download:wetv.vip');
 
-    expect(mockNotifier.notify).toHaveBeenCalledWith(
-      NotificationLevel.WARNING,
-      expect.stringContaining('Download failed'),
-    );
+    expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.WARNING, expect.stringContaining('retry 1/3'));
 
     // Should requeue
     expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(

@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
-import { AppContext } from '../app-context.js';
-import { NotificationLevel } from '../notifications/notifier.js';
-import * as VideoValidator from '../utils/video-validator.js';
-import { DownloadManager } from './download-manager.js';
+import { AppContext } from '../app-context';
+import { NotificationLevel } from '../notifications/notifier';
+import * as VideoValidator from '../utils/video-validator';
+import { DownloadManager } from './download-manager';
 
 // Mock StateManager
 const mockStateManager = {
@@ -137,9 +137,12 @@ describe('DownloadManager', () => {
     expect(mockStateManager.addDownloadedEpisode).toHaveBeenCalled();
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.HIGHLIGHT,
-      expect.stringContaining('Downloading'),
+      expect.stringContaining('downloading'),
     );
-    expect(mockNotifier.notify).toHaveBeenCalledWith(NotificationLevel.SUCCESS, expect.stringContaining('Downloaded'));
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.SUCCESS,
+      expect.stringContaining('Test Series - 01:'),
+    );
   });
 
   it('should download to temp dir and move files', async () => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { AppContext } from '../app-context.js';
-import { NotificationLevel } from '../notifications/notifier.js';
-import { Scheduler } from './scheduler.js';
+import { AppContext } from '../app-context';
+import { NotificationLevel } from '../notifications/notifier';
+import { Scheduler } from './scheduler';
 
 // Define mutable mocks
 const mockGetMsUntilTime = mock(() => 0);
@@ -130,7 +130,7 @@ describe('Scheduler', () => {
     await scheduler.start();
 
     expect(mockQueueManagerInstance.start).toHaveBeenCalled();
-    expect(notifier.notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringContaining('Single-run mode'));
+    // Note: Single-run mode message is now DEBUG, so we don't expect it to be notified
 
     expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
   });

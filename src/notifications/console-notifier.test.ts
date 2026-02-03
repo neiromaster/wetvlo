@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { logger } from '../utils/logger.js';
-import { ConsoleNotifier } from './console-notifier.js';
-import { NotificationLevel } from './notifier.js';
+import { logger } from '../utils/logger';
+import { ConsoleNotifier } from './console-notifier';
+import { NotificationLevel } from './notifier';
 
 // Mock logger
 mock.module('../utils/logger.js', () => ({
@@ -11,6 +11,7 @@ mock.module('../utils/logger.js', () => ({
     warning: mock(() => {}),
     error: mock(() => {}),
     highlight: mock(() => {}),
+    debug: mock(() => {}),
   },
 }));
 

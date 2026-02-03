@@ -187,11 +187,11 @@ export class YoukuHandler extends BaseHandler {
         };
       });
 
-      logger.info(`Episodes: ${initialInfo.loaded} loaded, ${initialInfo.total} total`);
+      logger.info(`Episodes loaded: ${initialInfo.loaded}/${initialInfo.total}`);
 
       // If there are more episodes, wait for the API calls
       if (initialInfo.total > initialInfo.loaded) {
-        logger.info(`Waiting for API to load remaining ${initialInfo.total - initialInfo.loaded} episodes...`);
+        logger.info(`Waiting for ${initialInfo.total - initialInfo.loaded} more episodes...`);
 
         // Wait for all API responses or timeout
         const startTime = Date.now();
@@ -214,15 +214,13 @@ export class YoukuHandler extends BaseHandler {
 
           // Stop waiting if we've captured several API responses or have all episodes
           if (currentInfo.loaded >= currentInfo.total || apiResponses.length >= 3) {
-            logger.success(
-              `Captured ${apiResponses.length} API response(s), loaded ${currentInfo.loaded}/${currentInfo.total} episodes`,
-            );
+            logger.success(`Captured ${apiResponses.length} API, ${currentInfo.loaded}/${currentInfo.total} loaded`);
             break;
           }
         }
 
         if (apiResponses.length === 0) {
-          logger.warning(`No API responses captured within timeout`);
+          logger.warning(`API timeout`);
         }
       }
 
@@ -243,11 +241,11 @@ export class YoukuHandler extends BaseHandler {
 
       // If we have additional episodes from API, merge them all
       if (apiResponses.length > 0) {
-        logger.info(`Processing ${apiResponses.length} API response(s)...`);
+        logger.info(`Processing ${apiResponses.length} API responses...`);
 
         for (const apiResponse of apiResponses) {
           const additionalEpisodes = this.parseApiResponse(apiResponse);
-          logger.info(`  Merging ${additionalEpisodes.length} additional episodes`);
+          logger.info(`+${additionalEpisodes.length} episodes`);
 
           // Merge episode lists, avoiding duplicates
           const existingIds = new Set(episodes.map((ep) => ep.number));
@@ -263,7 +261,7 @@ export class YoukuHandler extends BaseHandler {
         episodes.sort((a, b) => a.number - b.number);
       }
 
-      logger.success(`Total episodes extracted: ${episodes.length}`);
+      logger.success(`Extracted: ${episodes.length} episodes`);
       return episodes;
     } finally {
       await browser.close();

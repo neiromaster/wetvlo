@@ -10,16 +10,17 @@
  */
 
 import { createHash } from 'node:crypto';
-import { AppContext } from '../app-context.js';
-import type { ResolvedConfig } from '../config/config-schema.js';
-import type { DownloadManager } from '../downloader/download-manager.js';
-import { handlerRegistry } from '../handlers/handler-registry.js';
-import { NotificationLevel } from '../notifications/notifier.js';
-import type { StateManager } from '../state/state-manager.js';
-import type { Episode, EpisodeType } from '../types/episode.types.js';
-import { extractDomain } from '../utils/url-utils.js';
-import type { CheckQueueItem, DownloadQueueItem } from './types.js';
-import { UniversalScheduler } from './universal-scheduler.js';
+import { AppContext } from '../app-context';
+import type { ResolvedConfig } from '../config/config-schema';
+import type { DownloadManager } from '../downloader/download-manager';
+import { handlerRegistry } from '../handlers/handler-registry';
+import { NotificationLevel } from '../notifications/notifier';
+import type { StateManager } from '../state/state-manager';
+import type { Episode, EpisodeType } from '../types/episode.types';
+import { logger } from '../utils/logger';
+import { extractDomain } from '../utils/url-utils';
+import type { CheckQueueItem, DownloadQueueItem } from './types';
+import { UniversalScheduler } from './universal-scheduler';
 
 /**
  * Queue Manager for orchestrating all queues with universal scheduler
@@ -68,9 +69,9 @@ export class QueueManager {
       const domain = parts[1];
 
       if (type === 'download') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download in ${seconds}s...`);
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download: ${seconds}s`);
       } else if (type === 'check') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check in ${seconds}s...`);
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check: ${seconds}s`);
       }
     });
   }
@@ -81,7 +82,6 @@ export class QueueManager {
    * @param seriesUrl - Series URL
    */
   addSeriesCheck(seriesUrl: string): void {
-    const notifier = AppContext.getNotifier();
     const registry = AppContext.getConfig();
     const domain = extractDomain(seriesUrl);
 
@@ -104,7 +104,7 @@ export class QueueManager {
 
     this.scheduler.addTask(queueName, item);
 
-    notifier.notify(NotificationLevel.INFO, `[QueueManager] Added ${seriesName} to check queue for domain ${domain}`);
+    logger.debug(`[${domain}] Added ${seriesName} to check queue`);
   }
 
   /**
@@ -149,27 +149,21 @@ export class QueueManager {
       this.scheduler.addTask(queueName, item, delayMs);
     }
 
-    notifier.notify(
-      NotificationLevel.SUCCESS,
-      `[QueueManager] Added ${episodes.length} episodes to download queue for ${seriesName} (domain ${domain})`,
-    );
+    notifier.notify(NotificationLevel.SUCCESS, `[${domain}] ${seriesName}: queued ${episodes.length} episodes`);
   }
 
   /**
    * Update configuration
    */
   updateConfig(): void {
-    const notifier = AppContext.getNotifier();
     // Config is reloaded in AppContext, we just need to notify
-    notifier.notify(NotificationLevel.INFO, '[QueueManager] Configuration will be reloaded from AppContext');
+    logger.debug('[QueueManager] Configuration will be reloaded');
   }
 
   /**
    * Start all queues
    */
   start(): void {
-    const notifier = AppContext.getNotifier();
-
     if (this.running) {
       throw new Error('QueueManager is already running');
     }
@@ -177,7 +171,7 @@ export class QueueManager {
     this.running = true;
     this.scheduler.resume();
 
-    notifier.notify(NotificationLevel.INFO, '[QueueManager] Started queue processing');
+    logger.debug('[QueueManager] Started queue processing');
   }
 
   /**
@@ -186,18 +180,16 @@ export class QueueManager {
    * Waits for current task to complete.
    */
   async stop(): Promise<void> {
-    const notifier = AppContext.getNotifier();
-
     if (!this.running) {
       return;
     }
 
-    notifier.notify(NotificationLevel.INFO, '[QueueManager] Stopping queue processing...');
+    logger.debug('[QueueManager] Stopping queue processing...');
 
     this.scheduler.stop();
     this.running = false;
 
-    notifier.notify(NotificationLevel.INFO, '[QueueManager] Queue processing stopped');
+    logger.debug('[QueueManager] Queue processing stopped');
   }
 
   /**
@@ -357,7 +349,7 @@ export class QueueManager {
         // Episodes found - send to download queue, do NOT requeue
         notifier.notify(
           NotificationLevel.SUCCESS,
-          `[${domain}] Found ${result.episodes.length} new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount})`,
+          `[${domain}] ${seriesName}: ${result.episodes.length} new episodes (attempt ${attemptNumber}/${checksCount})`,
         );
 
         // Add episodes to download queue
@@ -374,7 +366,7 @@ export class QueueManager {
 
           notifier.notify(
             NotificationLevel.INFO,
-            `[${domain}] No new episodes for ${seriesName} (attempt ${attemptNumber}/${checksCount}), requeueing in ${Math.round(requeueDelay / 1000)}s`,
+            `[${domain}] ${seriesName}: no new episodes, retry in ${Math.round(requeueDelay / 1000)}s (attempt ${attemptNumber}/${checksCount})`,
           );
 
           // Requeue with incremented attempt number
@@ -388,10 +380,7 @@ export class QueueManager {
           this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
         } else {
           // Checks exhausted - do not requeue
-          notifier.notify(
-            NotificationLevel.INFO,
-            `[${domain}] Checks exhausted for ${seriesName} (${checksCount} attempts with no new episodes)`,
-          );
+          notifier.notify(NotificationLevel.INFO, `[${domain}] ${seriesName}: exhausted after ${checksCount} attempts`);
           this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
         }
       }
@@ -412,7 +401,7 @@ export class QueueManager {
 
         notifier.notify(
           NotificationLevel.WARNING,
-          `[${domain}] Check failed for ${seriesName}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
+          `[${domain}] ${seriesName}: check retry ${retryCount + 1}/${maxRetries} in ${Math.round(retryDelay / 1000)}s`,
         );
 
         // Requeue with incremented retry count (same attempt number)
@@ -426,10 +415,7 @@ export class QueueManager {
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
       } else {
         // Max retries exceeded - log error and give up
-        notifier.notify(
-          NotificationLevel.ERROR,
-          `[${domain}] Failed to check ${seriesName} after ${retryCount} retry attempts: ${errorMessage}`,
-        );
+        notifier.notify(NotificationLevel.ERROR, `[${domain}] ${seriesName}: check failed - ${errorMessage}`);
         this.scheduler.markTaskComplete(queueName, checkInterval * 1000);
       }
     }
@@ -456,12 +442,6 @@ export class QueueManager {
       // Attempt download
       await this.downloadManager.download(seriesUrl, episode);
 
-      // Success - log and continue
-      notifier.notify(
-        NotificationLevel.SUCCESS,
-        `[${domain}] Successfully queued download of Episode ${episode.number} for ${seriesName}`,
-      );
-
       this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -480,7 +460,7 @@ export class QueueManager {
 
         notifier.notify(
           NotificationLevel.WARNING,
-          `[${domain}] Download failed for Episode ${episode.number}, retrying in ${Math.round(retryDelay / 1000)}s (attempt ${retryCount + 1}/${maxRetries})`,
+          `[${domain}] ${seriesName} - ${String(episode.number).padStart(2, '0')}: retry ${retryCount + 1}/${maxRetries} in ${Math.round(retryDelay / 1000)}s`,
         );
 
         // Requeue with incremented retry count
@@ -494,10 +474,19 @@ export class QueueManager {
         this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
       } else {
         // Max retries exceeded - log error and give up
-        notifier.notify(
-          NotificationLevel.ERROR,
-          `[${domain}] Failed to download Episode ${episode.number} after ${retryCount + 1} attempts: ${errorMessage}`,
-        );
+        // Show URL on first error for debugging
+        if (retryCount === 0) {
+          notifier.notify(
+            NotificationLevel.ERROR,
+            `[${domain}] ${seriesName} - ${String(episode.number).padStart(2, '0')}: ${errorMessage}`,
+          );
+          notifier.notify(NotificationLevel.INFO, `[${domain}] Episode URL: ${episode.url}`);
+        } else {
+          notifier.notify(
+            NotificationLevel.ERROR,
+            `[${domain}] ${seriesName} - ${String(episode.number).padStart(2, '0')}: ${errorMessage}`,
+          );
+        }
         this.scheduler.markTaskComplete(queueName, downloadDelay * 1000);
       }
     }
@@ -526,8 +515,10 @@ export class QueueManager {
 
     notifier.notify(
       NotificationLevel.INFO,
-      `[${domain}] Checking ${seriesUrl} for new episodes... (attempt ${attemptNumber}/${checksCount})`,
+      `[${domain}] ${seriesName}: checking (attempt ${attemptNumber}/${checksCount})`,
     );
+
+    logger.debug(`[${domain}] Checking URL: ${seriesUrl}`);
 
     // Extract episodes from the series page
     const episodes = await handler.extractEpisodes(seriesUrl);
@@ -543,10 +534,7 @@ export class QueueManager {
       .map(([type, count]) => `${type}: ${count}`)
       .join(', ');
 
-    notifier.notify(
-      NotificationLevel.INFO,
-      `[${domain}] Found ${episodes.length} total episodes on ${seriesUrl} (${typeSummary})`,
-    );
+    notifier.notify(NotificationLevel.INFO, `[${domain}] ${seriesName}: ${episodes.length} episodes (${typeSummary})`);
 
     // Get download types from config
     const { downloadTypes } = config.check;
@@ -565,7 +553,7 @@ export class QueueManager {
       const skippedCount = episodes.length - newEpisodes.length;
       notifier.notify(
         NotificationLevel.INFO,
-        `[${domain}] Filtering to ${downloadTypes.join(' or ')}: ${newEpisodes.length} episodes to download, ${skippedCount} skipped`,
+        `[${domain}] Filtering: ${newEpisodes.length} to download, ${skippedCount} skipped`,
       );
     }
 

@@ -103,6 +103,24 @@ export class YtdlpWrapper {
             if (filename) allFiles.add(filename);
           }
 
+          // Filter out unwanted yt-dlp messages
+          // Patterns to exclude (service-agnostic):
+          // - "xxx: Downloading webpage" (repeated, noisy)
+          // - "xxx: Downloading m3u8 information" (repeated, noisy)
+          // - "Downloading N format(s): ..." (technical detail)
+          // - "FixupM3u8 Fixing MPEG-TS ..." (technical detail)
+          const shouldFilter = [
+            /:\s+Downloading webpage$/,
+            /:\s+Downloading m3u8 information$/,
+            /:\s+Downloading m3u8 manifest$/,
+            /Downloading \d+ format\(s\)/,
+            /FixupM3u8/,
+          ].some((pattern) => pattern.test(text));
+
+          if (shouldFilter) {
+            continue;
+          }
+
           // Status messages
           if (
             text.startsWith('[info]') ||

@@ -1,15 +1,16 @@
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { AppContext } from '../app-context.js';
+import { AppContext } from '../app-context';
 import { DownloadError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import { sanitizeFilename } from '../utils/filename-sanitizer';
+import { logger } from '../utils/logger';
 import * as VideoValidator from '../utils/video-validator';
-import type { DownloadOptions } from './download-options.js';
-import { extractDownloadOptions } from './download-options.js';
+import type { DownloadOptions } from './download-options';
+import { extractDownloadOptions } from './download-options';
 import { downloaderRegistry } from './downloader-registry';
 import { YtDlpDownloader } from './impl/yt-dlp-downloader';
 
@@ -50,13 +51,10 @@ export class DownloadManager {
     }
 
     const downloader = downloaderRegistry.getDownloader(episode.url);
-    notifier.notify(
-      NotificationLevel.HIGHLIGHT,
-      `Downloading Episode ${episode.number} of ${seriesName} using ${downloader.getName()}`,
-    );
+    const paddedNumber = String(episode.number).padStart(2, '0');
+    notifier.notify(NotificationLevel.HIGHLIGHT, `${seriesName} - ${paddedNumber}: downloading`);
 
     // Calculate filename once (used in both try and catch)
-    const paddedNumber = String(episode.number).padStart(2, '0');
     const sanitizedSeriesName = sanitizeFilename(seriesName);
     const filenameWithoutExt = `${sanitizedSeriesName} - ${paddedNumber}`;
     const targetDir = downloadOptions.tempDir || downloadOptions.downloadDir;
@@ -96,10 +94,7 @@ export class DownloadManager {
 
       // Move files from tempDir to downloadDir if needed
       if (downloadOptions.tempDir && downloadOptions.tempDir !== downloadOptions.downloadDir) {
-        notifier.notify(
-          NotificationLevel.INFO,
-          `Moving files from temp directory to ${downloadOptions.downloadDir}...`,
-        );
+        notifier.notify(NotificationLevel.INFO, `Moving to ${downloadOptions.downloadDir}...`);
 
         // Ensure download directory exists
         await fsPromises.mkdir(downloadOptions.downloadDir, { recursive: true });
@@ -110,7 +105,7 @@ export class DownloadManager {
             const absFile = resolve(file);
 
             if (!fs.existsSync(absFile)) {
-              notifier.notify(NotificationLevel.WARNING, `File not found, skipping move: ${absFile}`);
+              notifier.notify(NotificationLevel.WARNING, `Skip: ${basename(absFile)}`);
               continue;
             }
 
@@ -122,8 +117,8 @@ export class DownloadManager {
             if (absFile === resolve(result.filename)) {
               result.filename = newPath;
             }
-          } catch (e) {
-            notifier.notify(NotificationLevel.ERROR, `Failed to move file ${file}: ${e}`);
+          } catch (_e) {
+            notifier.notify(NotificationLevel.ERROR, `Move failed: ${basename(file)}`);
           }
         }
       }
@@ -133,7 +128,7 @@ export class DownloadManager {
 
       notifier.notify(
         NotificationLevel.SUCCESS,
-        `Downloaded Episode ${episode.number}: ${result.filename} (${this.formatSize(fileSize)})`,
+        `${seriesName} - ${paddedNumber}: ${basename(result.filename)} (${this.formatSize(fileSize)})`,
       );
 
       return true;
@@ -144,9 +139,7 @@ export class DownloadManager {
       // Clean up any artifacts from this failed attempt
       await this.cleanupEpisodeArtifacts(targetDir, filenameWithoutExt);
 
-      const message = `Failed to download Episode ${episode.number}: ${
-        error instanceof Error ? error.message : String(error)
-      }`;
+      const message = `${seriesName} - ${paddedNumber}: ${error instanceof Error ? error.message : String(error)}`;
 
       notifier.notify(NotificationLevel.ERROR, message);
       throw new DownloadError(message, episode.url);
@@ -157,8 +150,6 @@ export class DownloadManager {
    * Clean up downloaded files
    */
   private async cleanupFiles(files: string[]): Promise<void> {
-    const notifier = AppContext.getNotifier();
-
     for (const file of files) {
       try {
         const fullPath = resolve(file);
@@ -166,7 +157,7 @@ export class DownloadManager {
           await fsPromises.unlink(fullPath);
         }
       } catch (e) {
-        notifier.notify(NotificationLevel.ERROR, `Failed to delete file ${file}: ${e}`);
+        logger.debug(`Delete failed: ${basename(file)} - ${e}`);
       }
     }
   }
@@ -196,18 +187,18 @@ export class DownloadManager {
           try {
             await fsPromises.unlink(filePath);
             cleanedCount++;
-            notifier.notify(NotificationLevel.INFO, `Cleaned up artifact: ${file}`);
+            logger.debug(`Cleaned artifact: ${basename(file)}`);
           } catch (e) {
-            notifier.notify(NotificationLevel.WARNING, `Failed to delete artifact ${file}: ${e}`);
+            logger.debug(`Delete artifact failed: ${basename(file)} - ${e}`);
           }
         }
       }
 
       if (cleanedCount > 0) {
-        notifier.notify(NotificationLevel.INFO, `Cleaned up ${cleanedCount} artifact(s) for ${filenameWithoutExt}`);
+        notifier.notify(NotificationLevel.INFO, `Cleaned ${cleanedCount} artifacts`);
       }
     } catch (e) {
-      notifier.notify(NotificationLevel.WARNING, `Failed to cleanup artifacts in ${dir}: ${e}`);
+      notifier.notify(NotificationLevel.WARNING, `Cleanup failed: ${e}`);
     }
   }
 

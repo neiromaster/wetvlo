@@ -69,6 +69,7 @@ domainConfigs:
 # Optional: Global configuration defaults
 # =============================================================================
 # These settings apply to all series unless overridden at domain/series level
+# IMPORTANT: All download and check settings must be nested under their respective sections
 globalConfig:
   check:
     count: 3 # Number of times to check for new episodes

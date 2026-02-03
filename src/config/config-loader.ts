@@ -5,7 +5,7 @@ import * as yaml from 'js-yaml';
 import type { Config, RawConfig } from '../config/config-schema.js';
 import { ConfigError } from '../errors/custom-errors';
 import { resolveEnvRecursive } from '../utils/env-resolver';
-import { validateConfig } from './config-schema';
+import { validateConfigWithWarnings } from './config-schema';
 
 /**
  * Default config file path
@@ -39,8 +39,8 @@ export async function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Prom
     throw new ConfigError(`Failed to parse YAML: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  // Validate configuration structure
-  validateConfig(rawConfig);
+  // Validate configuration structure and check for common mistakes
+  validateConfigWithWarnings(rawConfig);
 
   // Resolve environment variables
   const config = resolveEnvRecursive(rawConfig) as unknown as Config;

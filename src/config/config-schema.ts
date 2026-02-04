@@ -189,16 +189,14 @@ export function validateConfigWithWarnings(rawConfig: RawConfig): void {
   }
 
   // Check for common typo: globalConfigs instead of globalConfig
-  if ((rawConfig as any).globalConfigs) {
+  if ((rawConfig as Record<string, unknown>).globalConfigs) {
     warnings.push(`'globalConfigs' found. Did you mean 'globalConfig'?`);
   }
 
   // Check for misplaced settings in domain configs
   if (rawConfig.domainConfigs && Array.isArray(rawConfig.domainConfigs)) {
-    rawConfig.domainConfigs.forEach((domainConfig: any, index: number) => {
-      const dc = domainConfig as any;
-
-      if (dc.downloadDir && !dc.download?.downloadDir) {
+    rawConfig.domainConfigs.forEach((domainConfig: Record<string, unknown>, index: number) => {
+      if (domainConfig.downloadDir && !(domainConfig.download as Record<string, unknown> | undefined)?.downloadDir) {
         warnings.push(
           `'downloadDir' found directly under 'domainConfigs[${index}]. ` +
             `It should be placed under 'domainConfigs[${index}].download'.`,

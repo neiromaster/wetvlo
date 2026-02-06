@@ -19,10 +19,16 @@ type PageData = {
   };
   videoList?: Array<{
     vid: string;
-    episode: string;
-    title: string;
+    episode?: string;
+    order?: number;
+    title?: string;
+    subTitle?: string;
+    name?: string;
     isTrailer?: number | boolean;
     payStatus?: number;
+    payMark?: string;
+    episodeType?: number;
+    contentType?: number;
   }>;
 };
 
@@ -68,18 +74,23 @@ export class IQiyiHandler extends BaseHandler {
       const pageData: PageData = JSON.parse(dataStr as string);
 
       const { albumInfo, videoList = [] } = pageData;
-      const { albumId, title } = albumInfo || {};
+      const { albumId, title: albumTitle } = albumInfo || {};
 
       // Process each video
       for (const video of videoList) {
-        const { vid, episode, isTrailer, payStatus } = video;
+        const { vid, episode, order, isTrailer, payStatus, payMark, episodeType, subTitle, name, title } = video;
 
         // Skip trailers
         if (isTrailer) {
           continue;
         }
 
-        const episodeNumber = this.parseEpisodeNumber(episode);
+        // Determine episode number: use 'order' first, then try parsing 'episode' or 'subTitle' or 'name'
+        let episodeNumber: number | null | undefined = order;
+        if (!episodeNumber) {
+          episodeNumber = this.parseEpisodeNumber(episode || subTitle || name || title || '');
+        }
+
         if (!episodeNumber) {
           continue;
         }
@@ -87,14 +98,18 @@ export class IQiyiHandler extends BaseHandler {
         // Build URL: /play/{albumId}-{vid}?lang=en_us
         const episodeUrl = `https://www.iq.com/play/${albumId}-${vid}?lang=en_us`;
 
-        // Determine episode type based on payStatus
-        const type = this.determineTypeFromPayStatus(payStatus);
+        // Determine episode type
+        const type = this.determineType(video);
+
+        // Determine title
+        const episodeTitle = subTitle || name || title || (episode ? `Episode ${episode}` : undefined);
+        const fullTitle = albumTitle && episodeTitle ? `${albumTitle} - ${episodeTitle}` : episodeTitle;
 
         episodes.push({
           number: episodeNumber,
           url: episodeUrl,
           type,
-          title: `${title} - Episode ${episode}`,
+          title: fullTitle,
           extractedAt: new Date(),
         });
       }
@@ -107,6 +122,24 @@ export class IQiyiHandler extends BaseHandler {
     episodes.sort((a, b) => a.number - b.number);
 
     return episodes;
+  }
+
+  /**
+   * Determine episode type from video data
+   */
+  private determineType(video: NonNullable<PageData['videoList']>[number]): EpisodeType {
+    const { payStatus, payMark, episodeType } = video;
+
+    // Check explicitly for preview indicators
+    if (payMark === 'preview' || episodeType === 1) {
+      return EpisodeType.PREVIEW;
+    }
+
+    if (payMark === 'VIP_MARK' || payStatus === 6) {
+      return EpisodeType.VIP;
+    }
+
+    return EpisodeType.AVAILABLE;
   }
 
   /**
@@ -144,16 +177,6 @@ export class IQiyiHandler extends BaseHandler {
     episodes.sort((a, b) => a.number - b.number);
 
     return episodes;
-  }
-
-  /**
-   * Determine episode type from payStatus
-   */
-  private determineTypeFromPayStatus(payStatus?: number): EpisodeType {
-    if (payStatus === 6) {
-      return EpisodeType.VIP;
-    }
-    return EpisodeType.AVAILABLE;
   }
 
   /**

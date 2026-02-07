@@ -82,16 +82,13 @@ export async function runApp(
   // Create config registry
   const configRegistry = new ConfigRegistry(config);
 
-  // Get global config (stored in let for config reload comparison)
-  let _globalConfig = configRegistry.getConfig('global');
-
   /**
    * Create notifier instance from config
    * Extracted to factory function for reuse during config reload
    */
   const createNotifier = (registry: ConfigRegistry): Notifier => {
     const notifiers: Array<ConsoleNotifier | TelegramNotifier> = [new ConsoleNotifier()];
-    const cfg = registry.getConfig('global');
+    const cfg = registry.resolve('global');
 
     if (cfg.telegram) {
       try {
@@ -187,14 +184,10 @@ export async function runApp(
           logger.debug(`Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
           const newConfigRegistry = new ConfigRegistry(newConfig);
-          const newGlobalConfig = newConfigRegistry.getConfig('global');
 
           // Reload notifier (Telegram settings, etc.)
           const newNotifier = createNotifier(newConfigRegistry);
           AppContext.setNotifier(newNotifier);
-
-          // Update global config reference
-          _globalConfig = newGlobalConfig;
 
           // Reload config registry and scheduler
           AppContext.reloadConfig(newConfigRegistry);

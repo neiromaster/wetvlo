@@ -69,17 +69,17 @@ export class ConfigRegistry {
     }
   }
 
-  getConfig(key: 'global'): GlobalConfigResolved;
-  getConfig(key: `domain:${string}`): DomainConfigResolved | undefined;
-  getConfig(key: `series:${string}`): SeriesConfigResolved;
-  getConfig(key: ValidKey): GlobalConfigResolved | DomainConfigResolved | SeriesConfigResolved | undefined {
+  private getConfig(key: 'global'): GlobalConfigResolved;
+  private getConfig(key: `domain:${string}`): DomainConfigResolved | undefined;
+  private getConfig(key: `series:${string}`): SeriesConfigResolved;
+  private getConfig(key: ValidKey): GlobalConfigResolved | DomainConfigResolved | SeriesConfigResolved | undefined {
     return this.map.get(key) as GlobalConfigResolved | DomainConfigResolved | SeriesConfigResolved | undefined;
   }
 
-  setConfig(key: 'global', config: GlobalConfigResolved): void;
-  setConfig(key: `domain:${string}`, config: DomainConfigResolved): void;
-  setConfig(key: `series:${string}`, config: SeriesConfigResolved): void;
-  setConfig(key: ValidKey, config: GlobalConfigResolved | DomainConfigResolved | SeriesConfigResolved): void {
+  private setConfig(key: 'global', config: GlobalConfigResolved): void;
+  private setConfig(key: `domain:${string}`, config: DomainConfigResolved): void;
+  private setConfig(key: `series:${string}`, config: SeriesConfigResolved): void;
+  private setConfig(key: ValidKey, config: GlobalConfigResolved | DomainConfigResolved | SeriesConfigResolved): void {
     this.map.set(key, config);
   }
 

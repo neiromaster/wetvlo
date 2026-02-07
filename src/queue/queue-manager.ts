@@ -160,6 +160,11 @@ export class QueueManager {
     logger.debug('[QueueManager] Configuration will be reloaded');
   }
 
+  clearQueues(): void {
+    this.scheduler.clearQueues();
+    logger.debug('[QueueManager] Cleared all queues');
+  }
+
   /**
    * Start all queues
    */

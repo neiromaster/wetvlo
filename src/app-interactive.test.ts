@@ -18,6 +18,7 @@ describe('App Interactive Mode', () => {
       start: mock(() => Promise.resolve()),
       stop: mock(() => Promise.resolve()),
       triggerAllChecks: mock(() => Promise.resolve()),
+      clearQueues: mock(() => {}),
       reload: mock(() => Promise.resolve()),
     };
 
@@ -74,31 +75,34 @@ describe('App Interactive Mode', () => {
 
   const waitForAsync = () => new Promise((resolve) => setTimeout(resolve, 10));
 
-  it('should trigger checks on "c" key', async () => {
+  it('should clear queues and trigger checks on "c" key', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 
     emitKeypress('c');
     await waitForAsync();
+    expect(mockScheduler.clearQueues).toHaveBeenCalled();
     expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
   });
 
-  it('should trigger checks on "с" (Cyrillic) key', async () => {
+  it('should clear queues and trigger checks on "с" (Cyrillic) key', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 
     emitKeypress('с');
     await waitForAsync();
+    expect(mockScheduler.clearQueues).toHaveBeenCalled();
     expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
   });
 
-  it('should trigger checks on "с" (Cyrillic) key when key.name is undefined', async () => {
+  it('should clear queues and trigger checks on "с" (Cyrillic) key when key.name is undefined', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 
     // Simulate behavior where key.name is undefined but str is 'с'
     emitKeypress(undefined as any, false, 'с');
     await waitForAsync();
+    expect(mockScheduler.clearQueues).toHaveBeenCalled();
     expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
   });
 

@@ -91,6 +91,14 @@ export class UniversalScheduler<TaskType> {
     this.queueCooldowns.delete(typeName);
   }
 
+  clearQueues(): void {
+    for (const queue of this.queues.values()) {
+      queue.clear();
+    }
+    this.clearTimer();
+    this.roundRobinIndex = 0;
+  }
+
   /**
    * Add a task to a specific queue
    *

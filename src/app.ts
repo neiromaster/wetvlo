@@ -146,7 +146,7 @@ export async function runApp(
     const printInstructions = () => {
       logger.info('Interactive mode enabled:');
       logger.info('  [r] Reload configuration');
-      logger.info('  [c] Trigger immediate checks');
+      logger.info('  [c] Clear queues and trigger checks');
       logger.info('  [q] Quit');
     };
 
@@ -207,8 +207,9 @@ export async function runApp(
           logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      // c or с (Cyrillic) to trigger checks
+      // c or с (Cyrillic) to clear queues and trigger checks
       else if (name === 'c' || name === 'с' || char === 'с') {
+        scheduler.clearQueues();
         await scheduler.triggerAllChecks();
       }
     });

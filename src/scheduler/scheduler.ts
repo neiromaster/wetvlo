@@ -228,6 +228,11 @@ export class Scheduler {
     }
   }
 
+  clearQueues(): void {
+    logger.debug('Clearing queues...');
+    this.queueManager.clearQueues();
+  }
+
   /**
    * Group configs by schedule (startTime or cron)
    */

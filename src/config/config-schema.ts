@@ -68,6 +68,8 @@ const CommonSettingsSchema = z.object({
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),
   cookieFile: z.string().optional().describe('Path to cookie file'),
   subLangs: z.array(z.string()).optional().describe('List of subtitle languages to download'),
+  cookieRefreshBrowser: BrowserSchema.optional().describe('Browser to use for Playwright cookie refresh'),
+  playwrightHeadless: z.boolean().optional().describe('Run Playwright browser in headless mode'),
 });
 
 /**

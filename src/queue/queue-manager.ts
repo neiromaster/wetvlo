@@ -17,6 +17,7 @@ import { handlerRegistry } from '../handlers/handler-registry';
 import { NotificationLevel } from '../notifications/notifier';
 import type { StateManager } from '../state/state-manager';
 import type { Episode, EpisodeType } from '../types/episode.types';
+import { refreshCookiesWithPlaywright } from '../utils/cookie-sync';
 import { logger } from '../utils/logger';
 import { extractDomain } from '../utils/url-utils';
 import type { CheckQueueItem, DownloadQueueItem } from './types';
@@ -356,6 +357,18 @@ export class QueueManager {
           NotificationLevel.SUCCESS,
           `[${domain}] ${seriesName}: ${result.episodes.length} new episodes (attempt ${attemptNumber}/${checksCount})`,
         );
+
+        if (resolvedConfig.cookieRefreshBrowser) {
+          try {
+            await refreshCookiesWithPlaywright(seriesUrl, resolvedConfig);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            notifier.notify(
+              NotificationLevel.ERROR,
+              `[${domain}] ${seriesName}: cookie refresh failed - ${errorMessage}`,
+            );
+          }
+        }
 
         // Add episodes to download queue
         this.addEpisodes(seriesUrl, result.episodes);

@@ -4,6 +4,8 @@ export type DefaultConfig = {
   stateFile: string;
   browser?: string;
   cookieFile?: string;
+  cookieRefreshBrowser?: string;
+  playwrightHeadless?: boolean;
 
   check: {
     count: number;
@@ -46,6 +48,7 @@ export const defaults: DefaultConfig = {
   },
   stateFile: 'wetvlo-state.json',
   browser: 'chrome',
+  playwrightHeadless: true,
 };
 
 /**

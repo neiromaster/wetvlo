@@ -31,7 +31,6 @@
     "zod": "^4.3.6"
   },
   "dependencies": {
-    "cmd-ts": "^0.14.3",
     "execa": "^9.6.1",
     "playwright": "^1.58.2"
   },

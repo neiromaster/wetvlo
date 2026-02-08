@@ -78,7 +78,7 @@ export class IQiyiHandler extends BaseHandler {
 
       // Process each video
       for (const video of videoList) {
-        const { vid, episode, order, isTrailer, payStatus, payMark, episodeType, subTitle, name, title } = video;
+        const { vid, episode, order, isTrailer, subTitle, name, title } = video;
 
         // Skip trailers
         if (isTrailer) {

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { AppContext } from '../app-context';
 import { NotificationLevel } from '../notifications/notification-level';
-import type { Notifier } from '../notifications/notifier';
 import type { State } from '../types/state.types';
 import { createEmptyState } from '../types/state.types';
 
@@ -25,11 +25,6 @@ export type EpisodeNumber = string;
  */
 export class StateManager {
   private static locks = new Map<string, Promise<void>>();
-  private notifier?: Notifier;
-
-  constructor(notifier?: Notifier) {
-    this.notifier = notifier;
-  }
 
   /**
    * Check if an episode has been downloaded
@@ -208,8 +203,9 @@ export class StateManager {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const fullMessage = `${message}: ${errorMessage}`;
 
-    if (this.notifier) {
-      this.notifier.notify(NotificationLevel.ERROR, fullMessage);
+    const notifier = AppContext.getNotifier();
+    if (notifier) {
+      notifier.notify(NotificationLevel.ERROR, fullMessage);
     } else {
       console.error(fullMessage);
     }

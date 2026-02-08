@@ -10,7 +10,7 @@
  */
 
 import { AppContext } from '../app-context';
-import type { SeriesConfig } from '../config/config-schema';
+import type { SeriesConfigResolved } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
 import { SchedulerError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notification-level';
@@ -36,7 +36,7 @@ export type QueueManagerFactory = (downloadManager: DownloadManager) => QueueMan
  * Scheduler for managing periodic checks with queue-based architecture
  */
 export class Scheduler {
-  private configs: SeriesConfig[];
+  private configs: SeriesConfigResolved[];
   private downloadManager: DownloadManager;
   private options: SchedulerOptions;
   private queueManager: QueueManager;
@@ -46,7 +46,7 @@ export class Scheduler {
   private scheduleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    configs: SeriesConfig[],
+    configs: SeriesConfigResolved[],
     downloadManager: DownloadManager,
     options: SchedulerOptions = { mode: 'scheduled' },
     timeProvider?: TimeProvider,
@@ -189,7 +189,7 @@ export class Scheduler {
   /**
    * Reload configuration
    */
-  async reload(configs: SeriesConfig[]): Promise<void> {
+  async reload(configs: SeriesConfigResolved[]): Promise<void> {
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Reloading configuration...');
 
     // Update internal state
@@ -235,9 +235,9 @@ export class Scheduler {
   /**
    * Group configs by schedule (startTime or cron)
    */
-  private groupConfigsBySchedule(): Map<string, SeriesConfig[]> {
+  private groupConfigsBySchedule(): Map<string, SeriesConfigResolved[]> {
     const notifier = AppContext.getNotifier();
-    const grouped = new Map<string, SeriesConfig[]>();
+    const grouped = new Map<string, SeriesConfigResolved[]>();
 
     for (const config of this.configs) {
       const scheduleKey = config.cron || config.startTime;
@@ -257,7 +257,7 @@ export class Scheduler {
   /**
    * Add all configs to queue manager
    */
-  private async runConfigs(configs: SeriesConfig[]): Promise<void> {
+  private async runConfigs(configs: SeriesConfigResolved[]): Promise<void> {
     const notifier = AppContext.getNotifier();
 
     // Add all series to the queue manager

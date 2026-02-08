@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
 import { NotificationLevel } from '../notifications/notification-level';
+import type { EpisodeType } from '../types/episode-type';
 import { Scheduler } from './scheduler';
 
 // Define mutable mocks
@@ -28,9 +29,81 @@ describe('Scheduler', () => {
   let notifier: any;
 
   const configs = [
-    { name: 'Series 1', url: 'http://example.com/1', startTime: '10:00' },
-    { name: 'Series 2', url: 'http://example.com/2', startTime: '10:00' },
-    { name: 'Series 3', url: 'http://example.com/3', startTime: '10:00' },
+    {
+      domain: 'example.com',
+      name: 'Series 1',
+      url: 'http://example.com/1',
+      startTime: '10:00',
+      check: {
+        count: 3,
+        checkInterval: 60000,
+        downloadTypes: ['available', 'vip', 'svip'] as EpisodeType[],
+      },
+      download: {
+        downloadDir: './downloads',
+        tempDir: './temp',
+        downloadDelay: 10,
+        maxRetries: 2,
+        initialTimeout: 5,
+        backoffMultiplier: 2,
+        jitterPercentage: 10,
+        minDuration: 0,
+      },
+      notifications: {
+        consoleMinLevel: 'info' as const,
+      },
+      stateFile: 'state.json',
+    },
+    {
+      domain: 'example.com',
+      name: 'Series 2',
+      url: 'http://example.com/2',
+      startTime: '10:00',
+      check: {
+        count: 3,
+        checkInterval: 60000,
+        downloadTypes: ['available', 'vip', 'svip'] as EpisodeType[],
+      },
+      download: {
+        downloadDir: './downloads',
+        tempDir: './temp',
+        downloadDelay: 10,
+        maxRetries: 2,
+        initialTimeout: 5,
+        backoffMultiplier: 2,
+        jitterPercentage: 10,
+        minDuration: 0,
+      },
+      notifications: {
+        consoleMinLevel: 'info' as const,
+      },
+      stateFile: 'state.json',
+    },
+    {
+      domain: 'example.com',
+      name: 'Series 3',
+      url: 'http://example.com/3',
+      startTime: '10:00',
+      check: {
+        count: 3,
+        checkInterval: 60000,
+        downloadTypes: ['available', 'vip', 'svip'] as EpisodeType[],
+      },
+      download: {
+        downloadDir: './downloads',
+        tempDir: './temp',
+        downloadDelay: 10,
+        maxRetries: 2,
+        initialTimeout: 5,
+        backoffMultiplier: 2,
+        jitterPercentage: 10,
+        minDuration: 0,
+      },
+      notifications: {
+        consoleMinLevel: 'info' as const,
+      },
+      stateFile: 'state.json',
+    },
   ];
 
   beforeEach(() => {

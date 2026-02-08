@@ -160,6 +160,7 @@ export function validateConfigWithWarnings(rawConfig: RawConfig): void {
 
   // Check for misplaced download settings
   if (rawConfig.globalConfig) {
+    // biome-ignore lint/suspicious/noExplicitAny: warnings for migrated config
     const globalConfig = rawConfig.globalConfig as any;
 
     // Check if downloadDir or tempDir are directly under globalConfig

@@ -34,7 +34,7 @@ export class AppContext {
   static initialize(configRegistry: ConfigRegistry, notifier: Notifier, stateManager?: StateManager): void {
     AppContext.configRegistry = configRegistry;
     AppContext.notifier = notifier;
-    AppContext.stateManager = stateManager || (notifier ? new StateManager(notifier) : undefined);
+    AppContext.stateManager = stateManager || (notifier ? new StateManager() : undefined);
   }
 
   /**

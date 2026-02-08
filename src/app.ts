@@ -3,19 +3,19 @@ import { boolean, command, flag, option, string } from 'cmd-ts';
 import { AppContext } from './app-context';
 import { loadConfig } from './config/config-loader';
 import { ConfigRegistry } from './config/config-registry';
-import type { SeriesConfig } from './config/config-schema';
+import type { SeriesConfigResolved } from './config/config-schema';
 import { DownloadManager } from './downloader/download-manager';
 import { ConfigError } from './errors/custom-errors';
 import { handlerRegistry } from './handlers/handler-registry';
 import { IQiyiHandler } from './handlers/impl/iqiyi-handler';
 import { MGTVHandler } from './handlers/impl/mgtv-handler';
 import { WeTVHandler } from './handlers/impl/wetv-handler';
+import { CompositeNotifier } from './notifications/composite-notifier';
 import { ConsoleNotifier } from './notifications/console-notifier';
 import { NotificationLevel } from './notifications/notification-level';
 import type { Notifier } from './notifications/notifier';
 import { TelegramNotifier } from './notifications/telegram-notifier';
 import { Scheduler } from './scheduler/scheduler';
-import { StateManager } from './state/state-manager';
 import type { SchedulerMode, SchedulerOptions } from './types/config.types';
 import { readCookieFile } from './utils/cookie-extractor';
 import { CookieRefreshManager } from './utils/cookie-sync';
@@ -25,7 +25,11 @@ export type AppDependencies = {
   checkYtDlpInstalled: () => Promise<boolean>;
   readCookieFile: typeof readCookieFile;
   createDownloadManager: () => DownloadManager;
-  createScheduler: (configs: SeriesConfig[], downloadManager: DownloadManager, options?: SchedulerOptions) => Scheduler;
+  createScheduler: (
+    configs: SeriesConfigResolved[],
+    downloadManager: DownloadManager,
+    options?: SchedulerOptions,
+  ) => Scheduler;
 };
 
 const defaultDependencies: AppDependencies = {
@@ -66,65 +70,31 @@ export async function runApp(
 
   const configRegistry = new ConfigRegistry(config);
 
-  /**
-   * Create notifier instance from config
-   * Extracted to factory function for reuse during config reload
-   */
-  const createNotifier = (registry: ConfigRegistry): Notifier => {
-    const notifiers: Notifier[] = [];
-    const cfg = registry.resolve('', 'global');
+  // Create composite notifier and add built-in notifiers
+  const notifier = new CompositeNotifier();
+  const cfg = configRegistry.resolve('', 'global');
 
-    const consoleMinLevel = cfg.notifications.consoleMinLevel;
-    notifiers.push(new ConsoleNotifier(consoleMinLevel));
-
-    if (cfg.telegram) {
-      try {
-        notifiers.push(new TelegramNotifier(cfg.telegram));
-      } catch (error) {
-        // Use console for error since we're creating the notifier
-        console.warn(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
-      }
+  const consoleNotifier = new ConsoleNotifier(debug ? NotificationLevel.DEBUG : cfg.notifications.consoleMinLevel);
+  notifier.add(consoleNotifier, 0);
+  if (cfg.telegram) {
+    try {
+      notifier.add(new TelegramNotifier(cfg.telegram), 10);
+    } catch (error) {
+      notifier.notify(
+        NotificationLevel.WARNING,
+        `Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
-
-    // Create composite notifier
-    return {
-      notify: async (level: NotificationLevel, message: string): Promise<void> => {
-        await Promise.all(notifiers.map((n) => n.notify(level, message)));
-      },
-      progress: (message: string): void => {
-        for (const n of notifiers) {
-          n.progress(message);
-        }
-      },
-      endProgress: (): void => {
-        for (const n of notifiers) {
-          n.endProgress();
-        }
-      },
-    };
-  };
-
-  const notifier = createNotifier(configRegistry);
+  }
 
   notifier.notify(NotificationLevel.INFO, `Mode: ${mode}`);
 
-  // Override consoleMinLevel with debug flag
-  let finalNotifier = notifier;
-  if (debug) {
-    // Create debug notifier by overriding consoleMinLevel
-    const debugNotifier = createNotifier(configRegistry);
-    finalNotifier = debugNotifier;
-  }
-
-  // Create state manager
-  const stateManager = new StateManager(finalNotifier);
-
   // Initialize AppContext with all services
-  AppContext.initialize(configRegistry, finalNotifier, stateManager);
-  finalNotifier.notify(NotificationLevel.DEBUG, 'AppContext initialized');
+  AppContext.initialize(configRegistry, notifier);
+  notifier.notify(NotificationLevel.DEBUG, 'AppContext initialized');
 
   // Check if yt-dlp is installed
-  finalNotifier.notify(NotificationLevel.DEBUG, 'Checking yt-dlp installation...');
+  notifier.notify(NotificationLevel.DEBUG, 'Checking yt-dlp installation...');
   const ytDlpInstalled = await deps.checkYtDlpInstalled();
 
   if (!ytDlpInstalled) {
@@ -136,13 +106,13 @@ export async function runApp(
     );
   }
 
-  finalNotifier.notify(NotificationLevel.DEBUG, 'Configuration loaded');
+  notifier.notify(NotificationLevel.DEBUG, 'Configuration loaded');
 
   // Register handlers
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
   handlerRegistry.register(new MGTVHandler());
-  finalNotifier.notify(NotificationLevel.DEBUG, `Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
+  notifier.notify(NotificationLevel.DEBUG, `Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Create download manager
   const downloadManager = deps.createDownloadManager();
@@ -162,20 +132,17 @@ export async function runApp(
   }
 
   // Create and start scheduler with queue-based architecture
-  finalNotifier.notify(NotificationLevel.DEBUG, 'Using queue-based scheduler');
-  const scheduler = deps.createScheduler(config.series, downloadManager, { mode, onIdle });
+  notifier.notify(NotificationLevel.DEBUG, 'Using queue-based scheduler');
+  const scheduler = deps.createScheduler(configRegistry.listSeries(), downloadManager, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
-  process.on('SIGINT', async () => {
+  const onShutdown = async () => {
     const ctxNotifier = AppContext.getNotifier();
     await handleShutdown(scheduler, ctxNotifier);
     process.exit(0);
-  });
-  process.on('SIGTERM', async () => {
-    const ctxNotifier = AppContext.getNotifier();
-    await handleShutdown(scheduler, ctxNotifier);
-    process.exit(0);
-  });
+  };
+  process.on('SIGINT', onShutdown);
+  process.on('SIGTERM', onShutdown);
 
   // Setup keyboard input listeners
   if (mode === 'scheduled' && process.stdin.isTTY) {
@@ -202,13 +169,28 @@ export async function runApp(
           const newConfig = await deps.loadConfig(configPath);
           const newConfigRegistry = new ConfigRegistry(newConfig);
 
-          // Reload notifier (Telegram settings, etc.)
-          const newNotifier = createNotifier(newConfigRegistry);
+          // Create new composite notifier with built-in notifiers
+          const newNotifier = new CompositeNotifier();
+          const newCfg = newConfigRegistry.resolve('', 'global');
+          const newConsoleNotifier = new ConsoleNotifier(
+            debug ? NotificationLevel.DEBUG : newCfg.notifications.consoleMinLevel,
+          );
+          newNotifier.add(newConsoleNotifier, 0);
+          if (newCfg.telegram) {
+            try {
+              newNotifier.add(new TelegramNotifier(newCfg.telegram), 10);
+            } catch (error) {
+              newNotifier.notify(
+                NotificationLevel.WARNING,
+                `Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
           AppContext.setNotifier(newNotifier);
 
           // Reload config registry and scheduler
           AppContext.reloadConfig(newConfigRegistry);
-          await scheduler.reload(newConfig.series);
+          await scheduler.reload(newConfigRegistry.listSeries());
 
           // Reinitialize cookie refresh browser to apply new config
           const cookieManager = CookieRefreshManager.getInstance();

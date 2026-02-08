@@ -11,7 +11,6 @@ export default defineConfig({
   clean: true,
   bundle: true,
   splitting: false,
-  external: ['playwright'],
   banner: {
     js: '#!/usr/bin/env node',
   },

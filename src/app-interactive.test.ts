@@ -18,6 +18,7 @@ describe('App Interactive Mode', () => {
       start: mock(() => Promise.resolve()),
       stop: mock(() => Promise.resolve()),
       triggerAllChecks: mock(() => Promise.resolve()),
+      triggerImmediateChecks: mock(() => Promise.resolve()),
       clearQueues: mock(() => {}),
       reload: mock(() => Promise.resolve()),
     };
@@ -81,8 +82,7 @@ describe('App Interactive Mode', () => {
 
     emitKeypress('c');
     await waitForAsync();
-    expect(mockScheduler.clearQueues).toHaveBeenCalled();
-    expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
+    expect(mockScheduler.triggerImmediateChecks).toHaveBeenCalled();
   });
 
   it('should clear queues and trigger checks on "с" (Cyrillic) key', async () => {
@@ -91,8 +91,7 @@ describe('App Interactive Mode', () => {
 
     emitKeypress('с');
     await waitForAsync();
-    expect(mockScheduler.clearQueues).toHaveBeenCalled();
-    expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
+    expect(mockScheduler.triggerImmediateChecks).toHaveBeenCalled();
   });
 
   it('should clear queues and trigger checks on "с" (Cyrillic) key when key.name is undefined', async () => {
@@ -102,8 +101,7 @@ describe('App Interactive Mode', () => {
     // Simulate behavior where key.name is undefined but str is 'с'
     emitKeypress(undefined as any, false, 'с');
     await waitForAsync();
-    expect(mockScheduler.clearQueues).toHaveBeenCalled();
-    expect(mockScheduler.triggerAllChecks).toHaveBeenCalled();
+    expect(mockScheduler.triggerImmediateChecks).toHaveBeenCalled();
   });
 
   it('should reload config on "r" key', async () => {

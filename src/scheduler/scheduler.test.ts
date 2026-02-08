@@ -344,4 +344,47 @@ describe('Scheduler', () => {
     await scheduler.stop();
     await startPromise;
   });
+
+  it('triggerImmediateChecks should cancel timer and run checks immediately', async () => {
+    // Setup: Schedule for 10 seconds in the future
+    mockGetMsUntilTime.mockReturnValue(10000);
+    mockSleep.mockReturnValue(Promise.resolve());
+
+    const startPromise = scheduler.start();
+
+    // Wait for timer to be set
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Verify timer was scheduled
+    expect(mockGetMsUntilTime).toHaveBeenCalledWith('10:00');
+
+    // Clear previous calls
+    mockQueueManagerInstance.addSeriesCheck.mockClear();
+
+    // Now trigger immediate checks
+    await scheduler.triggerImmediateChecks();
+
+    // Verify checks were added for all configs
+    expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
+
+    // Verify drain was waited for
+    expect(mockQueueManagerInstance.hasActiveProcessing).toHaveBeenCalled();
+
+    // Cleanup
+    await scheduler.stop();
+    await startPromise;
+  });
+
+  it('triggerImmediateChecks should work when no timer is active', async () => {
+    // Don't start the scheduler, just call triggerImmediateChecks
+    mockQueueManagerInstance.addSeriesCheck.mockClear();
+
+    await scheduler.triggerImmediateChecks();
+
+    // Verify checks were added for all configs
+    expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
+
+    // Verify drain was waited for
+    expect(mockQueueManagerInstance.hasActiveProcessing).toHaveBeenCalled();
+  });
 });

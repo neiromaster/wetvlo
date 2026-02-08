@@ -227,6 +227,32 @@ export class Scheduler {
     }
   }
 
+  /**
+   * Trigger immediate checks for all series, cancelling any pending scheduled runs
+   */
+  async triggerImmediateChecks(): Promise<void> {
+    const notifier = AppContext.getNotifier();
+    notifier.notify(NotificationLevel.DEBUG, 'Triggering immediate checks for all series...');
+
+    // Cancel any pending scheduled run
+    if (this.scheduleTimer) {
+      clearTimeout(this.scheduleTimer);
+      this.scheduleTimer = null;
+      notifier.notify(NotificationLevel.DEBUG, 'Cancelled pending scheduled run');
+    }
+
+    // Add all configs to queue
+    for (const config of this.configs) {
+      this.queueManager.addSeriesCheck(config.url);
+    }
+
+    // Wait for queue to drain
+    await this.waitForQueueDrain();
+
+    // Schedule next batch
+    this.scheduleNextBatch();
+  }
+
   clearQueues(): void {
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Clearing queues...');
     this.queueManager.clearQueues();

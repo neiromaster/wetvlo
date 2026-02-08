@@ -206,8 +206,7 @@ export async function runApp(
       }
       // c or с (Cyrillic) to clear queues and trigger checks
       else if (name === 'c' || name === 'с' || char === 'с') {
-        scheduler.clearQueues();
-        await scheduler.triggerAllChecks();
+        await scheduler.triggerImmediateChecks();
       }
     });
   }

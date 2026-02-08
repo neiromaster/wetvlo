@@ -10,6 +10,8 @@ export default defineConfig({
   outDir: 'dist',
   clean: true,
   bundle: true,
+  splitting: false,
+  external: ['playwright'],
   banner: {
     js: '#!/usr/bin/env node',
   },

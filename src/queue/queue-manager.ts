@@ -167,6 +167,16 @@ export class QueueManager {
   }
 
   /**
+   * Reset all queues to initial state
+   *
+   * Clears tasks, execution state, and cooldown. Use this to force immediate execution.
+   */
+  resetQueues(): void {
+    this.scheduler.resetQueues();
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Reset all queue states');
+  }
+
+  /**
    * Start all queues
    */
   start(): void {

@@ -100,6 +100,19 @@ export class UniversalScheduler<TaskType> {
   }
 
   /**
+   * Reset all queues to initial state
+   *
+   * Clears tasks, execution state, and cooldown for all queues.
+   */
+  resetQueues(): void {
+    for (const queue of this.queues.values()) {
+      queue.reset();
+    }
+    this.clearTimer();
+    this.roundRobinIndex = 0;
+  }
+
+  /**
    * Add a task to a specific queue
    *
    * Triggers scheduling attempt.

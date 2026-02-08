@@ -204,9 +204,9 @@ export async function runApp(
           );
         }
       }
-      // c or с (Cyrillic) to clear queues and trigger checks
+      // c or с (Cyrillic) to trigger immediate checks
       else if (name === 'c' || name === 'с' || char === 'с') {
-        await scheduler.triggerImmediateChecks();
+        scheduler.triggerImmediateChecks();
       }
     });
   }

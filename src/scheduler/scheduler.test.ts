@@ -17,6 +17,8 @@ const mockQueueManagerInstance = {
   updateConfig: mock(() => {}),
   getQueueStats: mock(() => ({})),
   hasActiveProcessing: mock(() => false),
+  clearQueues: mock(() => {}),
+  resetQueues: mock(() => {}),
 };
 
 // Factory mock
@@ -125,6 +127,7 @@ describe('Scheduler', () => {
     mockQueueManagerInstance.addSeriesCheck.mockClear();
     mockQueueManagerInstance.hasActiveProcessing.mockClear();
     mockQueueManagerInstance.hasActiveProcessing.mockReturnValue(false);
+    mockQueueManagerInstance.resetQueues.mockClear();
     mockQueueManagerFactory.mockClear();
 
     // Reset and initialize AppContext
@@ -345,7 +348,7 @@ describe('Scheduler', () => {
     await startPromise;
   });
 
-  it('triggerImmediateChecks should cancel timer and run checks immediately', async () => {
+  it('triggerImmediateChecks should cancel timer, reset queues, and add checks', async () => {
     // Setup: Schedule for 10 seconds in the future
     mockGetMsUntilTime.mockReturnValue(10000);
     mockSleep.mockReturnValue(Promise.resolve());
@@ -360,31 +363,40 @@ describe('Scheduler', () => {
 
     // Clear previous calls
     mockQueueManagerInstance.addSeriesCheck.mockClear();
+    mockQueueManagerInstance.resetQueues.mockClear();
 
-    // Now trigger immediate checks
-    await scheduler.triggerImmediateChecks();
+    // Trigger immediate checks (non-blocking)
+    scheduler.triggerImmediateChecks();
 
-    // Verify checks were added for all configs
+    // Verify resetQueues was called
+    expect(mockQueueManagerInstance.resetQueues).toHaveBeenCalled();
+
+    // Verify checks were added
     expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
 
-    // Verify drain was waited for
-    expect(mockQueueManagerInstance.hasActiveProcessing).toHaveBeenCalled();
+    // Method should return immediately (not wait for drain)
+    // If it were blocking, this test would hang
 
     // Cleanup
     await scheduler.stop();
     await startPromise;
   });
 
-  it('triggerImmediateChecks should work when no timer is active', async () => {
+  it('triggerImmediateChecks should work when no timer is active', () => {
     // Don't start the scheduler, just call triggerImmediateChecks
     mockQueueManagerInstance.addSeriesCheck.mockClear();
+    mockQueueManagerInstance.resetQueues.mockClear();
 
-    await scheduler.triggerImmediateChecks();
+    // Trigger immediate checks (synchronous, non-blocking)
+    scheduler.triggerImmediateChecks();
+
+    // Verify resetQueues was called
+    expect(mockQueueManagerInstance.resetQueues).toHaveBeenCalled();
 
     // Verify checks were added for all configs
     expect(mockQueueManagerInstance.addSeriesCheck).toHaveBeenCalledTimes(3);
 
-    // Verify drain was waited for
-    expect(mockQueueManagerInstance.hasActiveProcessing).toHaveBeenCalled();
+    // Should NOT wait for drain (no hasActiveProcessing call expected)
+    // This confirms non-blocking behavior
   });
 });

@@ -18,8 +18,9 @@ describe('App Interactive Mode', () => {
       start: mock(() => Promise.resolve()),
       stop: mock(() => Promise.resolve()),
       triggerAllChecks: mock(() => Promise.resolve()),
-      triggerImmediateChecks: mock(() => Promise.resolve()),
+      triggerImmediateChecks: mock(() => {}), // Changed: synchronous now
       clearQueues: mock(() => {}),
+      resetQueues: mock(() => {}), // Add this
       reload: mock(() => Promise.resolve()),
     };
 
@@ -76,7 +77,7 @@ describe('App Interactive Mode', () => {
 
   const waitForAsync = () => new Promise((resolve) => setTimeout(resolve, 10));
 
-  it('should clear queues and trigger checks on "c" key', async () => {
+  it('should trigger immediate checks on "c" key', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 
@@ -85,7 +86,7 @@ describe('App Interactive Mode', () => {
     expect(mockScheduler.triggerImmediateChecks).toHaveBeenCalled();
   });
 
-  it('should clear queues and trigger checks on "с" (Cyrillic) key', async () => {
+  it('should trigger immediate checks on "с" (Cyrillic) key', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 
@@ -94,7 +95,7 @@ describe('App Interactive Mode', () => {
     expect(mockScheduler.triggerImmediateChecks).toHaveBeenCalled();
   });
 
-  it('should clear queues and trigger checks on "с" (Cyrillic) key when key.name is undefined', async () => {
+  it('should trigger immediate checks on "с" (Cyrillic) key when key.name is undefined', async () => {
     const deps = createMockDeps();
     await runApp('config.yaml', 'scheduled', deps);
 

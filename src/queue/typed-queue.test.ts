@@ -66,6 +66,26 @@ describe('TypedQueue', () => {
     expect(queue.hasTasks()).toBe(false);
   });
 
+  it('reset should clear queue, execution state, and cooldown', () => {
+    // Add task and mark as started
+    queue.add('test task');
+    queue.markStarted();
+
+    // Simulate cooldown
+    queue.markCompleted(5000);
+
+    expect(queue.getStatus().queueLength).toBe(1);
+    expect(queue.getStatus().isExecuting).toBe(false); // markCompleted sets isExecuting to false
+    expect(queue.getStatus().canStartNow).toBe(false); // In cooldown
+
+    // Reset
+    queue.reset();
+
+    expect(queue.getStatus().queueLength).toBe(0);
+    expect(queue.getStatus().isExecuting).toBe(false);
+    expect(queue.getStatus().canStartNow).toBe(true); // Can start immediately
+  });
+
   it('should provide status', () => {
     queue.add('task1');
     const status = queue.getStatus();

@@ -228,9 +228,12 @@ export class Scheduler {
   }
 
   /**
-   * Trigger immediate checks for all series, cancelling any pending scheduled runs
+   * Trigger immediate checks for all series (non-blocking)
+   *
+   * Cancels any pending scheduled run, resets all queues, and adds checks.
+   * Returns immediately without waiting for completion.
    */
-  async triggerImmediateChecks(): Promise<void> {
+  triggerImmediateChecks(): void {
     const notifier = AppContext.getNotifier();
     notifier.notify(NotificationLevel.DEBUG, 'Triggering immediate checks for all series...');
 
@@ -241,15 +244,16 @@ export class Scheduler {
       notifier.notify(NotificationLevel.DEBUG, 'Cancelled pending scheduled run');
     }
 
+    // Reset queues (clear tasks, execution state, and cooldown)
+    this.queueManager.resetQueues();
+    notifier.notify(NotificationLevel.DEBUG, 'Reset all queue states');
+
     // Add all configs to queue
     for (const config of this.configs) {
       this.queueManager.addSeriesCheck(config.url);
     }
 
-    // Wait for queue to drain
-    await this.waitForQueueDrain();
-
-    // Schedule next batch
+    // Schedule next batch (will wait for current checks to complete first)
     this.scheduleNextBatch();
   }
 

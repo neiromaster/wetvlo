@@ -211,6 +211,17 @@ export class TypedQueue<TaskType> {
   }
 
   /**
+   * Reset queue to initial state (clear tasks, execution state, and cooldown)
+   *
+   * Use this to force immediate execution by clearing all blocking states.
+   */
+  reset(): void {
+    this.queue = [];
+    this.isExecuting = false;
+    this.nextAvailableAt = new Date(0); // Past = available immediately
+  }
+
+  /**
    * Get status information
    *
    * @returns Status object

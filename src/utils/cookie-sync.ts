@@ -152,7 +152,7 @@ export class CookieRefreshManager {
     try {
       await page.goto(seriesUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      await this.saveContextCookies(this.context, cookieFile, seriesUrl, notifier);
+      await this.saveContextCookies(this.context, cookieFile, notifier);
     } finally {
       await page.close();
     }
@@ -266,23 +266,24 @@ export class CookieRefreshManager {
 
   /**
    * Save cookies from browser context to file
+   *
+   * Saves ALL cookies from the browser context (not just current domain).
+   * The context contains all cookies because existing cookies are loaded
+   * into it before navigation.
    */
   private async saveContextCookies(
     context: BrowserContext,
     cookieFile: string,
-    seriesUrl: string,
     notifier: import('../notifications/notifier.js').Notifier,
   ): Promise<void> {
-    // Limit to cookies relevant to the series domain to reduce noise
-    const { hostname } = new URL(seriesUrl);
-    const all = await context.cookies();
-    const relevant = all.filter((c) => {
-      const domain = (c.domain || '').replace(/^\./, '');
-      return domain === hostname || hostname.endsWith(domain);
-    });
-    const serialized = this.serializeNetscapeCookies(relevant);
+    // Get ALL cookies from context (no filtering!)
+    const allCookies = await context.cookies();
+
+    // Write all cookies to file
+    const serialized = this.serializeNetscapeCookies(allCookies);
     await writeFile(cookieFile, serialized, 'utf-8');
-    notifier.notify(NotificationLevel.SUCCESS, `Saved ${relevant.length} cookies to ${cookieFile}`);
+
+    notifier.notify(NotificationLevel.SUCCESS, `Saved ${allCookies.length} cookies to ${cookieFile}`);
   }
 
   /**

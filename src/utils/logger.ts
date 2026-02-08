@@ -1,14 +1,16 @@
 /**
  * Log level
  */
-export enum LogLevel {
-  DEBUG = 'DEBUG',
-  INFO = 'INFO',
-  SUCCESS = 'SUCCESS',
-  WARNING = 'WARNING',
-  ERROR = 'ERROR',
-  HIGHLIGHT = 'HIGHLIGHT',
-}
+export const LogLevel = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  SUCCESS: 'SUCCESS',
+  WARNING: 'WARNING',
+  ERROR: 'ERROR',
+  HIGHLIGHT: 'HIGHLIGHT',
+} as const;
+
+export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
 
 /**
  * Logger configuration

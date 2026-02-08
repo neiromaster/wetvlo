@@ -11,13 +11,14 @@ import { IQiyiHandler } from './handlers/impl/iqiyi-handler';
 import { MGTVHandler } from './handlers/impl/mgtv-handler';
 import { WeTVHandler } from './handlers/impl/wetv-handler';
 import { ConsoleNotifier } from './notifications/console-notifier';
-import type { NotificationLevel, Notifier } from './notifications/notifier';
+import { NotificationLevel } from './notifications/notification-level';
+import type { Notifier } from './notifications/notifier';
 import { TelegramNotifier } from './notifications/telegram-notifier';
 import { Scheduler } from './scheduler/scheduler';
 import { StateManager } from './state/state-manager';
 import type { SchedulerMode, SchedulerOptions } from './types/config.types';
 import { readCookieFile } from './utils/cookie-extractor';
-import { LogLevel, logger } from './utils/logger';
+import { CookieRefreshManager } from './utils/cookie-sync';
 
 export type AppDependencies = {
   loadConfig: typeof loadConfig;
@@ -38,14 +39,20 @@ const defaultDependencies: AppDependencies = {
 /**
  * Handle graceful shutdown
  */
-export async function handleShutdown(scheduler: Scheduler): Promise<void> {
-  logger.debug('Shutting down gracefully...');
+export async function handleShutdown(scheduler: Scheduler, notifier: Notifier): Promise<void> {
+  notifier.notify(NotificationLevel.DEBUG, 'Shutting down gracefully...');
 
   try {
+    const cookieManager = CookieRefreshManager.getInstance();
+    await cookieManager.shutdown();
+
     await scheduler.stop();
-    logger.debug('Shutdown complete');
+    notifier.notify(NotificationLevel.DEBUG, 'Shutdown complete');
   } catch (error) {
-    logger.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
+    notifier.notify(
+      NotificationLevel.ERROR,
+      `Error during shutdown: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -55,31 +62,8 @@ export async function runApp(
   deps: AppDependencies = defaultDependencies,
   debug: boolean = false,
 ): Promise<void> {
-  // Set log level based on debug flag
-  const currentLevel = debug ? LogLevel.DEBUG : LogLevel.INFO;
-  logger.setLevel(currentLevel);
-
-  logger.info(`Mode: ${mode}`);
-
-  // Check if yt-dlp is installed
-  logger.debug('Checking yt-dlp installation...');
-  const ytDlpInstalled = await deps.checkYtDlpInstalled();
-
-  if (!ytDlpInstalled) {
-    throw new Error(
-      'yt-dlp is not installed. Please install it first:\n' +
-        '  - macOS: brew install yt-dlp\n' +
-        '  - Linux: pip install yt-dlp\n' +
-        '  - Windows: winget install yt-dlp',
-    );
-  }
-
-  // Load configuration
-  logger.debug(`Loading configuration from ${configPath}...`);
   const config = await deps.loadConfig(configPath);
-  logger.debug('Configuration loaded');
 
-  // Create config registry
   const configRegistry = new ConfigRegistry(config);
 
   /**
@@ -87,15 +71,18 @@ export async function runApp(
    * Extracted to factory function for reuse during config reload
    */
   const createNotifier = (registry: ConfigRegistry): Notifier => {
-    const notifiers: Array<ConsoleNotifier | TelegramNotifier> = [new ConsoleNotifier()];
-    const cfg = registry.resolve('global');
+    const notifiers: Notifier[] = [];
+    const cfg = registry.resolve('', 'global');
+
+    const consoleMinLevel = cfg.notifications.consoleMinLevel;
+    notifiers.push(new ConsoleNotifier(consoleMinLevel));
 
     if (cfg.telegram) {
       try {
         notifiers.push(new TelegramNotifier(cfg.telegram));
-        logger.debug('Telegram notifications enabled for errors');
       } catch (error) {
-        logger.warning(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
+        // Use console for error since we're creating the notifier
+        console.warn(`Failed to set up Telegram: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
@@ -119,18 +106,43 @@ export async function runApp(
 
   const notifier = createNotifier(configRegistry);
 
+  notifier.notify(NotificationLevel.INFO, `Mode: ${mode}`);
+
+  // Override consoleMinLevel with debug flag
+  let finalNotifier = notifier;
+  if (debug) {
+    // Create debug notifier by overriding consoleMinLevel
+    const debugNotifier = createNotifier(configRegistry);
+    finalNotifier = debugNotifier;
+  }
+
   // Create state manager
-  const stateManager = new StateManager(notifier);
+  const stateManager = new StateManager(finalNotifier);
 
   // Initialize AppContext with all services
-  AppContext.initialize(configRegistry, notifier, stateManager);
-  logger.debug('AppContext initialized');
+  AppContext.initialize(configRegistry, finalNotifier, stateManager);
+  finalNotifier.notify(NotificationLevel.DEBUG, 'AppContext initialized');
+
+  // Check if yt-dlp is installed
+  finalNotifier.notify(NotificationLevel.DEBUG, 'Checking yt-dlp installation...');
+  const ytDlpInstalled = await deps.checkYtDlpInstalled();
+
+  if (!ytDlpInstalled) {
+    throw new Error(
+      'yt-dlp is not installed. Please install it first:\n' +
+        '  - macOS: brew install yt-dlp\n' +
+        '  - Linux: pip install yt-dlp\n' +
+        '  - Windows: winget install yt-dlp',
+    );
+  }
+
+  finalNotifier.notify(NotificationLevel.DEBUG, 'Configuration loaded');
 
   // Register handlers
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
   handlerRegistry.register(new MGTVHandler());
-  logger.debug(`Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
+  finalNotifier.notify(NotificationLevel.DEBUG, `Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Create download manager
   const downloadManager = deps.createDownloadManager();
@@ -139,26 +151,29 @@ export async function runApp(
   let onIdle: (() => void) | undefined;
   if (mode === 'scheduled' && process.stdin.isTTY) {
     const printInstructions = () => {
-      logger.info('Interactive mode enabled:');
-      logger.info('  [r] Reload configuration');
-      logger.info('  [c] Clear queues and trigger checks');
-      logger.info('  [q] Quit');
+      const ctxNotifier = AppContext.getNotifier();
+      ctxNotifier.notify(NotificationLevel.INFO, 'Interactive mode enabled:');
+      ctxNotifier.notify(NotificationLevel.INFO, '  [r] Reload configuration');
+      ctxNotifier.notify(NotificationLevel.INFO, '  [c] Clear queues and trigger checks');
+      ctxNotifier.notify(NotificationLevel.INFO, '  [q] Quit');
     };
 
     onIdle = printInstructions;
   }
 
   // Create and start scheduler with queue-based architecture
-  logger.debug('Using queue-based scheduler');
+  finalNotifier.notify(NotificationLevel.DEBUG, 'Using queue-based scheduler');
   const scheduler = deps.createScheduler(config.series, downloadManager, { mode, onIdle });
 
   // Set up signal handlers for graceful shutdown
   process.on('SIGINT', async () => {
-    await handleShutdown(scheduler);
+    const ctxNotifier = AppContext.getNotifier();
+    await handleShutdown(scheduler, ctxNotifier);
     process.exit(0);
   });
   process.on('SIGTERM', async () => {
-    await handleShutdown(scheduler);
+    const ctxNotifier = AppContext.getNotifier();
+    await handleShutdown(scheduler, ctxNotifier);
     process.exit(0);
   });
 
@@ -175,13 +190,15 @@ export async function runApp(
 
       // q, й or Ctrl+C to quit
       if (name === 'q' || name === 'й' || char === 'й' || (key.ctrl && name === 'c')) {
-        await handleShutdown(scheduler);
+        const ctxNotifier = AppContext.getNotifier();
+        await handleShutdown(scheduler, ctxNotifier);
         process.exit(0);
       }
       // r or к to reload config
       else if (name === 'r' || name === 'к' || char === 'к') {
+        const ctxNotifier = AppContext.getNotifier();
         try {
-          logger.debug(`Reloading configuration from ${configPath}...`);
+          ctxNotifier.notify(NotificationLevel.DEBUG, `Reloading configuration from ${configPath}...`);
           const newConfig = await deps.loadConfig(configPath);
           const newConfigRegistry = new ConfigRegistry(newConfig);
 
@@ -193,9 +210,16 @@ export async function runApp(
           AppContext.reloadConfig(newConfigRegistry);
           await scheduler.reload(newConfig.series);
 
-          logger.success('Configuration reloaded successfully');
+          // Reinitialize cookie refresh browser to apply new config
+          const cookieManager = CookieRefreshManager.getInstance();
+          await cookieManager.reinitialize();
+
+          newNotifier.notify(NotificationLevel.SUCCESS, 'Configuration reloaded successfully');
         } catch (error) {
-          logger.error(`Failed to reload config: ${error instanceof Error ? error.message : String(error)}`);
+          ctxNotifier.notify(
+            NotificationLevel.ERROR,
+            `Failed to reload config: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
       // c or с (Cyrillic) to clear queues and trigger checks
@@ -242,9 +266,9 @@ export const cli = command({
       await runApp(config, mode, defaultDependencies, debug);
     } catch (error) {
       if (error instanceof ConfigError) {
-        logger.error(`Configuration error: ${error.message}`);
+        console.error(`Configuration error: ${error.message}`);
       } else {
-        logger.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`Fatal error: ${error instanceof Error ? error.message : String(error)}`);
       }
       process.exit(1);
     }

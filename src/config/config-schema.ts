@@ -6,15 +6,11 @@
  */
 
 import { z } from 'zod';
+import { NotificationLevelSchema } from '../notifications/notification-level';
+import { EpisodeTypeSchema } from '../types/episode-type';
 import type { DeepMerge } from '../utils/deep-merge';
 import type { DefaultConfig } from './config-defaults';
 
-/**
- * Episode types
- */
-const EpisodeTypeSchema = z.enum(['available', 'vip', 'svip', 'teaser', 'express', 'preview', 'locked']);
-
-export type EpisodeType = z.infer<typeof EpisodeTypeSchema>;
 /**
  * Check settings for series/domain
  */
@@ -51,6 +47,7 @@ export type DownloadSettingsResolved = DeepMerge<DefaultConfig['download'], Down
 export const TelegramConfigSchema = z.object({
   botToken: z.string().describe('Telegram bot token'),
   chatId: z.string().describe('Telegram chat ID'),
+  minLevel: NotificationLevelSchema.optional().describe('Minimum notification level for Telegram'),
 });
 
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
@@ -63,6 +60,12 @@ const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']
 const CommonSettingsSchema = z.object({
   check: CheckSettingsSchema.optional().describe('Check settings'),
   download: DownloadSettingsSchema.optional().describe('Download settings'),
+  notifications: z
+    .object({
+      consoleMinLevel: NotificationLevelSchema.optional().describe('Minimum notification level for console output'),
+    })
+    .optional()
+    .describe('Notification settings'),
   telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
   stateFile: z.string().optional().describe('Path to state file'),
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),

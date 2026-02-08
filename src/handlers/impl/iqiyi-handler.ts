@@ -1,7 +1,7 @@
 import type { CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Episode } from '../../types/episode.types';
-import { EpisodeType } from '../../types/episode.types';
+import { EpisodeType } from '../../types/episode-type';
 import { BaseHandler } from '../base/base-handler';
 
 type NextData = {

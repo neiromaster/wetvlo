@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { type AppDependencies, handleShutdown, runApp } from './app.js';
-import type { Config } from './config/config-schema.js';
+import { type AppDependencies, handleShutdown, runApp } from './app';
+import type { Config } from './config/config-schema';
 
 describe('App', () => {
   let _exitSpy: any;
@@ -58,7 +58,12 @@ describe('App', () => {
   });
 
   it('handleShutdown should stop scheduler', async () => {
-    await handleShutdown(mockScheduler);
+    const mockNotifier = {
+      notify: mock(),
+      progress: mock(),
+      endProgress: mock(),
+    };
+    await handleShutdown(mockScheduler, mockNotifier);
 
     expect(mockScheduler.stop).toHaveBeenCalled();
   });

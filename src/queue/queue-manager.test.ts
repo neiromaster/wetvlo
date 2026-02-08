@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
 import { ConfigRegistry } from '../config/config-registry';
-import { NotificationLevel } from '../notifications/notifier';
-import { EpisodeType } from '../types/episode.types';
+import { NotificationLevel } from '../notifications/notification-level';
+import { EpisodeType } from '../types/episode-type';
 import { QueueManager } from './queue-manager';
 
 // Mock dependencies

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
-import { NotificationLevel } from '../notifications/notifier';
+import { NotificationLevel } from '../notifications/notification-level';
 import { Scheduler } from './scheduler';
 
 // Define mutable mocks

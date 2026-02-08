@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { EpisodeType } from '../../types/episode.types';
+import { EpisodeType } from '../../types/episode-type';
 import { MGTVHandler } from './mgtv-handler';
 
 describe('MGTVHandler', () => {

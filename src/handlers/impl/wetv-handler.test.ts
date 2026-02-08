@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { EpisodeType } from '../../types/episode.types.js';
-import { WeTVHandler } from './wetv-handler.js';
+import { EpisodeType } from '../../types/episode-type';
+import { WeTVHandler } from './wetv-handler';
 
 describe('WeTVHandler', () => {
   let handler: WeTVHandler;

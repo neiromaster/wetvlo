@@ -1,4 +1,5 @@
-type EpisodeType = 'available' | 'vip' | 'svip' | 'teaser' | 'express' | 'preview' | 'locked';
+import { NotificationLevel } from '../notifications/notification-level';
+import { EpisodeType } from '../types/episode-type';
 
 export type DefaultConfig = {
   stateFile: string;
@@ -24,9 +25,12 @@ export type DefaultConfig = {
     minDuration: number;
   };
 
+  notifications: {
+    consoleMinLevel: NotificationLevel;
+  };
+
   telegram?: {
-    botToken: string;
-    chatId: string;
+    minLevel: NotificationLevel;
   };
 };
 
@@ -34,7 +38,7 @@ export const defaults: DefaultConfig = {
   check: {
     count: 3,
     checkInterval: 600,
-    downloadTypes: ['available'],
+    downloadTypes: [EpisodeType.AVAILABLE],
   },
   download: {
     downloadDir: './downloads',
@@ -45,6 +49,12 @@ export const defaults: DefaultConfig = {
     backoffMultiplier: 2,
     jitterPercentage: 10,
     minDuration: 0,
+  },
+  telegram: {
+    minLevel: NotificationLevel.ERROR,
+  },
+  notifications: {
+    consoleMinLevel: NotificationLevel.INFO,
   },
   stateFile: 'wetvlo-state.json',
   browser: 'chrome',

@@ -1,7 +1,8 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { HandlerError } from '../../errors/custom-errors';
-import type { Episode, EpisodeType } from '../../types/episode.types';
+import type { Episode } from '../../types/episode.types';
+import type { EpisodeType } from '../../types/episode-type';
 import type { DomainHandler } from '../../types/handler.types';
 import { extractDomain } from '../../utils/url-utils';
 

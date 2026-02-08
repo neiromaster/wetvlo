@@ -13,10 +13,9 @@ import { AppContext } from '../app-context';
 import type { SeriesConfig } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
 import { SchedulerError } from '../errors/custom-errors';
-import { NotificationLevel } from '../notifications/notifier';
+import { NotificationLevel } from '../notifications/notification-level';
 import { QueueManager } from '../queue/queue-manager';
 import type { SchedulerOptions } from '../types/config.types';
-import { logger } from '../utils/logger';
 import { getMsUntilCron, getMsUntilTime, sleep } from '../utils/time-utils';
 
 /**
@@ -81,7 +80,7 @@ export class Scheduler {
     const notifier = AppContext.getNotifier();
 
     if (this.options.mode === 'once') {
-      logger.debug('Single-run mode: checking all series once');
+      AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Single-run mode: checking all series once');
       await this.runOnce();
       this.running = false;
     } else {
@@ -171,7 +170,7 @@ export class Scheduler {
    * Stop the scheduler
    */
   async stop(): Promise<void> {
-    logger.debug('Stopping scheduler...');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Stopping scheduler...');
 
     this.stopped = true;
     if (this.scheduleTimer) {
@@ -184,14 +183,14 @@ export class Scheduler {
 
     this.running = false;
 
-    logger.debug('Scheduler stopped');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Scheduler stopped');
   }
 
   /**
    * Reload configuration
    */
   async reload(configs: SeriesConfig[]): Promise<void> {
-    logger.debug('Reloading configuration...');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Reloading configuration...');
 
     // Update internal state
     this.configs = configs;
@@ -222,14 +221,14 @@ export class Scheduler {
    * Trigger immediate checks for all series
    */
   async triggerAllChecks(): Promise<void> {
-    logger.debug('Triggering immediate checks for all series...');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Triggering immediate checks for all series...');
     for (const config of this.configs) {
       this.queueManager.addSeriesCheck(config.url);
     }
   }
 
   clearQueues(): void {
-    logger.debug('Clearing queues...');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Clearing queues...');
     this.queueManager.clearQueues();
   }
 
@@ -270,7 +269,7 @@ export class Scheduler {
 
     // Log queue stats
     const stats = this.queueManager.getQueueStats();
-    logger.debug(`Queue stats: ${JSON.stringify(stats)}`);
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, `Queue stats: ${JSON.stringify(stats)}`);
     notifier.notify(NotificationLevel.INFO, `Added ${configs.length} series to queue`);
   }
 
@@ -291,7 +290,7 @@ export class Scheduler {
       await this.timeProvider.sleep(1000);
     }
 
-    logger.debug('Single-run complete');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Single-run complete');
   }
 
   /**

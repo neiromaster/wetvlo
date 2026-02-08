@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { NotificationLevel } from '../notifications/notification-level';
 import type { Notifier } from '../notifications/notifier';
-import { NotificationLevel } from '../notifications/notifier';
 import type { State } from '../types/state.types';
 import { createEmptyState } from '../types/state.types';
 

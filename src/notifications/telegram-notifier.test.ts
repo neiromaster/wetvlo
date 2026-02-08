@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import { NotificationLevel } from './notifier.js';
-import { TelegramNotifier } from './telegram-notifier.js';
+import { NotificationLevel } from './notification-level';
+import { TelegramNotifier } from './telegram-notifier';
 
 describe('TelegramNotifier', () => {
   let notifier: TelegramNotifier;

@@ -1,6 +1,6 @@
 import { NotificationError } from '../errors/custom-errors';
+import { LEVEL_PRIORITIES, NotificationLevel } from './notification-level';
 import type { Notifier } from './notifier';
-import { NotificationLevel } from './notifier';
 
 /**
  * Telegram configuration
@@ -8,10 +8,11 @@ import { NotificationLevel } from './notifier';
 export type TelegramConfig = {
   botToken: string;
   chatId: string;
+  minLevel?: NotificationLevel;
 };
 
 /**
- * Telegram notifier for error notifications only
+ * Telegram notifier with configurable minimum level
  */
 export class TelegramNotifier implements Notifier {
   private config: TelegramConfig;
@@ -23,12 +24,20 @@ export class TelegramNotifier implements Notifier {
   }
 
   /**
+   * Check if notification should be sent based on level priority
+   */
+  private shouldNotify(level: NotificationLevel): boolean {
+    const minLevel = this.config.minLevel ?? NotificationLevel.ERROR;
+    return LEVEL_PRIORITIES[level] >= LEVEL_PRIORITIES[minLevel];
+  }
+
+  /**
    * Send notification via Telegram
-   * Only sends ERROR level notifications
+   * Only sends notifications at or above minLevel
    */
   async notify(level: NotificationLevel, message: string): Promise<void> {
-    // Only send error notifications
-    if (level !== NotificationLevel.ERROR) {
+    // Skip if level is below minimum
+    if (!this.shouldNotify(level)) {
       return;
     }
 
@@ -45,7 +54,7 @@ export class TelegramNotifier implements Notifier {
       // Escape HTML characters in the message to prevent parsing errors
       const escapedMessage = this.escapeHtml(safeMessage);
       // Use <pre> tag for the error message to preserve formatting and monospacing
-      const formattedMessage = `${emoji} <b>wetvlo Error</b>\n\n<pre>${escapedMessage}</pre>`;
+      const formattedMessage = `${emoji} <b>wetvlo ${this.getLevelLabel(level)}</b>\n\n<pre>${escapedMessage}</pre>`;
 
       const response = await fetch(this.apiUrl, {
         method: 'POST',
@@ -83,6 +92,8 @@ export class TelegramNotifier implements Notifier {
    */
   private getEmoji(level: NotificationLevel): string {
     switch (level) {
+      case NotificationLevel.DEBUG:
+        return '🔍';
       case NotificationLevel.INFO:
         return 'ℹ️';
       case NotificationLevel.SUCCESS:
@@ -95,6 +106,28 @@ export class TelegramNotifier implements Notifier {
         return '🔔';
       default:
         return '';
+    }
+  }
+
+  /**
+   * Get label for notification level
+   */
+  private getLevelLabel(level: NotificationLevel): string {
+    switch (level) {
+      case NotificationLevel.DEBUG:
+        return 'Debug';
+      case NotificationLevel.INFO:
+        return 'Info';
+      case NotificationLevel.SUCCESS:
+        return 'Success';
+      case NotificationLevel.WARNING:
+        return 'Warning';
+      case NotificationLevel.ERROR:
+        return 'Error';
+      case NotificationLevel.HIGHLIGHT:
+        return 'Notification';
+      default:
+        return 'Message';
     }
   }
 

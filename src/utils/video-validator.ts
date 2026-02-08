@@ -1,5 +1,6 @@
 import { execa } from 'execa';
-import { logger } from './logger';
+import { NotificationLevel } from '../notifications/notification-level';
+import type { Notifier } from '../notifications/notifier';
 
 /**
  * Utility to validate video files
@@ -9,9 +10,10 @@ import { logger } from './logger';
  * Get video duration in seconds using ffprobe
  *
  * @param filePath - Path to video file
+ * @param notifier - Optional notifier for error messages
  * @returns Duration in seconds, or 0 if failed
  */
-export async function getVideoDuration(filePath: string): Promise<number> {
+export async function getVideoDuration(filePath: string, notifier?: Notifier): Promise<number> {
   try {
     // ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 input.mp4
     const { stdout } = await execa('ffprobe', [
@@ -27,9 +29,10 @@ export async function getVideoDuration(filePath: string): Promise<number> {
     const duration = parseFloat(stdout.trim());
     return Number.isNaN(duration) ? 0 : duration;
   } catch (error) {
-    logger.error(
-      `Failed to get video duration for ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = `Failed to get video duration for ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
+    if (notifier) {
+      notifier.notify(NotificationLevel.ERROR, message);
+    }
     return 0;
   }
 }

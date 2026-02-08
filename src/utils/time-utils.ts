@@ -58,8 +58,8 @@ export function getMsUntilTime(timeStr: string): number {
  */
 export function getMsUntilCron(cronExpression: string): number {
   try {
-    const interval = parser.parseExpression(cronExpression);
-    const nextDate = interval.next().toDate();
+    const expression = parser.parse(cronExpression);
+    const nextDate = expression.next().toDate();
     const now = new Date();
     return nextDate.getTime() - now.getTime();
   } catch (err) {

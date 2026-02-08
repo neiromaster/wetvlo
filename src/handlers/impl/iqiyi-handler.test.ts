@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { EpisodeType } from '../../types/episode.types.js';
-import { IQiyiHandler } from './iqiyi-handler.js';
+import { EpisodeType } from '../../types/episode-type';
+import { IQiyiHandler } from './iqiyi-handler';
 
 describe('IQiyiHandler', () => {
   let handler: IQiyiHandler;

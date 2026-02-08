@@ -1,13 +1,4 @@
-/**
- * Notification levels
- */
-export enum NotificationLevel {
-  INFO = 'info',
-  SUCCESS = 'success',
-  WARNING = 'warning',
-  ERROR = 'error',
-  HIGHLIGHT = 'highlight',
-}
+import type { NotificationLevel } from './notification-level';
 
 /**
  * Notifier interface for sending notifications

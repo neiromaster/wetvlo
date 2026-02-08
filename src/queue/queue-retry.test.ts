@@ -5,7 +5,8 @@ import type { DomainConfig } from '../config/config-schema';
 import { DownloadManager } from '../downloader/download-manager';
 import type { Notifier } from '../notifications/notifier';
 import { StateManager } from '../state/state-manager';
-import type { Episode, EpisodeType } from '../types/episode.types';
+import type { Episode } from '../types/episode.types';
+import type { EpisodeType } from '../types/episode-type';
 
 // Mock handler registry BEFORE importing QueueManager
 mock.module('../handlers/handler-registry', () => ({

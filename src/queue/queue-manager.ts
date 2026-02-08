@@ -14,11 +14,11 @@ import { AppContext } from '../app-context';
 import type { ResolvedConfig } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
 import { handlerRegistry } from '../handlers/handler-registry';
-import { NotificationLevel } from '../notifications/notifier';
+import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
-import type { Episode, EpisodeType } from '../types/episode.types';
-import { refreshCookiesWithPlaywright } from '../utils/cookie-sync';
-import { logger } from '../utils/logger';
+import type { Episode } from '../types/episode.types';
+import type { EpisodeType } from '../types/episode-type';
+import { CookieRefreshManager } from '../utils/cookie-sync';
 import { extractDomain } from '../utils/url-utils';
 import type { CheckQueueItem, DownloadQueueItem } from './types';
 import { UniversalScheduler } from './universal-scheduler';
@@ -105,7 +105,7 @@ export class QueueManager {
 
     this.scheduler.addTask(queueName, item);
 
-    logger.debug(`[${domain}] Added ${seriesName} to check queue`);
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Added ${seriesName} to check queue`);
   }
 
   /**
@@ -158,12 +158,12 @@ export class QueueManager {
    */
   updateConfig(): void {
     // Config is reloaded in AppContext, we just need to notify
-    logger.debug('[QueueManager] Configuration will be reloaded');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Configuration will be reloaded');
   }
 
   clearQueues(): void {
     this.scheduler.clearQueues();
-    logger.debug('[QueueManager] Cleared all queues');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Cleared all queues');
   }
 
   /**
@@ -177,7 +177,7 @@ export class QueueManager {
     this.running = true;
     this.scheduler.resume();
 
-    logger.debug('[QueueManager] Started queue processing');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Started queue processing');
   }
 
   /**
@@ -190,12 +190,12 @@ export class QueueManager {
       return;
     }
 
-    logger.debug('[QueueManager] Stopping queue processing...');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Stopping queue processing...');
 
     this.scheduler.stop();
     this.running = false;
 
-    logger.debug('[QueueManager] Queue processing stopped');
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Queue processing stopped');
   }
 
   /**
@@ -360,7 +360,8 @@ export class QueueManager {
 
         if (resolvedConfig.cookieRefreshBrowser) {
           try {
-            await refreshCookiesWithPlaywright(seriesUrl, resolvedConfig);
+            const cookieManager = CookieRefreshManager.getInstance();
+            await cookieManager.refreshCookies(seriesUrl);
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             notifier.notify(
@@ -536,7 +537,7 @@ export class QueueManager {
       `[${domain}] ${seriesName}: checking (attempt ${attemptNumber}/${checksCount})`,
     );
 
-    logger.debug(`[${domain}] Checking URL: ${seriesUrl}`);
+    AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Checking URL: ${seriesUrl}`);
 
     // Extract episodes from the series page
     const episodes = await handler.extractEpisodes(seriesUrl);

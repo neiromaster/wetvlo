@@ -3,11 +3,10 @@ import * as fsPromises from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { AppContext } from '../app-context';
 import { DownloadError } from '../errors/custom-errors';
-import { NotificationLevel } from '../notifications/notifier';
+import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import { sanitizeFilename } from '../utils/filename-sanitizer';
-import { logger } from '../utils/logger';
 import * as VideoValidator from '../utils/video-validator';
 import type { DownloadOptions } from './download-options';
 import { extractDownloadOptions } from './download-options';
@@ -84,7 +83,7 @@ export class DownloadManager {
       // Verify duration if required
       if (downloadOptions.minDuration > 0) {
         const fullPath = resolve(result.filename);
-        const duration = await VideoValidator.getVideoDuration(fullPath);
+        const duration = await VideoValidator.getVideoDuration(fullPath, notifier);
         if (duration < downloadOptions.minDuration) {
           // Delete all downloaded files
           await this.cleanupFiles(result.allFiles);
@@ -157,7 +156,7 @@ export class DownloadManager {
           await fsPromises.unlink(fullPath);
         }
       } catch (e) {
-        logger.debug(`Delete failed: ${basename(file)} - ${e}`);
+        AppContext.getNotifier().notify(NotificationLevel.DEBUG, `Delete failed: ${basename(file)} - ${e}`);
       }
     }
   }
@@ -187,9 +186,12 @@ export class DownloadManager {
           try {
             await fsPromises.unlink(filePath);
             cleanedCount++;
-            logger.debug(`Cleaned artifact: ${basename(file)}`);
+            AppContext.getNotifier().notify(NotificationLevel.DEBUG, `Cleaned artifact: ${basename(file)}`);
           } catch (e) {
-            logger.debug(`Delete artifact failed: ${basename(file)} - ${e}`);
+            AppContext.getNotifier().notify(
+              NotificationLevel.DEBUG,
+              `Delete artifact failed: ${basename(file)} - ${e}`,
+            );
           }
         }
       }

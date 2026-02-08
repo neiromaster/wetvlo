@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } fr
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { AppContext } from '../app-context';
-import { NotificationLevel } from '../notifications/notifier';
+import { NotificationLevel } from '../notifications/notification-level';
 import * as VideoValidator from '../utils/video-validator';
 import { DownloadManager } from './download-manager';
 

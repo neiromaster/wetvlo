@@ -10,8 +10,14 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
 }
 
 // Check if running directly in Node.js or Bun
-const isMainModule = import.meta.main || (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url));
+const isMainModule = import.meta.main || (import.meta.url && process.argv[1] === fileURLToPath(import.meta.url));
 
-if (isMainModule) {
-  await main();
+// Check for CJS environment (when built with tsup/esbuild to cjs)
+const isCjsMain = typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module;
+
+if (isMainModule || isCjsMain) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

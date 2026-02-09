@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
+import { URL } from 'node:url';
 import type { Browser, BrowserContext, Cookie } from 'playwright';
 import { chromium, firefox, webkit } from 'playwright';
 import { AppContext } from '../app-context';

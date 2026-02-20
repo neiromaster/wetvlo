@@ -76,7 +76,7 @@ export async function runApp(
 
   const consoleNotifier = new ConsoleNotifier(debug ? NotificationLevel.DEBUG : cfg.notifications.consoleMinLevel);
   notifier.add(consoleNotifier, 0);
-  if (cfg.telegram) {
+  if (cfg.telegram?.botToken && cfg.telegram?.chatId) {
     try {
       notifier.add(new TelegramNotifier(cfg.telegram), 10);
     } catch (error) {
@@ -176,7 +176,7 @@ export async function runApp(
             debug ? NotificationLevel.DEBUG : newCfg.notifications.consoleMinLevel,
           );
           newNotifier.add(newConsoleNotifier, 0);
-          if (newCfg.telegram) {
+          if (newCfg.telegram?.botToken && newCfg.telegram?.chatId) {
             try {
               newNotifier.add(new TelegramNotifier(newCfg.telegram), 10);
             } catch (error) {

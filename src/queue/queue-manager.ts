@@ -565,6 +565,14 @@ export class QueueManager {
 
     notifier.notify(NotificationLevel.INFO, `[${domain}] ${seriesName}: ${episodes.length} episodes (${typeSummary})`);
 
+    // Log each episode URL (debug level)
+    episodes.forEach((ep) => {
+      notifier.notify(
+        NotificationLevel.DEBUG,
+        `[${domain}] Episode ${ep.number}: ${ep.type} - ${ep.url}${ep.title ? ` (${ep.title})` : ''}`,
+      );
+    });
+
     // Get download types from config
     const { downloadTypes } = config.check;
 

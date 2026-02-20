@@ -9,6 +9,26 @@ type NextData = {
     pageProps?: {
       data?: string;
     };
+    initialState?: {
+      play?: {
+        cachePlayList?: {
+          [key: string]: Array<{
+            albumPlayUrl?: string;
+            episode?: string;
+            order?: number;
+            title?: string;
+            subTitle?: string;
+            name?: string;
+            isVip?: number;
+            isTvod?: number;
+            payMark?: string;
+            payStatus?: number;
+            episodeType?: number;
+            contentType?: number;
+          }>;
+        };
+      };
+    };
   };
 };
 
@@ -68,50 +88,93 @@ export class IQiyiHandler extends BaseHandler {
       }
 
       const nextData: NextData = JSON.parse(match[1]);
-      const dataStr = nextData.props?.pageProps?.data;
-      if (!dataStr) return episodes;
 
-      const pageData: PageData = JSON.parse(dataStr as string);
+      // Try to get data from cachePlayList (newer format with albumPlayUrl)
+      const cachePlayList = nextData.props?.initialState?.play?.cachePlayList;
+      if (cachePlayList) {
+        // Find the first key in cachePlayList (usually '1')
+        const cacheKey = Object.keys(cachePlayList).find((key) => Array.isArray(cachePlayList[key]));
+        if (cacheKey) {
+          const videoList = cachePlayList[cacheKey];
+          if (Array.isArray(videoList)) {
+            for (const video of videoList) {
+              const { albumPlayUrl, episode, order, subTitle, name, title } = video;
 
-      const { albumInfo, videoList = [] } = pageData;
-      const { albumId, title: albumTitle } = albumInfo || {};
+              // Skip if no albumPlayUrl
+              if (!albumPlayUrl) {
+                continue;
+              }
 
-      // Process each video
-      for (const video of videoList) {
-        const { vid, episode, order, isTrailer, subTitle, name, title } = video;
+              // Determine episode number: use 'order' first, then try parsing 'episode'
+              let episodeNumber: number | null | undefined = order;
+              if (!episodeNumber) {
+                episodeNumber = this.parseEpisodeNumber(episode || subTitle || name || title || '');
+              }
 
-        // Skip trailers
-        if (isTrailer) {
-          continue;
+              if (!episodeNumber) {
+                continue;
+              }
+
+              // Build URL from albumPlayUrl (it may start with //)
+              const episodeUrl = albumPlayUrl.startsWith('//') ? `https:${albumPlayUrl}` : albumPlayUrl;
+
+              // Determine episode type
+              const type = this.determineTypeFromCache(video);
+
+              // Determine title
+              const episodeTitle = subTitle || name || title || (episode ? `Episode ${episode}` : undefined);
+              const fullTitle = episodeTitle;
+
+              episodes.push({
+                number: episodeNumber,
+                url: episodeUrl,
+                type,
+                title: fullTitle,
+                extractedAt: new Date(),
+              });
+            }
+          }
         }
+      }
 
-        // Determine episode number: use 'order' first, then try parsing 'episode' or 'subTitle' or 'name'
-        let episodeNumber: number | null | undefined = order;
-        if (!episodeNumber) {
-          episodeNumber = this.parseEpisodeNumber(episode || subTitle || name || title || '');
+      // Fallback: try old format with pageProps.data
+      if (episodes.length === 0) {
+        const dataStr = nextData.props?.pageProps?.data;
+        if (dataStr) {
+          const pageData: PageData = JSON.parse(dataStr as string);
+          const { albumInfo, videoList = [] } = pageData;
+          const { albumId, title: albumTitle } = albumInfo || {};
+
+          for (const video of videoList) {
+            const { vid, episode, order, isTrailer, subTitle, name, title } = video;
+
+            if (isTrailer) {
+              continue;
+            }
+
+            let episodeNumber: number | null | undefined = order;
+            if (!episodeNumber) {
+              episodeNumber = this.parseEpisodeNumber(episode || subTitle || name || title || '');
+            }
+
+            if (!episodeNumber) {
+              continue;
+            }
+
+            const episodeUrl = `https://www.iq.com/play/${albumId}-${vid}?lang=en_us`;
+            const type = this.determineType(video);
+            const episodeTitle = subTitle || name || title || (episode ? `Episode ${episode}` : undefined);
+            const fullTitle = albumTitle && episodeTitle ? `${albumTitle} - ${episodeTitle}` : episodeTitle;
+
+            episodes.push({
+              number: episodeNumber,
+              url: episodeUrl,
+              type,
+              title: fullTitle,
+              extractedAt: new Date(),
+            });
+          }
         }
-
-        if (!episodeNumber) {
-          continue;
-        }
-
-        // Build URL: /play/{albumId}-{vid}?lang=en_us
-        const episodeUrl = `https://www.iq.com/play/${albumId}-${vid}?lang=en_us`;
-
-        // Determine episode type
-        const type = this.determineType(video);
-
-        // Determine title
-        const episodeTitle = subTitle || name || title || (episode ? `Episode ${episode}` : undefined);
-        const fullTitle = albumTitle && episodeTitle ? `${albumTitle} - ${episodeTitle}` : episodeTitle;
-
-        episodes.push({
-          number: episodeNumber,
-          url: episodeUrl,
-          type,
-          title: fullTitle,
-          extractedAt: new Date(),
-        });
       }
     } catch (error) {
       // If extraction fails, return empty array to trigger fallback
@@ -136,6 +199,30 @@ export class IQiyiHandler extends BaseHandler {
     }
 
     if (payMark === 'VIP_MARK' || payStatus === 6) {
+      return EpisodeType.VIP;
+    }
+
+    return EpisodeType.AVAILABLE;
+  }
+
+  /**
+   * Determine episode type from cachePlayList video data
+   */
+  private determineTypeFromCache(video: {
+    isVip?: number | boolean;
+    payMark?: string;
+    payStatus?: number;
+    episodeType?: number;
+  }): EpisodeType {
+    const { isVip, payMark, payStatus, episodeType } = video;
+
+    // Check explicitly for preview indicators
+    if (payMark === 'preview' || episodeType === 1) {
+      return EpisodeType.PREVIEW;
+    }
+
+    // Check if VIP (isVip=1 means VIP content)
+    if (isVip === 1 || isVip === true || payMark === 'VIP_MARK' || payStatus === 6) {
       return EpisodeType.VIP;
     }
 

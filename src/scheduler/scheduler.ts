@@ -150,20 +150,8 @@ export class Scheduler {
     this.scheduleTimer = setTimeout(async () => {
       if (this.stopped) return;
       await this.runConfigs(configs);
-      await this.waitForQueueDrain();
       this.scheduleNextBatch();
     }, minMsUntil);
-  }
-
-  /**
-   * Wait for all queues to drain
-   */
-  private async waitForQueueDrain(): Promise<void> {
-    while (this.queueManager.hasActiveProcessing()) {
-      if (this.stopped) break;
-      // biome-ignore lint/performance/noAwaitInLoops: Sequential polling is intentional
-      await this.timeProvider.sleep(1000);
-    }
   }
 
   /**

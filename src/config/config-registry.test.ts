@@ -140,4 +140,16 @@ describe('ConfigRegistry', () => {
     expect(result.check.checkInterval).toBe(300);
     expect(result.download.maxRetries).toBe(5);
   });
+
+  it('should not mutate global config when resolving domain config', () => {
+    const registry = new ConfigRegistry(mockConfig);
+
+    // Resolve domain first (this previously mutated the cached global config)
+    const domainResult = registry.resolve('https://unknown.com/test', 'domain');
+    expect(domainResult.domain).toBe('unknown.com');
+
+    // Global config should NOT have a domain property
+    const globalResult = registry.resolve('any-url', 'global');
+    expect(globalResult).not.toHaveProperty('domain');
+  });
 });

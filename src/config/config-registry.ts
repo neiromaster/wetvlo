@@ -108,7 +108,7 @@ export class ConfigRegistry {
         if (!globalConfig) {
           throw new Error('Global configuration not found');
         }
-        return Object.assign(globalConfig, { domain }) as ResolvedConfig<L>;
+        return { ...globalConfig, domain } as ResolvedConfig<L>;
       }
       return config as ResolvedConfig<L>;
     }

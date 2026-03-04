@@ -73,6 +73,20 @@ describe('StateManager', () => {
     expect(episodes).toEqual(['01']);
   });
 
+  it('should handle concurrent writes without data loss', async () => {
+    const seriesName = 'Concurrent Series';
+
+    // Fire 3 addDownloadedEpisode calls simultaneously
+    await Promise.all([
+      stateManager.addDownloadedEpisode(testStateFile, seriesName, 1),
+      stateManager.addDownloadedEpisode(testStateFile, seriesName, 2),
+      stateManager.addDownloadedEpisode(testStateFile, seriesName, 3),
+    ]);
+
+    const episodes = stateManager.getSeriesEpisodes(testStateFile, seriesName);
+    expect(episodes).toEqual(['01', '02', '03']);
+  });
+
   it('should handle multiple series', async () => {
     await stateManager.addDownloadedEpisode(testStateFile, 'Series 1', 1);
     await stateManager.addDownloadedEpisode(testStateFile, 'Series 2', 2);

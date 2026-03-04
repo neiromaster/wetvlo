@@ -103,25 +103,23 @@ export class StateManager {
    * @returns Result of the function
    */
   private async withLock<T>(statePath: string, fn: () => Promise<T>): Promise<T> {
-    // Wait for previous operation to complete
-    let currentLock = StateManager.locks.get(statePath);
-    while (currentLock) {
-      await currentLock;
-      currentLock = StateManager.locks.get(statePath);
-    }
+    const existing = StateManager.locks.get(statePath);
 
-    // Create a new lock
-    const lockPromise = (async () => {
-      try {
-        return await fn();
-      } finally {
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    StateManager.locks.set(statePath, current);
+
+    try {
+      if (existing) await existing;
+      return await fn();
+    } finally {
+      release();
+      if (StateManager.locks.get(statePath) === current) {
         StateManager.locks.delete(statePath);
       }
-    })();
-
-    // @ts-expect-error - T extends void is guaranteed by usage
-    StateManager.locks.set(statePath, lockPromise);
-    return lockPromise;
+    }
   }
 
   /**

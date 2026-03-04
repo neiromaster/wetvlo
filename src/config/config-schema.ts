@@ -29,9 +29,9 @@ export type CheckSettingsResolved = DeepMerge<DefaultConfig['check'], CheckSetti
 export const DownloadSettingsSchema = z.object({
   downloadDir: z.string().optional().describe('Directory to save downloaded episodes'),
   tempDir: z.string().optional().describe('Directory for temporary files'),
-  downloadDelay: z.number().nonnegative().optional().describe('Delay between downloads in milliseconds'),
+  downloadDelay: z.number().nonnegative().optional().describe('Delay between downloads in seconds'),
   maxRetries: z.number().int().nonnegative().optional().describe('Maximum number of retry attempts'),
-  initialTimeout: z.number().positive().optional().describe('Initial timeout for operations in milliseconds'),
+  initialTimeout: z.number().positive().optional().describe('Initial timeout for operations in seconds'),
   backoffMultiplier: z.number().positive().optional().describe('Multiplier for exponential backoff'),
   jitterPercentage: z.number().int().min(0).max(100).optional().describe('Jitter percentage for retry delays'),
   minDuration: z.number().nonnegative().optional().describe('Minimum duration in seconds for downloads'),

@@ -66,8 +66,8 @@ The system uses a dual-queue design:
 Tasks flow: Check queue → extract episodes → add to Download queue → yt-dlp → StateManager
 
 Key behaviors:
-- Per-domain sequential processing (only one check OR download per domain at a time)
-- Domain-based parallelism (wetv.vip and iq.com can process simultaneously)
+- Fully sequential processing: only one task executes globally at a time
+- Round-robin queue selection for fairness across domains and task types
 - "No episodes" requeues with `checkInterval` delay, up to `count` attempts
 - Errors retry with exponential backoff (`initialTimeout * backoffMultiplier^retryCount` ± jitter)
 - Priority tasks jump to front of queue (for retries)

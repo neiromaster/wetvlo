@@ -1,6 +1,6 @@
 export function deepMerge<T extends object, U extends object>(target: T, source?: U): DeepMerge<T, U> {
   if (!source) {
-    return target as unknown as DeepMerge<T, U>;
+    return { ...target } as unknown as DeepMerge<T, U>;
   }
 
   const result = { ...target } as Record<string, unknown>;

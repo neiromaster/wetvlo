@@ -40,7 +40,7 @@ export class UniversalScheduler<TaskType> {
 
   // Callback (deprecated - use events instead)
   private executor: ExecutorCallback<TaskType>;
-  private onWait?: (queueName: string, waitMs: number, nextTime: Date) => void;
+  private onWait?: (queueName: string, waitMs: number, nextTime: Date) => void; // TODO: Remove in next version
 
   // EventBus for emitting events
   private eventBus?: EventBus;
@@ -397,8 +397,16 @@ export class UniversalScheduler<TaskType> {
   private scheduleTimer(waitMs: number, queueName: string, nextTime: Date): void {
     this.clearTimer();
 
-    // Notify waiting state if callback defined and wait is significant (>1s)
-    if (this.onWait && waitMs > 1000) {
+    // Emit wait event (preferred) or call callback (deprecated)
+    if (this.eventBus && waitMs > 1000) {
+      this.emitEvent('queue:wait', {
+        queueName,
+        waitMs,
+        nextTime,
+        timestamp: new Date(),
+      });
+    } else if (this.onWait && waitMs > 1000) {
+      // Deprecated callback path - will be removed
       this.onWait(queueName, waitMs, nextTime);
     }
 

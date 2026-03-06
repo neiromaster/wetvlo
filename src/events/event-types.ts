@@ -87,6 +87,13 @@ export type QueueClearedEvent = Record<never, never>;
 
 export type QueueResetEvent = Record<never, never>;
 
+export type QueueWaitEvent = {
+  queueName: string;
+  waitMs: number;
+  nextTime: Date;
+  timestamp: Date;
+};
+
 // ============================================================================
 // Download Events
 // ============================================================================
@@ -266,6 +273,7 @@ export type WetvloEvent = {
   'queue:idle': QueueIdleEvent;
   'queue:cleared': QueueClearedEvent;
   'queue:reset': QueueResetEvent;
+  'queue:wait': QueueWaitEvent;
 
   // Download
   'download:start': DownloadStartEvent;

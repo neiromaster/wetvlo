@@ -84,21 +84,6 @@ export class QueueManager {
 
     // Set up event listeners for queue monitoring
     this.setupEventListeners();
-
-    // Set up wait notification
-    this.scheduler.setOnWait((queueName, waitMs) => {
-      const notifier = AppContext.getNotifier();
-      const seconds = Math.round(waitMs / 1000);
-      const parts = queueName.split(':');
-      const type = parts[0];
-      const domain = parts[1];
-
-      if (type === 'download') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download: ${seconds}s`);
-      } else if (type === 'check') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check: ${seconds}s`);
-      }
-    });
   }
 
   /**
@@ -254,6 +239,22 @@ export class QueueManager {
     // Listen to queue idle events
     this.eventBus.on('queue:idle', () => {
       AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] All queues idle');
+    });
+
+    // Listen to queue wait events
+    this.eventBus.on('queue:wait', (event) => {
+      const { queueName, waitMs } = event;
+      const notifier = AppContext.getNotifier();
+      const seconds = Math.round(waitMs / 1000);
+      const parts = queueName.split(':');
+      const type = parts[0];
+      const domain = parts[1];
+
+      if (type === 'download') {
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download: ${seconds}s`);
+      } else if (type === 'check') {
+        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check: ${seconds}s`);
+      }
     });
   }
 

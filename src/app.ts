@@ -6,6 +6,8 @@ import { ConfigRegistry } from './config/config-registry';
 import type { SeriesConfigResolved } from './config/config-schema';
 import { DownloadManager } from './downloader/download-manager';
 import { ConfigError } from './errors/custom-errors';
+import type { EventBus } from './events/event-bus.js';
+import { getEventBus } from './events/event-bus.js';
 import { handlerRegistry } from './handlers/handler-registry';
 import { IQiyiHandler } from './handlers/impl/iqiyi-handler';
 import { MGTVHandler } from './handlers/impl/mgtv-handler';
@@ -29,6 +31,7 @@ export type AppDependencies = {
     configs: SeriesConfigResolved[],
     downloadManager: DownloadManager,
     options?: SchedulerOptions,
+    eventBus?: EventBus,
   ) => Scheduler;
 };
 
@@ -37,7 +40,7 @@ const defaultDependencies: AppDependencies = {
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
   readCookieFile,
   createDownloadManager: () => new DownloadManager(),
-  createScheduler: (c, dm, opt) => new Scheduler(c, dm, opt),
+  createScheduler: (c, dm, opt, eb) => new Scheduler(c, dm, opt, undefined, undefined, eb),
 };
 
 /**
@@ -89,8 +92,11 @@ export async function runApp(
 
   notifier.notify(NotificationLevel.INFO, `Mode: ${mode}`);
 
+  // Get or create global EventBus
+  const eventBus = getEventBus();
+
   // Initialize AppContext with all services
-  AppContext.initialize(configRegistry, notifier);
+  AppContext.initialize(configRegistry, notifier, undefined, eventBus);
   notifier.notify(NotificationLevel.DEBUG, 'AppContext initialized');
 
   // Check if yt-dlp is installed
@@ -133,7 +139,7 @@ export async function runApp(
 
   // Create and start scheduler with queue-based architecture
   notifier.notify(NotificationLevel.DEBUG, 'Using queue-based scheduler');
-  const scheduler = deps.createScheduler(configRegistry.listSeries(), downloadManager, { mode, onIdle });
+  const scheduler = deps.createScheduler(configRegistry.listSeries(), downloadManager, { mode, onIdle }, eventBus);
 
   // Set up signal handlers for graceful shutdown
   const onShutdown = async () => {

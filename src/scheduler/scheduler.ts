@@ -13,6 +13,7 @@ import { AppContext } from '../app-context';
 import type { SeriesConfigResolved } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
 import { SchedulerError } from '../errors/custom-errors';
+import type { EventBus } from '../events/event-bus.js';
 import { NotificationLevel } from '../notifications/notification-level';
 import { QueueManager } from '../queue/queue-manager';
 import type { SchedulerOptions } from '../types/config.types';
@@ -40,6 +41,7 @@ export class Scheduler {
   private downloadManager: DownloadManager;
   private options: SchedulerOptions;
   private queueManager: QueueManager;
+  private eventBus: EventBus;
   private running: boolean = false;
   private stopped: boolean = true;
   private timeProvider: TimeProvider;
@@ -51,16 +53,32 @@ export class Scheduler {
     options: SchedulerOptions = { mode: 'scheduled' },
     timeProvider?: TimeProvider,
     queueManagerFactory?: QueueManagerFactory,
+    eventBus?: EventBus,
   ) {
     this.configs = configs;
     this.downloadManager = downloadManager;
     this.options = options;
     this.timeProvider = timeProvider || { getMsUntilTime, getMsUntilCron, sleep };
 
-    // Create queue manager
-    const createQueueManager = queueManagerFactory || ((dm) => new QueueManager(dm));
+    // Get EventBus from parameter or AppContext
+    this.eventBus = eventBus || AppContext.getEventBus();
+
+    // Create queue manager with EventBus
+    const createQueueManager =
+      queueManagerFactory || ((dm: DownloadManager) => new QueueManager(dm, undefined, this.eventBus));
 
     this.queueManager = createQueueManager(this.downloadManager);
+  }
+
+  /**
+   * Emit event to EventBus (fire-and-forget)
+   */
+  private emitEvent<K extends keyof import('../events/event-types.js').WetvloEvent>(
+    name: K,
+    data: import('../events/event-types.js').WetvloEvent[K],
+  ): void {
+    // Emit synchronously - non-blocking
+    this.eventBus.emitSync(name, data);
   }
 
   /**
@@ -73,6 +91,12 @@ export class Scheduler {
 
     this.running = true;
     this.stopped = false;
+
+    // Emit scheduler start event
+    this.emitEvent('scheduler:start', {
+      timestamp: new Date(),
+      scheduledUrls: this.configs.map((c) => c.url),
+    });
 
     // Start queue manager
     this.queueManager.start();
@@ -171,6 +195,12 @@ export class Scheduler {
 
     this.running = false;
 
+    // Emit scheduler complete event
+    this.emitEvent('scheduler:complete', {
+      timestamp: new Date(),
+      urlsProcessed: this.configs.length,
+    });
+
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Scheduler stopped');
   }
 
@@ -210,6 +240,13 @@ export class Scheduler {
    */
   async triggerAllChecks(): Promise<void> {
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Triggering immediate checks for all series...');
+
+    // Emit scheduler trigger event
+    this.emitEvent('scheduler:trigger', {
+      urls: this.configs.map((c) => c.url),
+      timestamp: new Date(),
+    });
+
     for (const config of this.configs) {
       this.queueManager.addSeriesCheck(config.url);
     }
@@ -224,6 +261,12 @@ export class Scheduler {
   triggerImmediateChecks(): void {
     const notifier = AppContext.getNotifier();
     notifier.notify(NotificationLevel.DEBUG, 'Triggering immediate checks for all series...');
+
+    // Emit scheduler trigger event
+    this.emitEvent('scheduler:trigger', {
+      urls: this.configs.map((c) => c.url),
+      timestamp: new Date(),
+    });
 
     // Cancel any pending scheduled run
     if (this.scheduleTimer) {
@@ -248,6 +291,9 @@ export class Scheduler {
   clearQueues(): void {
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Clearing queues...');
     this.queueManager.clearQueues();
+
+    // Emit queue cleared event
+    this.emitEvent('queue:cleared', {});
   }
 
   /**
@@ -278,6 +324,12 @@ export class Scheduler {
   private async runConfigs(configs: SeriesConfigResolved[]): Promise<void> {
     const notifier = AppContext.getNotifier();
 
+    // Emit scheduler trigger event
+    this.emitEvent('scheduler:trigger', {
+      urls: configs.map((c) => c.url),
+      timestamp: new Date(),
+    });
+
     // Add all series to the queue manager
     for (const config of configs) {
       if (this.stopped) break;
@@ -289,12 +341,25 @@ export class Scheduler {
     const stats = this.queueManager.getQueueStats();
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, `Queue stats: ${JSON.stringify(stats)}`);
     notifier.notify(NotificationLevel.INFO, `Added ${configs.length} series to queue`);
+
+    // Emit queue drain event when all tasks added
+    this.emitEvent('queue:drain', {
+      queueName: 'all',
+      tasksProcessed: configs.length,
+      timestamp: new Date(),
+    });
   }
 
   /**
    * Run all configs in single-run mode
    */
   private async runOnce(): Promise<void> {
+    // Emit scheduler trigger event
+    this.emitEvent('scheduler:trigger', {
+      urls: this.configs.map((c) => c.url),
+      timestamp: new Date(),
+    });
+
     for (const config of this.configs) {
       if (this.stopped) break;
 
@@ -309,6 +374,12 @@ export class Scheduler {
     }
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, 'Single-run complete');
+
+    // Emit scheduler complete event
+    this.emitEvent('scheduler:complete', {
+      timestamp: new Date(),
+      urlsProcessed: this.configs.length,
+    });
   }
 
   /**

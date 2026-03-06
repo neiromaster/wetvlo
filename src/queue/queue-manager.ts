@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { AppContext } from '../app-context';
 import type { ResolvedConfig } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
+import type { EventBus } from '../events/event-bus.js';
 import { handlerRegistry } from '../handlers/handler-registry';
 import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
@@ -33,6 +34,12 @@ export class QueueManager {
   // Universal scheduler (handles all check and download queues)
   private scheduler: UniversalScheduler<CheckQueueItem | DownloadQueueItem>;
 
+  // EventBus for event-driven communication
+  private eventBus?: EventBus;
+
+  // Unsubscribe function for event listeners
+  private unsubscribeEvents: (() => void) | null = null;
+
   // Running state
   private running = false;
 
@@ -44,22 +51,39 @@ export class QueueManager {
    *
    * @param downloadManager - Download manager instance
    * @param schedulerFactory - Optional factory for creating scheduler (for testing)
+   * @param eventBus - Optional EventBus instance (uses AppContext if not provided)
    */
   constructor(
     downloadManager: DownloadManager,
     schedulerFactory?: (
       executor: (task: CheckQueueItem | DownloadQueueItem, queueName: string) => Promise<void>,
+      eventBus?: EventBus,
     ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,
+    eventBus?: EventBus,
   ) {
-    // Get StateManager from AppContext
+    // Get StateManager and EventBus from AppContext
     this.stateManager = AppContext.getStateManager();
+    // Try to get EventBus from parameter or AppContext (don't throw if not available)
+    this.eventBus = eventBus;
+    if (!this.eventBus) {
+      try {
+        this.eventBus = AppContext.getEventBus();
+      } catch {
+        // EventBus not initialized - events will be disabled
+        this.eventBus = undefined;
+      }
+    }
     this.downloadManager = downloadManager;
 
-    // Create universal scheduler with executor callback
-    const createScheduler = schedulerFactory || ((executor) => new UniversalScheduler(executor));
+    // Create universal scheduler with executor callback and EventBus
+    const createScheduler =
+      schedulerFactory || ((executor, eventBus?) => new UniversalScheduler(executor, eventBus || this.eventBus));
     this.scheduler = createScheduler(async (task, queueName) => {
       await this.executeTask(task, queueName);
-    });
+    }, this.eventBus);
+
+    // Set up event listeners for queue monitoring
+    this.setupEventListeners();
 
     // Set up wait notification
     this.scheduler.setOnWait((queueName, waitMs) => {
@@ -177,6 +201,63 @@ export class QueueManager {
   }
 
   /**
+   * Set up event listeners for queue monitoring
+   */
+  private setupEventListeners(): void {
+    if (!this.eventBus) {
+      // EventBus not available - skip event listeners
+      return;
+    }
+
+    // Listen to queue task start events
+    this.eventBus.on('queue:task:start', (event) => {
+      const { queueName, data } = event;
+      const parts = queueName.split(':');
+      const type = parts[0];
+      const domain = parts[1];
+
+      // Log task start
+      if (type === 'download') {
+        const item = data as DownloadQueueItem;
+        AppContext.getNotifier().notify(
+          NotificationLevel.INFO,
+          `[${domain}] Starting download: ${item.episode.number}`,
+        );
+      }
+    });
+
+    // Listen to queue task complete events
+    this.eventBus.on('queue:task:complete', (event) => {
+      const { queueName, duration } = event;
+      const parts = queueName.split(':');
+      const domain = parts[1];
+
+      // Log completion with duration
+      if (duration > 100) {
+        // Only log if task took more than 100ms
+        AppContext.getNotifier().notify(
+          NotificationLevel.DEBUG,
+          `[${domain}] Task completed in ${(duration / 1000).toFixed(1)}s`,
+        );
+      }
+    });
+
+    // Listen to queue task error events
+    this.eventBus.on('queue:task:error', (event) => {
+      const { queueName, error } = event;
+      const parts = queueName.split(':');
+      const domain = parts[1];
+
+      AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Task error: ${error.message}`);
+    });
+
+    // Listen to queue idle events
+    this.eventBus.on('queue:idle', () => {
+      AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] All queues idle');
+    });
+  }
+
+  /**
    * Start all queues
    */
   start(): void {
@@ -204,6 +285,12 @@ export class QueueManager {
 
     this.scheduler.stop();
     this.running = false;
+
+    // Clean up event listeners if needed
+    if (this.unsubscribeEvents) {
+      this.unsubscribeEvents();
+      this.unsubscribeEvents = null;
+    }
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Queue processing stopped');
   }

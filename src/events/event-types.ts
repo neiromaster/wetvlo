@@ -5,8 +5,8 @@
  * Events follow naming pattern: <component>:<action>
  */
 
-import type {DownloadResult } from '../downloader/download-manager';
-import type {Episode } from '../types/episode.types';
+import type { DownloadResult } from '../downloader/download-manager';
+import type { Episode } from '../types/episode.types';
 
 // ============================================================================
 // Scheduler Events
@@ -15,17 +15,17 @@ import type {Episode } from '../types/episode.types';
 export type SchedulerStartEvent = {
   timestamp: Date;
   scheduledUrls: string[];
-}
+};
 
 export type SchedulerTriggerEvent = {
   urls: string[];
   timestamp: Date;
-}
+};
 
 export type SchedulerCompleteEvent = {
   timestamp: Date;
   urlsProcessed: number;
-}
+};
 
 // ============================================================================
 // Queue Events
@@ -37,7 +37,7 @@ export type QueueAddEvent = {
   type: 'check' | 'download';
   data: unknown;
   priority: boolean;
-}
+};
 
 export type QueueTaskStartEvent = {
   queueName: string;
@@ -45,7 +45,7 @@ export type QueueTaskStartEvent = {
   type: 'check' | 'download';
   data: unknown;
   timestamp: Date;
-}
+};
 
 export type QueueTaskCompleteEvent = {
   queueName: string;
@@ -54,7 +54,7 @@ export type QueueTaskCompleteEvent = {
   result: unknown;
   timestamp: Date;
   duration: number; // milliseconds
-}
+};
 
 export type QueueTaskErrorEvent = {
   queueName: string;
@@ -65,18 +65,27 @@ export type QueueTaskErrorEvent = {
   willRetry: boolean;
   nextRetryAt?: Date;
   timestamp: Date;
-}
+};
 
 export type QueueDrainEvent = {
   queueName: string;
   tasksProcessed: number;
   timestamp: Date;
-}
+};
 
 export type QueueIdleEvent = {
   timestamp: Date;
   activeQueues: string[];
-}
+};
+
+export type QueueRegisterEvent = {
+  queueName: string;
+  cooldownMs: number;
+};
+
+export type QueueClearedEvent = Record<never, never>;
+
+export type QueueResetEvent = Record<never, never>;
 
 // ============================================================================
 // Download Events
@@ -88,7 +97,7 @@ export type DownloadStartEvent = {
   seriesUrl: string;
   episodeNumber: string;
   timestamp: Date;
-}
+};
 
 export type DownloadProgressEvent = {
   url: string;
@@ -98,7 +107,7 @@ export type DownloadProgressEvent = {
   percentage: number;
   speed: number; // bytes per second
   eta: number; // seconds
-}
+};
 
 export type DownloadCompleteEvent = {
   url: string;
@@ -108,7 +117,7 @@ export type DownloadCompleteEvent = {
   result: DownloadResult;
   duration: number;
   timestamp: Date;
-}
+};
 
 export type DownloadErrorEvent = {
   url: string;
@@ -119,14 +128,14 @@ export type DownloadErrorEvent = {
   attempt: number;
   maxAttempts: number;
   timestamp: Date;
-}
+};
 
 export type DownloadCleanupEvent = {
   filename: string;
   pattern: string;
   filesRemoved: string[];
   timestamp: Date;
-}
+};
 
 // ============================================================================
 // Scraping Events
@@ -136,7 +145,7 @@ export type ScrapingStartEvent = {
   seriesUrl: string;
   domain: string;
   timestamp: Date;
-}
+};
 
 export type ScrapingCompleteEvent = {
   seriesUrl: string;
@@ -144,14 +153,14 @@ export type ScrapingCompleteEvent = {
   episodes: Episode[];
   newEpisodes: number;
   timestamp: Date;
-}
+};
 
 export type ScrapingErrorEvent = {
   seriesUrl: string;
   domain: string;
   error: Error;
   timestamp: Date;
-}
+};
 
 // ============================================================================
 // State Events
@@ -162,7 +171,7 @@ export type StateLoadEvent = {
   version: string;
   seriesCount: number;
   timestamp: Date;
-}
+};
 
 export type StateSaveEvent = {
   path: string;
@@ -170,14 +179,14 @@ export type StateSaveEvent = {
   episodeCount: number;
   duration: number;
   timestamp: Date;
-}
+};
 
 export type StateUpdateEvent = {
   seriesUrl: string;
   episodeNumber: string;
   action: 'add' | 'update' | 'remove';
   timestamp: Date;
-}
+};
 
 // ============================================================================
 // Notification Events
@@ -188,14 +197,14 @@ export type NotificationEvent = {
   message: string;
   data?: unknown;
   timestamp: Date;
-}
+};
 
 export type NotificationErrorEvent = {
   notifier: string;
   message: string;
   error: Error;
   timestamp: Date;
-}
+};
 
 // ============================================================================
 // System Events
@@ -205,23 +214,23 @@ export type AppStartEvent = {
   version: string;
   config: string;
   timestamp: Date;
-}
+};
 
 export type AppShutdownEvent = {
   reason: 'sigint' | 'sigterm' | 'error' | 'complete';
   timestamp: Date;
-}
+};
 
 export type ConfigReloadEvent = {
   path: string;
   timestamp: Date;
-}
+};
 
 export type ConfigErrorEvent = {
   path: string;
   error: Error;
   timestamp: Date;
-}
+};
 
 // ============================================================================
 // Health/Monitoring Events
@@ -235,7 +244,7 @@ export type HealthCheckEvent = {
     total: number;
     percentage: number;
   };
-}
+};
 
 // ============================================================================
 // Unified Event Type
@@ -248,12 +257,15 @@ export type WetvloEvent = {
   'scheduler:complete': SchedulerCompleteEvent;
 
   // Queue
+  'queue:register': QueueRegisterEvent;
   'queue:add': QueueAddEvent;
   'queue:task:start': QueueTaskStartEvent;
   'queue:task:complete': QueueTaskCompleteEvent;
   'queue:task:error': QueueTaskErrorEvent;
   'queue:drain': QueueDrainEvent;
   'queue:idle': QueueIdleEvent;
+  'queue:cleared': QueueClearedEvent;
+  'queue:reset': QueueResetEvent;
 
   // Download
   'download:start': DownloadStartEvent;

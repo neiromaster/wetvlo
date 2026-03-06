@@ -7,13 +7,18 @@
  * - Fair round-robin queue selection
  * - Event-driven (triggers on task add, completion, timer)
  *
+ * Now emits events instead of using callbacks for better decoupling.
+ *
  * Key features:
  * - Centralized scheduling logic
  * - Proper cooldowns (end-to-start timing)
  * - Reusable for any task type
  * - Timer-based instead of polling
+ * - Event-based communication with QueueManager
  */
 
+import type { EventBus } from '../events/event-bus.js';
+import type { WetvloEvent } from '../events/event-types.js';
 import { TypedQueue } from './typed-queue.js';
 
 /**
@@ -33,23 +38,29 @@ export class UniversalScheduler<TaskType> {
   private roundRobinIndex: number = 0;
   private stopped: boolean = false;
 
-  // Callback
+  // Callback (deprecated - use events instead)
   private executor: ExecutorCallback<TaskType>;
   private onWait?: (queueName: string, waitMs: number, nextTime: Date) => void;
+
+  // EventBus for emitting events
+  private eventBus?: EventBus;
 
   /**
    * Create a new UniversalScheduler
    *
    * @param executor - Function to execute a task
+   * @param eventBus - Optional EventBus for emitting events
    */
-  constructor(executor: ExecutorCallback<TaskType>) {
+  constructor(executor: ExecutorCallback<TaskType>, eventBus?: EventBus) {
     this.executor = executor;
+    this.eventBus = eventBus;
   }
 
   /**
    * Set callback for when the scheduler is waiting
    *
    * @param callback - Callback function
+   * @deprecated Use EventBus events instead
    */
   setOnWait(callback: (queueName: string, waitMs: number, nextTime: Date) => void): void {
     this.onWait = callback;
@@ -69,6 +80,12 @@ export class UniversalScheduler<TaskType> {
     const queue = new TypedQueue<TaskType>(cooldownMs);
     this.queues.set(typeName, queue);
     this.queueCooldowns.set(typeName, cooldownMs);
+
+    // Emit event when queue is registered
+    this.emitEvent('queue:register', {
+      queueName: typeName,
+      cooldownMs,
+    });
   }
 
   /**
@@ -97,6 +114,9 @@ export class UniversalScheduler<TaskType> {
     }
     this.clearTimer();
     this.roundRobinIndex = 0;
+
+    // Emit event when queues are cleared
+    this.emitEvent('queue:cleared', {});
   }
 
   /**
@@ -110,6 +130,9 @@ export class UniversalScheduler<TaskType> {
     }
     this.clearTimer();
     this.roundRobinIndex = 0;
+
+    // Emit event when queues are reset
+    this.emitEvent('queue:reset', {});
   }
 
   /**
@@ -127,7 +150,17 @@ export class UniversalScheduler<TaskType> {
       throw new Error(`Queue ${typeName} is not registered`);
     }
 
+    const taskId = this.generateTaskId(task);
     queue.add(task, delay);
+
+    // Emit event when task is added
+    this.emitEvent('queue:add', {
+      queueName: typeName,
+      taskId,
+      type: this.getTaskType(typeName),
+      data: task,
+      priority: false,
+    });
 
     // Trigger scheduling attempt (might be executable immediately)
     if (!this.stopped) {
@@ -148,7 +181,17 @@ export class UniversalScheduler<TaskType> {
       throw new Error(`Queue ${typeName} is not registered`);
     }
 
+    const taskId = this.generateTaskId(task);
     queue.addFirst(task, delay);
+
+    // Emit event when priority task is added
+    this.emitEvent('queue:add', {
+      queueName: typeName,
+      taskId,
+      type: this.getTaskType(typeName),
+      data: task,
+      priority: true,
+    });
 
     // Trigger scheduling attempt
     if (!this.stopped) {
@@ -175,6 +218,16 @@ export class UniversalScheduler<TaskType> {
     queue.markCompleted(actualCooldown);
     this.executorBusy = false;
 
+    // Emit event when task completes
+    this.emitEvent('queue:task:complete', {
+      queueName: typeName,
+      taskId: 'completed',
+      type: this.getTaskType(typeName),
+      result: { success: true },
+      timestamp: new Date(),
+      duration: actualCooldown,
+    });
+
     // Trigger next scheduling attempt
     if (!this.stopped) {
       this.scheduleNext();
@@ -199,6 +252,17 @@ export class UniversalScheduler<TaskType> {
     const actualCooldown = cooldownMs ?? this.queueCooldowns.get(typeName) ?? 0;
     queue.markFailed(actualCooldown);
     this.executorBusy = false;
+
+    // Emit event when task fails
+    this.emitEvent('queue:task:error', {
+      queueName: typeName,
+      taskId: 'failed',
+      type: this.getTaskType(typeName),
+      error: new Error('Task execution failed'),
+      retryCount: 0,
+      willRetry: true,
+      timestamp: new Date(),
+    });
 
     // Trigger next scheduling attempt
     if (!this.stopped) {
@@ -242,6 +306,12 @@ export class UniversalScheduler<TaskType> {
       const now = Date.now();
       const waitMs = Math.max(0, next.time.getTime() - now);
       this.scheduleTimer(waitMs, next.queueName, next.time);
+    } else {
+      // No tasks pending - emit idle event
+      this.emitEvent('queue:idle', {
+        timestamp: new Date(),
+        activeQueues: Array.from(this.queues.keys()),
+      });
     }
   }
 
@@ -282,6 +352,15 @@ export class UniversalScheduler<TaskType> {
           queue.markStarted();
           this.executorBusy = true;
           this.roundRobinIndex = (index + 1) % queueNames.length;
+
+          // Emit event when task starts
+          this.emitEvent('queue:task:start', {
+            queueName,
+            taskId: this.generateTaskId(task),
+            type: this.getTaskType(queueName),
+            data: task,
+            timestamp: new Date(),
+          });
 
           // Execute task (fire and forget - executor will call back)
           this.executeTask(queueName, task).catch((error) => {
@@ -434,5 +513,49 @@ export class UniversalScheduler<TaskType> {
       total += queue.getQueueLength();
     }
     return total;
+  }
+
+  /**
+   * Generate a unique task ID
+   *
+   * @param task - Task object
+   * @returns Unique task ID
+   */
+  private generateTaskId(task: TaskType): string {
+    // Simple hash-based ID (could be enhanced)
+    const str = JSON.stringify(task);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return `task_${Math.abs(hash).toString(36)}`;
+  }
+
+  /**
+   * Extract task type from queue name
+   *
+   * @param queueName - Queue name (e.g., "check:domain:hash" or "download:domain")
+   * @returns Task type ("check" or "download")
+   */
+  private getTaskType(queueName: string): 'check' | 'download' {
+    if (queueName.startsWith('check:')) {
+      return 'check';
+    }
+    return 'download';
+  }
+
+  /**
+   * Emit an event to the EventBus (if available)
+   *
+   * @param name - Event name
+   * @param data - Event data
+   */
+  private emitEvent<K extends keyof WetvloEvent>(name: K, data: WetvloEvent[K]): void {
+    if (this.eventBus) {
+      // Fire-and-forget - don't await
+      this.eventBus.emitSync(name, data);
+    }
   }
 }

@@ -10,6 +10,7 @@
  */
 
 import type { ConfigRegistry } from './config/config-registry.js';
+import { type EventBus, getEventBus } from './events/event-bus.js';
 import type { Notifier } from './notifications/notifier.js';
 import { StateManager } from './state/state-manager.js';
 
@@ -21,6 +22,7 @@ export class AppContext {
   private static configRegistry?: ConfigRegistry;
   private static notifier?: Notifier;
   private static stateManager?: StateManager;
+  private static eventBus?: EventBus;
 
   /**
    * Initialize the application context with pre-created services
@@ -30,11 +32,18 @@ export class AppContext {
    * @param configRegistry - Config registry instance
    * @param notifier - Notifier instance
    * @param stateManager - State manager instance (optional, created from notifier if not provided)
+   * @param eventBus - Event bus instance (optional, uses global singleton if not provided)
    */
-  static initialize(configRegistry: ConfigRegistry, notifier: Notifier, stateManager?: StateManager): void {
+  static initialize(
+    configRegistry: ConfigRegistry,
+    notifier: Notifier,
+    stateManager?: StateManager,
+    eventBus?: EventBus,
+  ): void {
     AppContext.configRegistry = configRegistry;
     AppContext.notifier = notifier;
     AppContext.stateManager = stateManager || (notifier ? new StateManager() : undefined);
+    AppContext.eventBus = eventBus || getEventBus();
   }
 
   /**
@@ -74,6 +83,18 @@ export class AppContext {
   }
 
   /**
+   * Get the event bus instance
+   *
+   * @throws Error if context not initialized
+   */
+  static getEventBus(): EventBus {
+    if (!AppContext.eventBus) {
+      throw new Error('AppContext not initialized. Call AppContext.initialize() first.');
+    }
+    return AppContext.eventBus;
+  }
+
+  /**
    * Reload configuration
    *
    * Updates the ConfigRegistry with new configuration.
@@ -100,7 +121,7 @@ export class AppContext {
    * Check if context is initialized
    */
   static isInitialized(): boolean {
-    return AppContext.configRegistry !== undefined;
+    return AppContext.configRegistry !== undefined && AppContext.eventBus !== undefined;
   }
 
   /**
@@ -110,5 +131,6 @@ export class AppContext {
     AppContext.configRegistry = undefined;
     AppContext.notifier = undefined;
     AppContext.stateManager = undefined;
+    // Don't reset eventBus as it's a global singleton
   }
 }

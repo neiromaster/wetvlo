@@ -14,8 +14,14 @@
 type AppDependencies = {
   loadConfig: typeof loadConfig,
   checkYtDlpInstalled: () => Promise<boolean>,
+  readCookieFile: typeof readCookieFile,
   createDownloadManager: () => DownloadManager,
-  createScheduler: typeof Scheduler
+  createScheduler: (
+    configs: SeriesConfigResolved[],
+    downloadManager: DownloadManager,
+    options?: SchedulerOptions,
+    eventBus?: EventBus,
+  ) => Scheduler
 };
 ```
 
@@ -28,11 +34,16 @@ type AppDependencies = {
 **Responsibility:** Managing launch times (cron/startTime), triggering checks
 
 **Key Methods:**
-- `start()` — start scheduler
+- `start()` — start scheduler (in scheduled mode stays pending until stop)
+- `stop()` — graceful stop
+- `reload()` — hot-reload series configs (interactive `[r]`)
 - `scheduleNextBatch()` — calculate time until next batch
 - `groupConfigsBySchedule()` — group by startTime/cron
-- `runConfigs()` — add all series to QueueManager
 - `triggerAllChecks()` — immediate trigger of all checks
+- `triggerImmediateChecks()` — clear queues and trigger checks (interactive `[c]`)
+- `clearQueues()` — reset all queues
+
+**Emits events:** `scheduler:start`, `scheduler:trigger`, `scheduler:complete`
 
 **Pattern:** Time-based scheduling + queue delegation
 
@@ -54,6 +65,8 @@ type AppDependencies = {
 - `check:{domain}:{hash}` — one per series (isolated interval)
 - `download:{domain}` — shared per domain (shared cooldown)
 
+**EventBus integration:** subscribes to `queue:task:start`, `queue:task:complete`, `queue:task:error`, `queue:idle`, `queue:wait` for monitoring/logging. Unsubscribe functions are stored and released in `stop()` (re-registered on `start()`).
+
 ---
 
 #### UniversalScheduler (`src/queue/universal-scheduler.ts`)
@@ -72,10 +85,34 @@ type AppDependencies = {
 1. Check `executorBusy` — if busy, exit
 2. Round-robin through all queues
 3. Find queue with `canStart(now) == true`
-4. Execute task via callback
+4. Execute task via executor callback
 5. Task calls `markTaskComplete()` → `scheduleNext()`
 
-**Event-driven:** no polling, timer and callback based
+**Emits events** (replaces deprecated callbacks `setOnWait` etc.):
+`queue:register`, `queue:add`, `queue:task:start`, `queue:task:complete`, `queue:task:error`, `queue:idle`, `queue:wait`, `queue:drain`, `queue:cleared`, `queue:reset`
+
+**Event-driven:** no polling, timer and event based
+
+---
+
+#### EventBus (`src/events/`)
+
+**Responsibility:** Central typed pub/sub for event-driven communication between components
+
+**Files:**
+- `event-bus.ts` — `EventBus` class (wrapper over Emittery) + `getEventBus()`/`resetEventBus()` singleton accessors
+- `event-types.ts` — 30 event payload types across 7 categories
+
+**Key Methods:**
+- `emit()` / `emitSync()` — emit event (async / fire-and-forget)
+- `on()` / `onMany()` / `onAny()` / `once()` — subscribe (return unsubscribe function)
+- `waitFor()` — promise-based wait for event
+- `onWithSignal()` — subscription with AbortSignal
+- `listenerCount()` / `clearListeners()` — introspection
+
+**Event categories:** scheduler (`scheduler:*`), queue (`queue:*`), download (`download:*`), scraping (`scraping:*`), state (`state:*`), notification (`notification:*`), system (`app:*`)
+
+**Wiring:** `app.ts` obtains the global bus via `getEventBus()`, passes it to `AppContext.initialize()` and `Scheduler` (→ `QueueManager` → `UniversalScheduler`).
 
 ---
 
@@ -129,21 +166,16 @@ type AppDependencies = {
 - `getSeriesEpisodes()` — get all series episodes
 - `withLock()` — mutex for safe writes
 
-**State file format:**
+**State file format (v3.0.0):**
 ```json
 {
-  "version": "2.0.0",
+  "version": "3.0.0",
   "series": {
-    "https://wetv.vip/play/abc": {
-      "name": "Series Name",
-      "episodes": {
-        "01": { "url": "...", "filename": "...", "downloadedAt": "...", "size": 12345 }
-      }
-    }
-  },
-  "lastUpdated": "2025-01-23T20:10:00+08:00"
+    "Series Name": ["01", "02", "03"]
+  }
 }
 ```
+Series are keyed by name; values are sorted zero-padded episode-number lists.
 
 ---
 
@@ -166,11 +198,14 @@ type AppDependencies = {
 **Responsibility:** Global service locator (DI container)
 
 **Methods:**
-- `initialize()` — initialize with services
+- `initialize()` — initialize with services (config, notifier, stateManager?, eventBus?)
 - `getConfig()` — get ConfigRegistry
 - `getNotifier()` — get Notifier
 - `getStateManager()` — get StateManager
+- `getEventBus()` — get EventBus
 - `reloadConfig()` — reload config
+- `setNotifier()` — replace notifier (config reload)
+- `isInitialized()` — check initialization
 - `reset()` — reset (for tests)
 
 **Pattern:** Service Locator (Singleton)
@@ -184,7 +219,7 @@ type AppDependencies = {
 │                        app.ts                               │
 │  - Loads config                                             │
 │  - Creates all services                                     │
-│  - Initializes AppContext                                   │
+│  - getEventBus() → initializes AppContext (with EventBus)   │
 │  - Starts Scheduler                                         │
 └─────────────────────────┬───────────────────────────────────┘
                           │
@@ -227,6 +262,8 @@ type AppDependencies = {
           └──────────┘
 ```
 
+**EventBus (not shown above):** singleton from `src/events/`, passed `app.ts → AppContext → Scheduler → QueueManager → UniversalScheduler`. UniversalScheduler emits `queue:*` events (QueueManager subscribes for monitoring/logging), Scheduler emits `scheduler:*` events.
+
 ---
 
 ## 🔑 Architectural Patterns
@@ -238,7 +275,8 @@ type AppDependencies = {
 | **Template Method** | `BaseHandler` | Common code for all handlers |
 | **Queue-based** | `QueueManager` | Task decomposition |
 | **Round-robin** | `UniversalScheduler` | Fair scheduling |
-| **Event-driven** | `UniversalScheduler` | No polling |
+| **Event Bus (Observer)** | `EventBus` (`src/events/`) | Decoupled component communication |
+| **Event-driven** | `UniversalScheduler` | No polling, timer and event based |
 | **Mutex** | `StateManager.withLock` | Concurrent write safety |
 | **Registry** | `handlerRegistry`, `downloaderRegistry` | Dynamic registration |
 | **Factory** | `QueueManagerFactory` | DI for tests |
@@ -260,14 +298,15 @@ config.yaml
 ```
 Scheduler.start()
   → scheduleNextBatch()
-  → runConfigs()
+  → triggerAllChecks() / runOnce()
   → QueueManager.addSeriesCheck()
-  → UniversalScheduler.addTask()
+  → UniversalScheduler.addTask()          (emits queue:add)
   → scheduleNext()
   → trySchedule()
   → executeTask()
-  → executeCheck/Download()
+  → emit queue:task:start → executor → executeCheck/Download()
   → markTaskComplete()
+  → emit queue:task:complete
   → scheduleNext()  # recursion
 ```
 

@@ -36,7 +36,10 @@ series:
             │   ├─ ConsoleNotifier (always)
             │   └─ TelegramNotifier (if configured)
             │
-            ├─ AppContext.initialize(configRegistry, notifier)
+            ├─ getEventBus()
+            │   └─ Global EventBus singleton (src/events/event-bus.ts)
+            │
+            ├─ AppContext.initialize(configRegistry, notifier, undefined, eventBus)
             │   └─ Stores in singleton
             │
             ├─ handlerRegistry.register(new WeTVHandler())
@@ -45,8 +48,10 @@ series:
             │
             ├─ new DownloadManager()
             │
-            └─ new Scheduler(configs, downloadManager)
-                 └─ Creates QueueManager with executor callback
+            └─ new Scheduler(configs, downloadManager, options, _, eventBus)
+                 └─ Creates QueueManager with executor callback and EventBus
+                      (UniversalScheduler emits queue:* events,
+                       QueueManager subscribes for monitoring/logging)
 ```
 
 ---
@@ -57,6 +62,8 @@ series:
 📁 scheduler/scheduler.ts:start()
   │
   ├─ this.running = true
+  │
+  ├─ emit scheduler:start event
   │
   ├─ queueManager.start()
   │   └─ 📁 queue/universal-scheduler.ts:start()

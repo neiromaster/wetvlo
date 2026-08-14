@@ -55,6 +55,7 @@ This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip
   - Uses pattern matching `${filenameWithoutExt}.*` to find and remove `.part`, `.tmp`, etc.
   - Cleans before download (removes old artifacts) and on error (removes failed attempt)
 - **StateManager** (`src/state/state-manager.ts`): JSON file persistence, series-grouped structure, dirty-checking for saves
+- **EventBus** (`src/events/event-bus.ts`): Typed pub/sub over Emittery; global singleton via `getEventBus()`, also on `AppContext.getEventBus()`. Event types in `src/events/event-types.ts` (30 events, 7 categories: scheduler, queue, download, scraping, state, notification, system). UniversalScheduler and Scheduler emit events (`queue:*`, `scheduler:*`); QueueManager subscribes for monitoring. Deprecated callbacks (`setOnWait`) remain only for tests
 - **Handlers** (`src/handlers/`): Domain-specific episode extractors extending `BaseHandler`
 
 ### Queue-Based Architecture
@@ -105,21 +106,14 @@ globalConfigs:
 
 ```json
 {
-  "version": "2.0.0",
+  "version": "3.0.0",
   "series": {
-    "https://wetv.vip/play/abc": {
-      "name": "Series Name",
-      "episodes": {
-        "01": { "url": "...", "filename": "...", "downloadedAt": "...", "size": 12345 },
-        "02": { ... }
-      }
-    }
-  },
-  "lastUpdated": "2025-01-23T20:10:00+08:00"
+    "Series Name": ["01", "02"]
+  }
 }
 ```
 
-Episode keys are zero-padded strings (`"01"`, `"02"`) for proper sorting.
+Series are keyed by series name; values are sorted lists of zero-padded episode-number strings (`"01"`, `"02"`) for proper sorting.
 
 ### Interactive Mode
 

@@ -20,8 +20,14 @@ src/
 │
 ├── queue/                # Queue management
 │   ├── queue-manager.ts
+│   ├── queue-manager.test.ts
 │   ├── universal-scheduler.ts
 │   └── typed-queue.ts
+│
+├── events/               # Event-based architecture
+│   ├── event-bus.ts
+│   ├── event-bus.test.ts
+│   └── event-types.ts
 │
 ├── config/               # Configuration
 │   ├── config-schema.ts
@@ -66,7 +72,10 @@ src/
 │   ├── notifier.ts
 │   ├── notification-level.ts
 │   ├── console-notifier.ts
+│   ├── console-notifier.test.ts
 │   ├── telegram-notifier.ts
+│   ├── telegram-notifier.test.ts
+│   ├── event-notifier.ts
 │   └── composite-notifier.ts
 │
 ├── types/                # TypeScript types
@@ -141,8 +150,9 @@ main()
 type AppDependencies = {
   loadConfig: typeof loadConfig,
   checkYtDlpInstalled: () => Promise<boolean>,
+  readCookieFile: typeof readCookieFile,
   createDownloadManager: () => DownloadManager,
-  createScheduler: typeof Scheduler
+  createScheduler: (configs, downloadManager, options?, eventBus?) => Scheduler
 };
 ```
 
@@ -151,11 +161,12 @@ type AppDependencies = {
 runApp()
   ├─ loadConfig()
   ├─ new ConfigRegistry()
-  ├─ new CompositeNotifier()
-  ├─ AppContext.initialize()
+  ├─ new CompositeNotifier() (ConsoleNotifier + TelegramNotifier)
+  ├─ getEventBus()                       # global EventBus singleton
+  ├─ AppContext.initialize(..., eventBus)
   ├─ handlerRegistry.register()
   ├─ new DownloadManager()
-  ├─ new Scheduler()
+  ├─ new Scheduler(..., eventBus)
   ├─ scheduler.start()
   └─ await forever (for scheduled mode)
 ```
@@ -172,10 +183,11 @@ runApp()
 
 | Method | Purpose |
 |--------|---------|
-| `initialize()` | Initialize with services |
+| `initialize()` | Initialize with services (config, notifier, stateManager?, eventBus?) |
 | `getConfig()` | Get ConfigRegistry |
 | `getNotifier()` | Get Notifier |
 | `getStateManager()` | Get StateManager |
+| `getEventBus()` | Get EventBus |
 | `reloadConfig()` | Reload config |
 | `setNotifier()` | Update notifier |
 | `isInitialized()` | Check initialization |
@@ -186,6 +198,7 @@ runApp()
 AppContext.getConfig().resolve(url, 'series');
 AppContext.getNotifier().notify(NotificationLevel.INFO, 'message');
 AppContext.getStateManager().isDownloaded(path, name, number);
+AppContext.getEventBus().on('queue:task:start', (e) => { ... });
 ```
 
 ---
@@ -202,25 +215,29 @@ AppContext.getStateManager().isDownloaded(path, name, number);
 
 | Method | Purpose |
 |--------|---------|
-| `constructor()` | Creates QueueManager with executor callback |
+| `constructor()` | Creates QueueManager (with executor callback and EventBus) |
 | `start()` | Start scheduler |
 | `stop()` | Stop scheduler |
 | `reload()` | Reload config |
 | `scheduleNextBatch()` | Calculate time until next batch |
 | `groupConfigsBySchedule()` | Group by startTime/cron |
-| `runConfigs()` | Add series to QueueManager |
-| `runOnce()` | Single check (mode: 'once') |
 | `triggerAllChecks()` | Immediate trigger of all checks |
+| `triggerImmediateChecks()` | Clear queues + trigger checks (interactive `[c]`) |
+| `runConfigs()` | Add series to QueueManager (private, called by scheduleNextBatch) |
+| `runOnce()` | Single check (mode: 'once', private) |
 | `updateDownloadManager()` | Update DownloadManager |
 | `clearQueues()` | Clear queues |
 | `getQueueManager()` | Get QueueManager (for tests) |
 | `isRunning()` | Check running status |
+
+**Emits events:** `scheduler:start`, `scheduler:trigger`, `scheduler:complete`
 
 **Types:**
 ```typescript
 type TimeProvider = {
   getMsUntilTime(time: string): number;
   getMsUntilCron(cron: string): number;
+  sleep(ms: number): Promise<void>;
 };
 
 type QueueManagerFactory = (downloadManager: DownloadManager) => QueueManager;
@@ -240,8 +257,8 @@ type QueueManagerFactory = (downloadManager: DownloadManager) => QueueManager;
 
 | Method | Purpose |
 |--------|---------|
-| `constructor()` | Creates UniversalScheduler with executor callback |
-| `start()` | Start all queues |
+| `constructor()` | Creates UniversalScheduler with executor callback; takes optional EventBus (falls back to AppContext) |
+| `start()` | Start all queues (re-registers event listeners) |
 | `stop()` | Stop all queues |
 | `addSeriesCheck()` | Create check queue for series |
 | `addEpisodes()` | Add episodes to download queue |
@@ -257,6 +274,8 @@ type QueueManagerFactory = (downloadManager: DownloadManager) => QueueManager;
 | `getQueueStats()` | Queue statistics |
 | `registerDownloadQueue()` | Register download queue |
 | `registerSeriesCheckQueue()` | Register check queue |
+
+**EventBus integration:** subscribes to `queue:task:start`, `queue:task:complete`, `queue:task:error`, `queue:idle`, `queue:wait` for monitoring/logging. Unsubscribe functions are stored and released in `stop()`, re-registered on `start()`.
 
 **Private Methods:**
 ```typescript
@@ -281,7 +300,7 @@ private calculateBackoff(retryCount, initialTimeout, backoffMultiplier, jitterPe
 
 | Method | Purpose |
 |--------|---------|
-| `constructor()` | Creates executor callback |
+| `constructor()` | Creates with executor callback and optional EventBus |
 | `start()` | Start scheduler |
 | `stop()` | Stop scheduler |
 | `resume()` | Resume |
@@ -295,7 +314,7 @@ private calculateBackoff(retryCount, initialTimeout, backoffMultiplier, jitterPe
 | `markTaskComplete()` | Mark task complete |
 | `markTaskFailed()` | Mark task failed |
 | `scheduleNext()` | Trigger next task |
-| `setOnWait()` | Set wait callback |
+| `setOnWait()` | ⚠️ Deprecated: wait callback (only tests use it; superseded by `queue:wait` event) |
 | `getStats()` | Queue statistics |
 | `isExecutorBusy()` | Check executor busy |
 | `hasPendingTasks()` | Check for tasks |
@@ -309,6 +328,45 @@ private scheduleTimer(waitMs, queueName, nextTime): void
 private clearTimer(): void
 private getEarliestAvailableTime(): {time, queueName} | null
 ```
+
+**Emits events (when EventBus provided):** `queue:register`, `queue:add`, `queue:task:start`, `queue:task:complete`, `queue:task:error`, `queue:idle`, `queue:wait`, `queue:drain`, `queue:cleared`, `queue:reset`
+
+---
+
+### `src/events/` — Events Layer
+
+#### `src/events/event-bus.ts`
+
+**Responsibility:** Central typed pub/sub bus (wrapper over Emittery)
+
+**Exports:** `EventBus` class, `getEventBus()` / `resetEventBus()` singleton accessors
+
+| Method | Purpose |
+|--------|---------|
+| `emit()` | Emit event, await all handlers |
+| `emitSync()` | Fire-and-forget emit |
+| `on()` | Subscribe to one event (returns unsubscribe fn) |
+| `onMany()` | Subscribe to multiple events |
+| `onAny()` | Subscribe to all events |
+| `once()` | One-time subscription |
+| `onWithSignal()` | Subscription tied to AbortSignal |
+| `waitFor()` | Promise-based wait for next event |
+| `listenerCount()` | Number of listeners for event |
+| `clearListeners()` | Remove listeners |
+
+#### `src/events/event-types.ts`
+
+**Responsibility:** Type-safe event payload definitions — 30 event types in 7 categories
+
+| Category | Events |
+|----------|--------|
+| Scheduler | `scheduler:start`, `scheduler:trigger`, `scheduler:complete` |
+| Queue | `queue:register`, `queue:add`, `queue:task:start/complete/error`, `queue:drain`, `queue:idle`, `queue:wait`, `queue:cleared`, `queue:reset` |
+| Download | `download:start`, `download:progress`, `download:complete`, `download:error`, `download:cleanup` |
+| Scraping | `scraping:start`, `scraping:complete`, `scraping:error` |
+| State | `state:load`, `state:save`, `state:update` |
+| Notification | `notification:sent`, `notification:error` |
+| System | `app:start`, `app:shutdown` |
 
 ---
 
@@ -612,9 +670,11 @@ endProgress(): void
 
 ### `src/notifications/console-notifier.ts`
 
-**Responsibility:** Console output
+**Responsibility:** Console output (non-blocking)
 
 **Class:** `ConsoleNotifier`
+
+All output goes through `ConsoleQueue` (setImmediate-deferred) so logging never blocks the main event loop; progress lines are rewritten in place.
 
 ---
 
@@ -623,6 +683,18 @@ endProgress(): void
 **Responsibility:** Telegram sending
 
 **Class:** `TelegramNotifier`
+
+Sends via `fetch` to the Bot API (HTML parse mode, 4000-char truncation). All errors — including network failures such as ECONNRESET — are caught and logged (`Telegram notification failed: ...`), never thrown to the caller.
+
+---
+
+### `src/notifications/event-notifier.ts`
+
+**Responsibility:** Bridge from EventBus to a Notifier
+
+**Class:** `EventNotifier`
+
+Subscribes to bus events and forwards them as notifications to the wrapped notifier; keeps unsubscribe functions for cleanup.
 
 ---
 
@@ -740,8 +812,11 @@ type SchedulerOptions = {...}
 
 **Types:**
 ```typescript
-type State = {...}
-type EpisodeNumber = string  // "01", "02"
+type State = {
+  version: string            // "3.0.0"
+  series: Record<string, string[]>  // series name → sorted episode numbers ("01", "02")
+}
+function createEmptyState(): State
 ```
 
 ---
@@ -797,6 +872,7 @@ type EpisodeType = 'episode' | 'pv' | 'extra' | 'opening' | 'ending'
 │         │ • ConfigRegistry               │              │
 │         │ • Notifier                     │              │
 │         │ • StateManager                 │              │
+│         │ • EventBus                     │              │
 │         └────────────────────────────────┘              │
 │                    ↓                                    │
 │              Scheduler                                  │
@@ -827,9 +903,9 @@ bun test <path>             # Specific file
 ```
 
 **Coverage:**
-- Unit tests for each component
+- Unit tests for each component (incl. `event-bus.test.ts` — 21 tests)
 - Regression tests (`scheduler-regression.test.ts`)
-- Total: **272 tests**
+- Total: **290 tests**
 
 ---
 

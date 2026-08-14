@@ -39,6 +39,9 @@ CLI → App → Scheduler → QueueManager → UniversalScheduler
                          DownloadManager (yt-dlp)
                               ↓
                          StateManager (JSON)
+
+EventBus (singleton): UniversalScheduler/Scheduler emit events
+(queue:*, scheduler:*), QueueManager subscribes for monitoring
 ```
 
 **Key Features:**
@@ -46,6 +49,7 @@ CLI → App → Scheduler → QueueManager → UniversalScheduler
 - **Round-robin execution**: fair scheduling across domains
 - **Sequential processing**: only ONE task executes globally
 - **Event-driven**: no polling, timer-based operation
+- **EventBus**: typed pub/sub (Emittery) decoupling components
 
 ## 📁 Project Structure
 
@@ -56,11 +60,12 @@ src/
 ├── app-context.ts        # Global service locator
 ├── scheduler/            # Time-based scheduler
 ├── queue/                # Queues and universal scheduler
+├── events/               # EventBus + event types (typed pub/sub)
 ├── handlers/             # Domain-specific extractors
 ├── downloader/           # Download via yt-dlp
 ├── state/                # JSON persistence
 ├── config/               # Configuration (4 levels)
-├── notifications/        # Console + Telegram
+├── notifications/        # Console + Telegram + Event bridge
 ├── types/                # TypeScript types
 ├── errors/               # Custom errors
 └── utils/                # Utilities
@@ -79,11 +84,12 @@ src/
 ## 🔑 Key Concepts
 
 ### Service Locator (AppContext)
-Global singleton for accessing config, notifier, state manager:
+Global singleton for accessing config, notifier, state manager, event bus:
 ```typescript
 AppContext.getConfig().resolve(url, 'series')
 AppContext.getNotifier().notify(NotificationLevel.INFO, 'message')
 AppContext.getStateManager().isDownloaded(statePath, seriesName, episodeNumber)
+AppContext.getEventBus().on('queue:task:start', (e) => { ... })
 ```
 
 ### Queue Architecture
@@ -120,4 +126,4 @@ bun test src/scheduler/scheduler.test.ts
 bun test src/scheduler/scheduler-regression.test.ts
 ```
 
-Total: **272 tests**, all passing.
+Total: **290 tests**, all passing.

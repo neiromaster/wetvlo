@@ -37,8 +37,8 @@ export class QueueManager {
   // EventBus for event-driven communication
   private eventBus?: EventBus;
 
-  // Unsubscribe function for event listeners
-  private unsubscribeEvents: (() => void) | null = null;
+  // Unsubscribe functions for event listeners
+  private unsubscribeEvents: Array<() => void> = [];
 
   // Running state
   private running = false;
@@ -194,68 +194,91 @@ export class QueueManager {
       return;
     }
 
-    // Listen to queue task start events
-    this.eventBus.on('queue:task:start', (event) => {
-      const { queueName, data } = event;
-      const parts = queueName.split(':');
-      const type = parts[0];
-      const domain = parts[1];
+    // Remove previous listeners (in case of restart)
+    this.cleanupEventListeners();
 
-      // Log task start
-      if (type === 'download') {
-        const item = data as DownloadQueueItem;
-        AppContext.getNotifier().notify(
-          NotificationLevel.INFO,
-          `[${domain}] Starting download: ${item.episode.number}`,
-        );
-      }
-    });
+    // Listen to queue task start events
+    this.unsubscribeEvents.push(
+      this.eventBus.on('queue:task:start', (event) => {
+        const { queueName, data } = event;
+        const parts = queueName.split(':');
+        const type = parts[0];
+        const domain = parts[1];
+
+        // Log task start
+        if (type === 'download') {
+          const item = data as DownloadQueueItem;
+          AppContext.getNotifier().notify(
+            NotificationLevel.INFO,
+            `[${domain}] Starting download: ${item.episode.number}`,
+          );
+        }
+      }),
+    );
 
     // Listen to queue task complete events
-    this.eventBus.on('queue:task:complete', (event) => {
-      const { queueName, duration } = event;
-      const parts = queueName.split(':');
-      const domain = parts[1];
+    this.unsubscribeEvents.push(
+      this.eventBus.on('queue:task:complete', (event) => {
+        const { queueName, duration } = event;
+        const parts = queueName.split(':');
+        const domain = parts[1];
 
-      // Log completion with duration
-      if (duration > 100) {
-        // Only log if task took more than 100ms
-        AppContext.getNotifier().notify(
-          NotificationLevel.DEBUG,
-          `[${domain}] Task completed in ${(duration / 1000).toFixed(1)}s`,
-        );
-      }
-    });
+        // Log completion with duration
+        if (duration > 100) {
+          // Only log if task took more than 100ms
+          AppContext.getNotifier().notify(
+            NotificationLevel.DEBUG,
+            `[${domain}] Task completed in ${(duration / 1000).toFixed(1)}s`,
+          );
+        }
+      }),
+    );
 
     // Listen to queue task error events
-    this.eventBus.on('queue:task:error', (event) => {
-      const { queueName, error } = event;
-      const parts = queueName.split(':');
-      const domain = parts[1];
+    this.unsubscribeEvents.push(
+      this.eventBus.on('queue:task:error', (event) => {
+        const { queueName, error } = event;
+        const parts = queueName.split(':');
+        const domain = parts[1];
 
-      AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Task error: ${error.message}`);
-    });
+        AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Task error: ${error.message}`);
+      }),
+    );
 
     // Listen to queue idle events
-    this.eventBus.on('queue:idle', () => {
-      AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] All queues idle');
-    });
+    this.unsubscribeEvents.push(
+      this.eventBus.on('queue:idle', () => {
+        AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] All queues idle');
+      }),
+    );
 
     // Listen to queue wait events
-    this.eventBus.on('queue:wait', (event) => {
-      const { queueName, waitMs } = event;
-      const notifier = AppContext.getNotifier();
-      const seconds = Math.round(waitMs / 1000);
-      const parts = queueName.split(':');
-      const type = parts[0];
-      const domain = parts[1];
+    this.unsubscribeEvents.push(
+      this.eventBus.on('queue:wait', (event) => {
+        const { queueName, waitMs } = event;
+        const notifier = AppContext.getNotifier();
+        const seconds = Math.round(waitMs / 1000);
+        const parts = queueName.split(':');
+        const type = parts[0];
+        const domain = parts[1];
 
-      if (type === 'download') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next download: ${seconds}s`);
-      } else if (type === 'check') {
-        notifier.notify(NotificationLevel.INFO, `[${domain}] Next check: ${seconds}s`);
-      }
-    });
+        if (type === 'download') {
+          notifier.notify(NotificationLevel.INFO, `[${domain}] Next download: ${seconds}s`);
+        } else if (type === 'check') {
+          notifier.notify(NotificationLevel.INFO, `[${domain}] Next check: ${seconds}s`);
+        }
+      }),
+    );
+  }
+
+  /**
+   * Remove all event listeners registered by this QueueManager
+   */
+  private cleanupEventListeners(): void {
+    for (const unsubscribe of this.unsubscribeEvents) {
+      unsubscribe();
+    }
+    this.unsubscribeEvents = [];
   }
 
   /**
@@ -268,6 +291,7 @@ export class QueueManager {
 
     this.running = true;
     this.scheduler.resume();
+    this.setupEventListeners();
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Started queue processing');
   }
@@ -287,11 +311,8 @@ export class QueueManager {
     this.scheduler.stop();
     this.running = false;
 
-    // Clean up event listeners if needed
-    if (this.unsubscribeEvents) {
-      this.unsubscribeEvents();
-      this.unsubscribeEvents = null;
-    }
+    // Clean up event listeners
+    this.cleanupEventListeners();
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, '[QueueManager] Queue processing stopped');
   }

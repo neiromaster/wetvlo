@@ -2,8 +2,8 @@
  * Scheduler - Queue-based architecture for managing series checks
  *
  * Features:
- * - Per-domain sequential processing (concatMap semantics)
- * - Domain-based parallelism
+ * - Fully sequential processing (only one task executes globally at a time)
+ * - Round-robin queue selection for fairness across domains and task types
  * - Retry with exponential backoff
  * - "No episodes" requeue with interval
  * - Graceful shutdown

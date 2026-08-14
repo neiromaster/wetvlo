@@ -100,6 +100,33 @@ describe('QueueManager', () => {
     expect(mockScheduler.stop).toHaveBeenCalled();
   });
 
+  it('should clean up event listeners on stop', async () => {
+    const { EventBus } = await import('../events/event-bus');
+    const eventBus = new EventBus();
+    const managerWithBus = new QueueManager(mockDownloadManager, undefined as any, eventBus);
+
+    const eventNames = [
+      'queue:task:start',
+      'queue:task:complete',
+      'queue:task:error',
+      'queue:idle',
+      'queue:wait',
+    ] as const;
+
+    // Listeners registered in constructor
+    for (const name of eventNames) {
+      expect(eventBus.listenerCount(name)).toBe(1);
+    }
+
+    managerWithBus.start();
+    await managerWithBus.stop();
+
+    // All listeners removed after stop
+    for (const name of eventNames) {
+      expect(eventBus.listenerCount(name)).toBe(0);
+    }
+  });
+
   it('should throw if started when already running', () => {
     queueManager.start();
     expect(() => queueManager.start()).toThrow('QueueManager is already running');

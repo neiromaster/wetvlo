@@ -5,7 +5,7 @@
  * Events follow naming pattern: <component>:<action>
  */
 
-import type { DownloadResult } from '../downloader/download-manager';
+import type { DownloadResult } from '../downloader/types';
 import type { Episode } from '../types/episode.types';
 
 // ============================================================================

@@ -29,7 +29,7 @@ test('should emit and receive events', async () => {
   });
 
   expect(received).toHaveLength(1);
-  expect(received[0].version).toBe('1.0.0');
+  expect(received[0]?.version).toBe('1.0.0');
 
   unsubscribe();
 });
@@ -88,8 +88,12 @@ test('should support onMany for multiple events', async () => {
   const received: string[] = [];
 
   const unsubscribe = bus.onMany({
-    'app:start': () => received.push('start'),
-    'app:shutdown': () => received.push('shutdown'),
+    'app:start': () => {
+      received.push('start');
+    },
+    'app:shutdown': () => {
+      received.push('shutdown');
+    },
   });
 
   await bus.emit('app:start', {
@@ -128,8 +132,8 @@ test('should support onAny for all events', async () => {
   });
 
   expect(received).toHaveLength(2);
-  expect(received[0].name).toBe('app:start');
-  expect(received[1].name).toBe('app:shutdown');
+  expect(received[0]?.name).toBe('app:start');
+  expect(received[1]?.name).toBe('app:shutdown');
 
   unsubscribe();
 });

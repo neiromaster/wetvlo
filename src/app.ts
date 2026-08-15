@@ -1,5 +1,6 @@
 import * as readline from 'node:readline';
 import { boolean, command, flag, option, string } from 'cmd-ts';
+import { version } from '../package.json';
 import { AppContext } from './app-context';
 import { loadConfig } from './config/config-loader';
 import { ConfigRegistry } from './config/config-registry';
@@ -225,7 +226,7 @@ export async function runApp(
 export const cli = command({
   name: 'wetvlo',
   description: 'CLI Video Downloader for Chinese streaming sites',
-  version: '0.0.1',
+  version,
   args: {
     config: option({
       type: string,

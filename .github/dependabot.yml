@@ -10,3 +10,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # TS 7 (native compiler) unsupported by tsup/rollup-plugin-dts — see PR #9
+      - dependency-name: typescript
+        versions: ["6.x", "7.x"]

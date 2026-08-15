@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "root": true,
   "vcs": {
     "enabled": true,
@@ -14,7 +14,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "javascript": {
@@ -74,16 +74,13 @@
             "noUnusedVariables": "warn",
             "useHookAtTopLevel": "error",
             "noNestedComponentDefinitions": "error",
-            "noReactPropAssignments": "error"
+            "noReactPropAssignments": "error",
+            "noUnresolvedImports": "error"
           },
           "nursery": {
-            "noUnknownAttribute": "error",
-            "noImportCycles": "error",
             "useExplicitType": "off",
-            "useSpread": "error",
             "noFloatingPromises": "error",
-            "noMisusedPromises": "error",
-            "noUnresolvedImports": "error"
+            "noMisusedPromises": "error"
           },
           "security": {
             "noDangerouslySetInnerHtmlWithChildren": "error",
@@ -91,7 +88,9 @@
             "noSecrets": "off"
           },
           "suspicious": {
-            "noVar": "error"
+            "noVar": "error",
+            "noUnknownAttribute": "error",
+            "noImportCycles": "error"
           },
           "style": {
             "useConsistentCurlyBraces": "error",
@@ -105,7 +104,8 @@
               }
             },
             "useConsistentArrayType": "error",
-            "useAtIndex": "error"
+            "useAtIndex": "error",
+            "useSpreadOverApply": "error"
           },
           "performance": {
             "noAwaitInLoops": "warn"

@@ -1,17 +1,15 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: ['src/index.ts'],
-  format: ['esm'],
+  format: 'esm',
   dts: true,
   sourcemap: true,
   minify: true,
   target: 'node22',
   outDir: 'dist',
   clean: true,
-  bundle: true,
-  splitting: false,
-  banner: {
-    js: '#!/usr/bin/env node',
-  },
+  unbundle: false,
+  banner: '#!/usr/bin/env node',
+  outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
 });

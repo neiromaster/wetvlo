@@ -11,7 +11,7 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "start:once": "bun run src/index.ts --once",
-    "build": "tsup",
+    "build": "tsdown",
     "lint": "biome check . && dprint check",
     "format": "biome check --write --unsafe . && dprint fmt",
     "typecheck": "tsc --noEmit",
@@ -23,8 +23,8 @@
     "@types/js-yaml": "^4.0.9",
     "dprint": "^0.51.1",
     "lefthook": "^2.1.0",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "tsdown": "^0.22.14",
+    "typescript": "7.0.2"
   },
   "files": [
     "dist",

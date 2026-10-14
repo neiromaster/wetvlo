@@ -128,9 +128,10 @@ function parseJsonp(text: string): unknown {
  * - Attaches the `Cookie` header ONLY when the target host is mgtv.com —
  *   the cookie file may contain cookies for unrelated sites and those
  *   must never leave the machine.
- * - Throws `DownloadError` with the API `msg` when the payload carries a
- *   non-200 `code`. (The subtitle `vod.do` endpoint has no `code` field at
- *   all — only `status: "ok"` — so a missing code is not an error.)
+ * - Throws `DownloadError` for every failure mode: malformed URL / network
+ *   error / non-2xx HTTP status, and a payload carrying a non-200 `code`.
+ *   (The subtitle `vod.do` endpoint has no `code` field at all — only
+ *   `status: "ok"` — so a missing code is not an error.)
  *
  * @param url - Absolute endpoint URL
  * @param cookies - Optional Cookie header value (from readMgtvCookieHeader)
@@ -141,13 +142,22 @@ export async function mgtvFetchJson(url: string, cookies?: string): Promise<any>
     Referer: 'https://w.mgtv.com/',
     Accept: '*/*',
   };
-  const host = new URL(url).hostname;
-  if (cookies && (host === 'mgtv.com' || host.endsWith('.mgtv.com'))) {
-    headers.Cookie = cookies;
+  let res: Response;
+  let text: string;
+  try {
+    const host = new URL(url).hostname;
+    if (cookies && (host === 'mgtv.com' || host.endsWith('.mgtv.com'))) {
+      headers.Cookie = cookies;
+    }
+    res = await fetch(url, { headers });
+    text = await res.text();
+  } catch (error) {
+    throw new DownloadError(`MGTV request failed: ${error instanceof Error ? error.message : String(error)}`, url);
   }
 
-  const res = await fetch(url, { headers });
-  const text = await res.text();
+  if (!res.ok) {
+    throw new DownloadError(`MGTV API HTTP ${res.status}: ${text.slice(0, 200)}`, url);
+  }
 
   let parsed: any;
   try {
@@ -159,7 +169,7 @@ export async function mgtvFetchJson(url: string, cookies?: string): Promise<any>
     );
   }
 
-  if (parsed && typeof parsed === 'object' && 'code' in parsed && parsed.code !== 200) {
+  if (parsed && typeof parsed === 'object' && 'code' in parsed && Number(parsed.code) !== 200) {
     throw new DownloadError(`MGTV API error (code ${parsed.code}): ${parsed.msg ?? 'unknown error'}`, url);
   }
   return parsed;

@@ -78,11 +78,11 @@ describe('readMgtvCookieHeader', () => {
     const file = join(dir, 'cookies.txt');
     await writeFile(file, '.example.com\tTRUE\t/\tTRUE\t0\tfoo\tbar', 'utf-8');
 
-    expect(readMgtvCookieHeader(file)).rejects.toThrow(CookieError);
+    await expect(readMgtvCookieHeader(file)).rejects.toThrow(CookieError);
   });
 
   it('throws CookieError when the file does not exist', async () => {
-    expect(readMgtvCookieHeader('Z:/definitely/not/here.txt')).rejects.toThrow(CookieError);
+    await expect(readMgtvCookieHeader('Z:/definitely/not/here.txt')).rejects.toThrow(CookieError);
   });
 
   it('parses #HttpOnly_ cookies and handles CRLF line endings', async () => {
@@ -117,11 +117,11 @@ describe('mgtvFetchJson', () => {
     global.fetch = originalFetch;
   });
 
-  function stubFetch(body: string) {
+  function stubFetch(body: string, status = 200) {
     global.fetch = mock(async (input: any, init?: any) => {
       capturedUrl = String(input);
       capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-      return new Response(body, { status: 200 });
+      return new Response(body, { status });
     }) as unknown as typeof fetch;
   }
 
@@ -152,8 +152,8 @@ describe('mgtvFetchJson', () => {
 
   it('throws DownloadError with the API msg when code != 200', async () => {
     stubFetch('{"code":404,"msg":"video not found"}');
-    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
-    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow('video not found');
+    await expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
+    await expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow('video not found');
   });
 
   it('does not treat a missing code field as an error (subtitle vod.do has status only)', async () => {
@@ -164,6 +164,27 @@ describe('mgtvFetchJson', () => {
 
   it('throws DownloadError on unparseable responses', async () => {
     stubFetch('<html>502 Bad Gateway</html>');
-    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
+    await expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
+  });
+
+  it('throws DownloadError on non-200 HTTP status even when the body has no code field', async () => {
+    stubFetch('{"status":"error"}', 502);
+    await expect(mgtvFetchJson('https://disp-glb.titan.mgtv.com/vod.do?x=1')).rejects.toThrow(DownloadError);
+    await expect(mgtvFetchJson('https://disp-glb.titan.mgtv.com/vod.do?x=1')).rejects.toThrow('MGTV API HTTP 502');
+  });
+
+  it('never sends cookies to mgtv lookalike hosts', async () => {
+    stubFetch('{"code":200}');
+    const lookalikes = ['https://evil-mgtv.com/x', 'https://mgtv.com.attacker.com/x', 'https://x.mgtv.com.evil.com/x'];
+    for (const url of lookalikes) {
+      await mgtvFetchJson(url, 'PHPSESSID=abc');
+      expect(capturedHeaders).not.toHaveProperty('Cookie');
+    }
+  });
+
+  it('attaches cookies to an uppercase mgtv.com hostname (URL lowercases it)', async () => {
+    stubFetch('{"code":200}');
+    await mgtvFetchJson('https://TINKER.GLB.MGTV.COM/x', 'PHPSESSID=abc');
+    expect(capturedHeaders.Cookie).toBe('PHPSESSID=abc');
   });
 });

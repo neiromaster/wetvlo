@@ -86,7 +86,7 @@ export class IQiyiHandler extends BaseHandler {
     try {
       // Extract __NEXT_DATA__ script content
       const match = html.match(/<script id="__NEXT_DATA__"[^>]*>(.+?)<\/script>/s);
-      if (!match || !match[1]) {
+      if (!match?.[1]) {
         return episodes;
       }
 

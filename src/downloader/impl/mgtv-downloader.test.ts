@@ -222,6 +222,26 @@ describe('MgtvDownloader', () => {
       expect(logs.join('\n')).toContain('subtitle download failed');
     });
 
+    it('keeps the video when the subtitle list fetch fails', async () => {
+      const api = makeApi({
+        fetchSubtitleList: mock(async () => {
+          throw new Error('tinker endpoint down');
+        }),
+      });
+      const wrapper = makeWrapper();
+      const logs: string[] = [];
+      const dl = new MgtvDownloader(api, wrapper);
+
+      const result = await dl.download(makeEpisode(), dir, 'E10', {
+        subLangs: ['ru.*'],
+        onLog: (m) => logs.push(m),
+      });
+
+      expect(result.filename).toBe('out/E10.mp4');
+      expect(result.allFiles.some((f) => f.endsWith('.srt'))).toBe(false);
+      expect(logs.join('\n')).toContain('subtitle download failed');
+    });
+
     it('does not touch subtitles when subLangs is empty', async () => {
       const api = makeApi();
       const dl = new MgtvDownloader(api, makeWrapper());

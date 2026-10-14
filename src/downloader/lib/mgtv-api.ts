@@ -187,8 +187,15 @@ export async function fetchPlayerInfo(videoId: string, cookies?: string): Promis
     `&tk2=${makeTk2(did)}&video_id=${videoId}&abroad=10&src=intelmgtv&ch=default&-ch=default`;
   const data = await mgtvFetchJson(url, cookies);
   const user = data?.data?.user;
+  const pm2 = String(data?.data?.atc?.pm2 ?? '');
+  if (pm2 === '') {
+    throw new DownloadError(
+      'MGTV returned no pm2 token — cookies likely expired; re-export cookies.txt from a logged-in browser',
+      url,
+    );
+  }
   return {
-    pm2: String(data?.data?.atc?.pm2 ?? ''),
+    pm2,
     login: user?.login === true,
     isvip: user?.isvip === '1',
     title: data?.data?.info?.title !== undefined ? String(data.data.info.title) : undefined,
@@ -204,11 +211,11 @@ export async function fetchSourceStreams(videoId: string, pm2: string, cookies?:
   const did = crypto.randomUUID();
   const suuid = crypto.randomUUID();
   const url =
-    `https://tinker.glb.mgtv.com/player/getSource?_support=10000000&tk2=${makeTk2(did)}&pm2=${pm2}` +
+    `https://tinker.glb.mgtv.com/player/getSource?_support=10000000&tk2=${makeTk2(did)}&pm2=${encodeURIComponent(pm2)}` +
     `&video_id=${videoId}&did=${did}&suuid=${suuid}&abroad=10&src=intelmgtv&ch=default&-ch=default` +
     `&auth_mode=1&type=pad`;
   const data = await mgtvFetchJson(url, cookies);
-  const streams: any[] = Array.isArray(data?.data?.stream) ? data.data.stream : [];
+  const streams: any[] = (Array.isArray(data?.data?.stream) ? data.data.stream : []).filter(Boolean);
   return {
     streamDomain: String(data?.data?.stream_domain?.[0] ?? ''),
     streams: streams.map((s) => ({
@@ -226,7 +233,7 @@ export async function fetchSourceStreams(videoId: string, pm2: string, cookies?:
  * `&arange=` must be stripped from the stream url or the API errors.
  */
 export async function resolveM3u8Url(streamDomain: string, streamUrl: string): Promise<string> {
-  const url = `${streamDomain}${streamUrl.replace(/&arange=\d+/g, '')}`;
+  const url = `${streamDomain}${streamUrl.replace(/&arange=\d+/g, '').replace(/\?arange=\d+&/, '?')}`;
   const data = await mgtvFetchJson(url);
   if (!data?.info || typeof data.info !== 'string') {
     throw new DownloadError('MGTV did not return a signed m3u8 URL (stream offer may have expired)', url);
@@ -240,7 +247,7 @@ export async function resolveM3u8Url(streamDomain: string, streamUrl: string): P
 export async function fetchSubtitleList(videoId: string, cookies?: string): Promise<MgtvSubtitleEntry[]> {
   const url = `https://tinker.glb.mgtv.com/video/title?videoId=${videoId}&_support=10000000&abroad=10&src=intelmgtv`;
   const data = await mgtvFetchJson(url, cookies);
-  const list: any[] = Array.isArray(data?.data?.title) ? data.data.title : [];
+  const list: any[] = (Array.isArray(data?.data?.title) ? data.data.title : []).filter(Boolean);
   return list
     .map((t) => ({
       name: String(t.name ?? ''),
@@ -267,11 +274,21 @@ export async function resolveSubtitleUrl(entry: MgtvSubtitleEntry): Promise<stri
  * it is a CDN domain and the URL is already signed.
  */
 export async function downloadSubtitle(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { 'User-Agent': MGTV_UA, Referer: 'https://w.mgtv.com/' } });
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(url, { headers: { 'User-Agent': MGTV_UA, Referer: 'https://w.mgtv.com/' } });
+    text = await res.text();
+  } catch (error) {
+    throw new DownloadError(
+      `Failed to download subtitle: ${error instanceof Error ? error.message : String(error)}`,
+      url,
+    );
+  }
   if (!res.ok) {
     throw new DownloadError(`Failed to download subtitle (HTTP ${res.status})`, url);
   }
-  return res.text();
+  return text;
 }
 
 /** Injectable API surface — lets tests stub the network out of MgtvDownloader. */

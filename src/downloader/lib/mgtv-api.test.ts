@@ -327,4 +327,26 @@ describe('MGTV endpoints (mocked fetch)', () => {
     global.fetch = mock(async () => new Response('gone', { status: 404 })) as unknown as typeof fetch;
     await expect(downloadSubtitle('https://subtitle.hitv.com/ru.srt')).rejects.toThrow(DownloadError);
   });
+
+  it('fetchPlayerInfo throws a clear error when pm2 is missing (stale cookies)', async () => {
+    stubFetch([JSON.stringify({ code: 200, data: { user: { login: true }, info: {} } })]);
+    await expect(fetchPlayerInfo('24677071', 'sessionid=vip')).rejects.toThrow(/pm2 token/);
+  });
+
+  it('downloadSubtitle wraps network failures in DownloadError', async () => {
+    global.fetch = mock(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    await expect(downloadSubtitle('https://subtitle.hitv.com/ru.srt')).rejects.toThrow(DownloadError);
+  });
+
+  it('resolveM3u8Url strips a leading arange param and sends no cookies', async () => {
+    stubFetch(['jsonp_3_1({"info":"https://pcvideoaliyun.mgtv.com/lead.m3u8?mac=def"})']);
+
+    const m3u8 = await resolveM3u8Url('https://disp-glb.titan.mgtv.com', '/atcl/y?arange=2&pm=1');
+    expect(m3u8).toBe('https://pcvideoaliyun.mgtv.com/lead.m3u8?mac=def');
+    expect(captured[0]!.url).toBe('https://disp-glb.titan.mgtv.com/atcl/y?pm=1');
+    // resolve calls hit titan.mgtv.com unauthenticated — no cookies, signed URL only
+    expect(captured[0]!.headers.Cookie).toBeUndefined();
+  });
 });

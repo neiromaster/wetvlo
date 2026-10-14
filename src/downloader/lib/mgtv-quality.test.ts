@@ -54,4 +54,13 @@ describe('pickBestStream', () => {
       expect((e as Error).message).toContain('cookies');
     }
   });
+
+  it('does not flag degraded when the locked stream has the same bitrate as the chosen one', () => {
+    const { stream: best, degraded } = pickBestStream([
+      stream('1080P SDR', '1541', '', '1'), // locked
+      stream('1080P SDR', '1541'), // usable
+    ]);
+    expect(best.url).toBe('/atcl/x');
+    expect(degraded).toBe(false);
+  });
 });

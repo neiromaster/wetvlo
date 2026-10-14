@@ -23,7 +23,7 @@ export function pickBestStream(streams: MgtvStream[]): PickedStream {
     throw new DownloadError('MGTV returned no streams for this episode', '');
   }
 
-  const usable = streams.filter((s) => s.url.length > 0);
+  const usable = streams.filter((s) => s.url.trim().length > 0);
   const bestUsable = usable.reduce<MgtvStream | null>((a, b) => (a === null || bitrate(b) > bitrate(a) ? b : a), null);
   if (bestUsable === null) {
     throw new DownloadError('All MGTV streams are locked — cookies missing/expired or the account has no VIP', '');

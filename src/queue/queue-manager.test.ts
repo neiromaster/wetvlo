@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AppContext } from '../app-context';
 import { ConfigRegistry } from '../config/config-registry';
 import { NotificationLevel } from '../notifications/notification-level';
@@ -208,8 +211,100 @@ describe('QueueManager', () => {
     // Simulate scheduler calling executor
     await schedulerExecutor(task, 'check:wetv.vip');
 
-    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith(task.seriesUrl);
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith(task.seriesUrl, undefined);
     // Should mark complete
+    expect(mockScheduler.markTaskComplete).toHaveBeenCalled();
+  });
+
+  it('should pass domain-scoped cookies to extractEpisodes when cookieFile is configured', async () => {
+    const cookieFile = join(tmpdir(), `qm-cookies-${Date.now()}.txt`);
+    writeFileSync(
+      cookieFile,
+      [
+        '# Netscape HTTP Cookie File',
+        '',
+        '.wetv.vip\tTRUE\t/\tTRUE\t2147483647\twt_token\tabc123',
+        'openai.com\tTRUE\t/\tTRUE\t2147483647\topenai_sid\toai456',
+      ].join('\n'),
+    );
+
+    try {
+      const configWithCookies = {
+        series: [
+          {
+            name: 'Test Series',
+            url: 'https://wetv.vip/play/123',
+            startTime: '12:00',
+            download: { downloadDelay: 10 },
+            cookieFile,
+          },
+        ],
+        stateFile: 'test-state.json',
+        browser: 'chrome' as const,
+      };
+      AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
+
+      (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+      const task = {
+        seriesUrl: 'https://wetv.vip/play/123',
+        attemptNumber: 1,
+      };
+
+      await schedulerExecutor(task, 'check:wetv.vip');
+
+      expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', 'wt_token=abc123');
+    } finally {
+      if (existsSync(cookieFile)) {
+        unlinkSync(cookieFile);
+      }
+    }
+  });
+
+  it('should pass undefined cookies when cookieFile is not configured', async () => {
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+  });
+
+  it('should proceed without cookies when cookieFile points to a missing file', async () => {
+    const configWithMissingCookies = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 },
+          cookieFile: join(tmpdir(), `qm-missing-${Date.now()}.txt`),
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithMissingCookies as any), mockNotifier as any);
+
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.WARNING,
+      expect.stringContaining('cookie file unreadable'),
+    );
+    // Check still completes
     expect(mockScheduler.markTaskComplete).toHaveBeenCalled();
   });
 

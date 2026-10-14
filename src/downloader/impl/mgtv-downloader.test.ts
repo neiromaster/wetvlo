@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CookieError } from '../../errors/custom-errors.js';
 import type { Episode } from '../../types/episode.types.js';
 import { EpisodeType } from '../../types/episode-type';
 import type { MgtvApi, MgtvSubtitleEntry } from '../lib/mgtv-api.js';
@@ -43,7 +44,7 @@ function makeWrapper(result: Partial<YtdlpDownloadResult> = {}): YtdlpWrapper {
         ...result,
       }),
     ),
-  } as unknown as YtdlpWrapper;
+  };
 }
 
 describe('MgtvDownloader', () => {
@@ -94,6 +95,62 @@ describe('MgtvDownloader', () => {
       expect(result).toEqual({ filename: 'out/E10.mp4', allFiles: ['out/E10.mp4'] });
     });
 
+    it('passes domain-filtered cookies to every API call and never leaks other domains', async () => {
+      const cookieFile = join(dir, 'cookies.txt');
+      await writeFile(
+        cookieFile,
+        [
+          '.mgtv.com\tTRUE\t/\tFALSE\t1900000000\ta\t1',
+          'foo.mgtv.com\tTRUE\t/\tFALSE\t1900000000\tb\t2',
+          'openai.com\tTRUE\t/\tFALSE\t1900000000\tsecret\tMUST-NOT-LEAK',
+          '',
+        ].join('\n'),
+      );
+      const api = makeApi();
+      const logs: string[] = [];
+      const dl = new MgtvDownloader(api, makeWrapper());
+
+      await dl.download(makeEpisode(), dir, 'E10', {
+        cookieFile,
+        subLangs: ['ru.*'],
+        onLog: (m) => logs.push(m),
+      });
+
+      expect(api.fetchPlayerInfo).toHaveBeenCalledWith('24677071', 'a=1; b=2');
+      expect(api.fetchSourceStreams).toHaveBeenCalledWith('24677071', 'pm2', 'a=1; b=2');
+      expect(api.fetchSubtitleList).toHaveBeenCalledWith('24677071', 'a=1; b=2');
+      expect(logs.join('\n')).toMatch(/loaded 2 mgtv\.com cookies/);
+      expect(logs.join('\n')).not.toContain('MUST-NOT-LEAK');
+    });
+
+    it('throws CookieError when the cookie file is missing', async () => {
+      const dl = new MgtvDownloader(makeApi(), makeWrapper());
+
+      await expect(dl.download(makeEpisode(), dir, 'E10', { cookieFile: join(dir, 'missing.txt') })).rejects.toThrow(
+        CookieError,
+      );
+    });
+
+    it('falls back to the best unlocked stream and logs the degradation', async () => {
+      const api = makeApi({
+        fetchSourceStreams: mock(async () => ({
+          streamDomain: 'https://disp-glb.titan.mgtv.com',
+          streams: [
+            { name: '1080P', filebitrate: '1541', vip: '1', url: '' },
+            { name: '720P', filebitrate: '757', vip: '0', url: '/atcl/720' },
+          ],
+        })),
+      });
+      const wrapper = makeWrapper();
+      const logs: string[] = [];
+      const dl = new MgtvDownloader(api, wrapper);
+
+      await dl.download(makeEpisode(), dir, 'E10', { onLog: (m) => logs.push(m) });
+
+      expect(logs.join('\n')).toContain('falling back to 720P');
+      expect(wrapper.download).toHaveBeenCalledTimes(1);
+    });
+
     it('downloads and writes matched subtitles as <name>.<lang>.srt', async () => {
       const api = makeApi({
         fetchSubtitleList: mock(async () => [
@@ -114,6 +171,7 @@ describe('MgtvDownloader', () => {
       expect(result.allFiles.filter((f) => f.endsWith('.srt')).length).toBe(3);
       const ru = await readFile(join(dir, 'E10.ru.srt'), 'utf-8');
       expect(ru).toContain('hi');
+      expect(result.allFiles).toContain(join(dir, 'E10.zh_cn.srt'));
     });
 
     it('keeps the video when subtitle download fails (best-effort subs)', async () => {

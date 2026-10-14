@@ -50,16 +50,17 @@ export class MgtvDownloader extends BaseDownloader {
   ): Promise<DownloadResult> {
     const onLog = options?.onLog ?? (() => {});
 
+    // Fail fast on a misrouted URL before touching the cookie file
+    const videoId = extractVideoId(episode.url);
+    if (!videoId) {
+      throw new DownloadError(`Cannot extract MGTV video ID from URL: ${episode.url}`, episode.url);
+    }
+
     // Cookies: domain-filtered at parse time — only mgtv.com lines survive
     let cookies: string | undefined;
     if (options?.cookieFile) {
       cookies = await readMgtvCookieHeader(options.cookieFile);
       onLog(`MGTV: loaded ${cookies.split('; ').length} mgtv.com cookies`);
-    }
-
-    const videoId = extractVideoId(episode.url);
-    if (!videoId) {
-      throw new DownloadError(`Cannot extract MGTV video ID from URL: ${episode.url}`, episode.url);
     }
 
     const info = await this.api.fetchPlayerInfo(videoId, cookies);

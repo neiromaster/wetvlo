@@ -3,7 +3,18 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
-import { extractVideoId, makeTk2, mgtvFetchJson, readMgtvCookieHeader } from './mgtv-api';
+import {
+  downloadSubtitle,
+  extractVideoId,
+  fetchPlayerInfo,
+  fetchSourceStreams,
+  fetchSubtitleList,
+  makeTk2,
+  mgtvFetchJson,
+  readMgtvCookieHeader,
+  resolveM3u8Url,
+  resolveSubtitleUrl,
+} from './mgtv-api';
 
 describe('makeTk2', () => {
   it('produces the golden-vector signature for a fixed did and clit', () => {
@@ -186,5 +197,134 @@ describe('mgtvFetchJson', () => {
     stubFetch('{"code":200}');
     await mgtvFetchJson('https://TINKER.GLB.MGTV.COM/x', 'PHPSESSID=abc');
     expect(capturedHeaders.Cookie).toBe('PHPSESSID=abc');
+  });
+});
+
+describe('MGTV endpoints (mocked fetch)', () => {
+  const originalFetch = global.fetch;
+  let captured: { url: string; headers: Record<string, string> }[];
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function stubFetch(responses: string[]) {
+    captured = [];
+    let call = 0;
+    global.fetch = mock(async (input: any, init?: any) => {
+      captured.push({
+        url: String(input),
+        headers: (init?.headers ?? {}) as Record<string, string>,
+      });
+      return new Response(responses[Math.min(call++, responses.length - 1)], { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('fetchPlayerInfo extracts pm2 and account status', async () => {
+    stubFetch([
+      JSON.stringify({
+        code: 200,
+        data: {
+          atc: { pm2: 'pm2-token-xyz' },
+          user: { login: true, isvip: '1' },
+          info: { title: 'EP10 夜色将烬', duration: 989 },
+        },
+      }),
+    ]);
+
+    const info = await fetchPlayerInfo('24677071', 'sessionid=vip');
+    expect(info).toEqual({
+      pm2: 'pm2-token-xyz',
+      login: true,
+      isvip: true,
+      title: 'EP10 夜色将烬',
+      duration: 989,
+    });
+    expect(captured[0]!.url).toContain('https://tinker2.glb.mgtv.com/player/video?');
+    expect(captured[0]!.url).toContain('video_id=24677071');
+    expect(captured[0]!.url).toMatch(/tk2=[A-Za-z0-9~-]+/);
+    expect(captured[0]!.headers.Cookie).toBe('sessionid=vip');
+  });
+
+  it('fetchSourceStreams maps streams and picks stream_domain[0]', async () => {
+    stubFetch([
+      JSON.stringify({
+        code: 200,
+        data: {
+          stream_domain: ['https://disp-glb.titan.mgtv.com', 'https://backup.titan.mgtv.com'],
+          stream: [
+            { name: '720P', filebitrate: '757', vip: '0', url: '/atcl/x?a=1' },
+            { name: '1080P SDR', filebitrate: '1541', vip: '1', url: '/atcl/y?arange=2&b=2' },
+          ],
+        },
+      }),
+    ]);
+
+    const source = await fetchSourceStreams('24677071', 'pm2-token', 'sessionid=vip');
+    expect(source.streamDomain).toBe('https://disp-glb.titan.mgtv.com');
+    expect(source.streams).toEqual([
+      { name: '720P', filebitrate: '757', vip: '0', url: '/atcl/x?a=1' },
+      { name: '1080P SDR', filebitrate: '1541', vip: '1', url: '/atcl/y?arange=2&b=2' },
+    ]);
+    expect(captured[0]!.url).toContain('https://tinker.glb.mgtv.com/player/getSource?');
+    expect(captured[0]!.url).toContain('pm2=pm2-token');
+    expect(captured[0]!.url).toContain('auth_mode=1');
+  });
+
+  it('resolveM3u8Url strips arange and returns the signed playlist URL', async () => {
+    stubFetch(['jsonp_1_1({"info":"https://pcvideoaliyun.mgtv.com/playlist.m3u8?mac=abc"})']);
+
+    const m3u8 = await resolveM3u8Url('https://disp-glb.titan.mgtv.com', '/atcl/y?pm=1&arange=2&fid=3');
+    expect(m3u8).toBe('https://pcvideoaliyun.mgtv.com/playlist.m3u8?mac=abc');
+    expect(captured[0]!.url).toBe('https://disp-glb.titan.mgtv.com/atcl/y?pm=1&fid=3');
+  });
+
+  it('resolveM3u8Url throws when info is missing', async () => {
+    stubFetch(['{"code":200,"data":{}}']);
+    await expect(resolveM3u8Url('https://disp-glb.titan.mgtv.com', '/atcl/y')).rejects.toThrow(DownloadError);
+  });
+
+  it('fetchSubtitleList maps captionSimpleName to code and skips entries without url', async () => {
+    stubFetch([
+      JSON.stringify({
+        code: 200,
+        data: {
+          title: [
+            { name: 'Русский', captionSimpleName: 'RU', language: 'ru', url: '/vod.do?pm=1&fid=2' },
+            { name: 'English', captionSimpleName: 'EN', language: 'en', url: '' },
+            { name: '简体中文', captionSimpleName: 'ZH_CN', language: 'zh-cn', url: '/vod.do?pm=3&fid=4' },
+          ],
+        },
+      }),
+    ]);
+
+    const subs = await fetchSubtitleList('24677071', 'sessionid=vip');
+    expect(subs).toEqual([
+      { name: 'Русский', code: 'RU', url: '/vod.do?pm=1&fid=2' },
+      { name: '简体中文', code: 'ZH_CN', url: '/vod.do?pm=3&fid=4' },
+    ]);
+    expect(captured[0]!.url).toContain('https://tinker.glb.mgtv.com/video/title?videoId=24677071');
+  });
+
+  it('resolveSubtitleUrl + downloadSubtitle fetch the signed srt without cookies', async () => {
+    stubFetch([
+      'jsonp_2_1({"status":"ok","info":"https://subtitle.hitv.com/ru.srt?sign=x"})',
+      '1\n00:00:01,000 --> 00:00:02,000\nПривет\n',
+    ]);
+
+    const srtUrl = await resolveSubtitleUrl({ name: 'Русский', code: 'RU', url: '/vod.do?pm=1&fid=2' });
+    expect(srtUrl).toBe('https://subtitle.hitv.com/ru.srt?sign=x');
+    expect(captured[0]!.url).toBe('https://disp-glb.titan.mgtv.com/vod.do?pm=1&fid=2');
+
+    const text = await downloadSubtitle(srtUrl);
+    expect(text).toContain('Привет');
+    expect(captured[1]!.url).toBe('https://subtitle.hitv.com/ru.srt?sign=x');
+    // hitv.com is a different company domain — cookies must never go there
+    expect(captured[1]!.headers.Cookie).toBeUndefined();
+  });
+
+  it('downloadSubtitle throws DownloadError on HTTP errors', async () => {
+    global.fetch = mock(async () => new Response('gone', { status: 404 })) as unknown as typeof fetch;
+    await expect(downloadSubtitle('https://subtitle.hitv.com/ru.srt')).rejects.toThrow(DownloadError);
   });
 });

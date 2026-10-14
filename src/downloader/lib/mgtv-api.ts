@@ -174,3 +174,121 @@ export async function mgtvFetchJson(url: string, cookies?: string): Promise<any>
   }
   return parsed;
 }
+
+/**
+ * Step 1: player info — returns the pm2 signature needed by getSource
+ * plus account status (login/isvip) for logging.
+ */
+export async function fetchPlayerInfo(videoId: string, cookies?: string): Promise<MgtvPlayerInfo> {
+  const did = crypto.randomUUID();
+  const suuid = crypto.randomUUID();
+  const url =
+    `https://tinker2.glb.mgtv.com/player/video?_support=10000000&did=${did}&suuid=${suuid}&cxid=` +
+    `&tk2=${makeTk2(did)}&video_id=${videoId}&abroad=10&src=intelmgtv&ch=default&-ch=default`;
+  const data = await mgtvFetchJson(url, cookies);
+  const user = data?.data?.user;
+  return {
+    pm2: String(data?.data?.atc?.pm2 ?? ''),
+    login: user?.login === true,
+    isvip: user?.isvip === '1',
+    title: data?.data?.info?.title !== undefined ? String(data.data.info.title) : undefined,
+    duration: data?.data?.info?.duration !== undefined ? Number(data.data.info.duration) : undefined,
+  };
+}
+
+/**
+ * Step 2: stream list — available qualities for the episode.
+ * Locked (VIP, unauthenticated) streams come back with an empty url.
+ */
+export async function fetchSourceStreams(videoId: string, pm2: string, cookies?: string): Promise<MgtvSource> {
+  const did = crypto.randomUUID();
+  const suuid = crypto.randomUUID();
+  const url =
+    `https://tinker.glb.mgtv.com/player/getSource?_support=10000000&tk2=${makeTk2(did)}&pm2=${pm2}` +
+    `&video_id=${videoId}&did=${did}&suuid=${suuid}&abroad=10&src=intelmgtv&ch=default&-ch=default` +
+    `&auth_mode=1&type=pad`;
+  const data = await mgtvFetchJson(url, cookies);
+  const streams: any[] = Array.isArray(data?.data?.stream) ? data.data.stream : [];
+  return {
+    streamDomain: String(data?.data?.stream_domain?.[0] ?? ''),
+    streams: streams.map((s) => ({
+      name: String(s.name ?? ''),
+      filebitrate: String(s.filebitrate ?? '0'),
+      vip: String(s.vip ?? '0'),
+      url: String(s.url ?? ''),
+    })),
+  };
+}
+
+/**
+ * Step 3: resolve the short-lived signed m3u8 URL. Must be called right
+ * before handing the URL to yt-dlp — tokens expire quickly.
+ * `&arange=` must be stripped from the stream url or the API errors.
+ */
+export async function resolveM3u8Url(streamDomain: string, streamUrl: string): Promise<string> {
+  const url = `${streamDomain}${streamUrl.replace(/&arange=\d+/g, '')}`;
+  const data = await mgtvFetchJson(url);
+  if (!data?.info || typeof data.info !== 'string') {
+    throw new DownloadError('MGTV did not return a signed m3u8 URL (stream offer may have expired)', url);
+  }
+  return data.info;
+}
+
+/**
+ * Subtitles step 1: available subtitle languages for the episode.
+ */
+export async function fetchSubtitleList(videoId: string, cookies?: string): Promise<MgtvSubtitleEntry[]> {
+  const url = `https://tinker.glb.mgtv.com/video/title?videoId=${videoId}&_support=10000000&abroad=10&src=intelmgtv`;
+  const data = await mgtvFetchJson(url, cookies);
+  const list: any[] = Array.isArray(data?.data?.title) ? data.data.title : [];
+  return list
+    .map((t) => ({
+      name: String(t.name ?? ''),
+      code: String(t.captionSimpleName ?? ''),
+      url: String(t.url ?? ''),
+    }))
+    .filter((t) => t.url.length > 0);
+}
+
+/**
+ * Subtitles step 2: exchange the entry's /vod.do path for the signed .srt URL.
+ */
+export async function resolveSubtitleUrl(entry: MgtvSubtitleEntry): Promise<string> {
+  const url = `https://disp-glb.titan.mgtv.com${entry.url}`;
+  const data = await mgtvFetchJson(url);
+  if (!data?.info || typeof data.info !== 'string') {
+    throw new DownloadError(`MGTV did not return a signed subtitle URL for "${entry.name}"`, url);
+  }
+  return data.info;
+}
+
+/**
+ * Subtitles step 3: download the .srt text. hitv.com gets NO cookies —
+ * it is a CDN domain and the URL is already signed.
+ */
+export async function downloadSubtitle(url: string): Promise<string> {
+  const res = await fetch(url, { headers: { 'User-Agent': MGTV_UA, Referer: 'https://w.mgtv.com/' } });
+  if (!res.ok) {
+    throw new DownloadError(`Failed to download subtitle (HTTP ${res.status})`, url);
+  }
+  return res.text();
+}
+
+/** Injectable API surface — lets tests stub the network out of MgtvDownloader. */
+export type MgtvApi = {
+  fetchPlayerInfo: (videoId: string, cookies?: string) => Promise<MgtvPlayerInfo>;
+  fetchSourceStreams: (videoId: string, pm2: string, cookies?: string) => Promise<MgtvSource>;
+  resolveM3u8Url: (streamDomain: string, streamUrl: string) => Promise<string>;
+  fetchSubtitleList: (videoId: string, cookies?: string) => Promise<MgtvSubtitleEntry[]>;
+  resolveSubtitleUrl: (entry: MgtvSubtitleEntry) => Promise<string>;
+  downloadSubtitle: (url: string) => Promise<string>;
+};
+
+export const mgtvApi: MgtvApi = {
+  fetchPlayerInfo,
+  fetchSourceStreams,
+  resolveM3u8Url,
+  fetchSubtitleList,
+  resolveSubtitleUrl,
+  downloadSubtitle,
+};

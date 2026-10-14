@@ -41,6 +41,14 @@ describe('matchSubLangs', () => {
   it('is case-insensitive on both sides', () => {
     expect(matchSubLangs(ALL, ['RU.*'])).toEqual([entry('RU', 'Русский')]);
   });
+
+  it("'*' matches all non-empty codes and excludes empty-code entries", () => {
+    expect(matchSubLangs([...ALL, entry('', 'Unknown')], ['*'])).toEqual(ALL);
+  });
+
+  it('bare-asterisk form ru* is a prefix match', () => {
+    expect(matchSubLangs(ALL, ['ru*'])).toEqual([entry('RU', 'Русский')]);
+  });
 });
 
 describe('langTag', () => {

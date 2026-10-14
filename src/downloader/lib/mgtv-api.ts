@@ -1,3 +1,7 @@
+import { readFile } from 'node:fs/promises';
+
+import { CookieError } from '../../errors/custom-errors.js';
+
 /**
  * MGTV International API layer (tinker*.glb.mgtv.com).
  *
@@ -61,4 +65,43 @@ export function makeTk2(did: string, clit: number = Math.floor(Date.now() / 1000
 export function extractVideoId(url: string): string | null {
   const match = url.match(/\/b\/\d+\/(\d+)\.html/);
   return match?.[1] ?? null;
+}
+
+/**
+ * Read a Netscape-format cookies.txt and build a `Cookie` header containing
+ * ONLY mgtv.com cookies. Users export their whole browser (500+ lines with
+ * unrelated accounts) — nothing outside *.mgtv.com may ever be sent.
+ * Deduplicates by name+domain (first occurrence wins).
+ *
+ * @param cookieFile - Path to the Netscape-format cookie file
+ * @returns Cookie header value, e.g. "PHPSESSID=abc; sessionid=xyz"
+ * @throws CookieError when the file is unreadable or has no mgtv.com cookies
+ */
+export async function readMgtvCookieHeader(cookieFile: string): Promise<string> {
+  let content: string;
+  try {
+    content = await readFile(cookieFile, 'utf-8');
+  } catch (error) {
+    throw new CookieError(
+      `Cannot read MGTV cookie file "${cookieFile}": ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const pairs: string[] = [];
+  const seen = new Set<string>();
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const fields = trimmed.split('\t');
+    if (fields.length < 7 || !fields[0]?.includes('mgtv.com') || !fields[5] || !fields[6]) continue;
+    const key = `${fields[5]}|${fields[0]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push(`${fields[5]}=${fields[6].trim()}`);
+  }
+
+  if (pairs.length === 0) {
+    throw new CookieError(`No mgtv.com cookies found in "${cookieFile}" — re-export cookies from a logged-in browser`);
+  }
+  return pairs.join('; ');
 }

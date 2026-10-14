@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CookieError } from '../../errors/custom-errors.js';
-import { extractVideoId, makeTk2, readMgtvCookieHeader } from './mgtv-api';
+import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { extractVideoId, makeTk2, mgtvFetchJson, readMgtvCookieHeader } from './mgtv-api';
 
 describe('makeTk2', () => {
   it('produces the golden-vector signature for a fixed did and clit', () => {
@@ -100,5 +100,70 @@ describe('readMgtvCookieHeader', () => {
 
     const header = await readMgtvCookieHeader(file);
     expect(header).toBe('sessionid=httponly-session');
+  });
+});
+
+describe('mgtvFetchJson', () => {
+  const originalFetch = global.fetch;
+  let capturedUrl: string | undefined;
+  let capturedHeaders: Record<string, string>;
+
+  beforeEach(() => {
+    capturedUrl = undefined;
+    capturedHeaders = {};
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function stubFetch(body: string) {
+    global.fetch = mock(async (input: any, init?: any) => {
+      capturedUrl = String(input);
+      capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('parses a plain JSON response', async () => {
+    stubFetch('{"code":200,"msg":"","data":{"ok":1}}');
+    const data = await mgtvFetchJson('https://tinker.glb.mgtv.com/x');
+    expect(data.data.ok).toBe(1);
+  });
+
+  it('parses a JSONP response', async () => {
+    stubFetch('jsonp_1760000000000_1({"code":200,"msg":"","data":{"ok":2}})');
+    const data = await mgtvFetchJson('https://tinker.glb.mgtv.com/x');
+    expect(data.data.ok).toBe(2);
+  });
+
+  it('sends browser headers and the cookie header only to mgtv.com hosts', async () => {
+    stubFetch('{"code":200}');
+
+    await mgtvFetchJson('https://tinker.glb.mgtv.com/player/video?a=1', 'PHPSESSID=abc; sessionid=vip');
+    expect(capturedHeaders['User-Agent']).toContain('Mozilla/5.0');
+    expect(capturedHeaders.Referer).toBe('https://w.mgtv.com/');
+    expect(capturedHeaders.Cookie).toBe('PHPSESSID=abc; sessionid=vip');
+
+    // Non-mgtv host: same call, but cookies must NOT be attached
+    await mgtvFetchJson('https://subtitle.hitv.com/x.srt', 'PHPSESSID=abc; sessionid=vip');
+    expect(capturedHeaders.Cookie).toBeUndefined();
+  });
+
+  it('throws DownloadError with the API msg when code != 200', async () => {
+    stubFetch('{"code":404,"msg":"video not found"}');
+    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
+    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow('video not found');
+  });
+
+  it('does not treat a missing code field as an error (subtitle vod.do has status only)', async () => {
+    stubFetch('{"ver":"1.0","status":"ok","info":"https://x/example.srt"}');
+    const data = await mgtvFetchJson('https://disp-glb.titan.mgtv.com/vod.do?x=1');
+    expect(data.info).toBe('https://x/example.srt');
+  });
+
+  it('throws DownloadError on unparseable responses', async () => {
+    stubFetch('<html>502 Bad Gateway</html>');
+    expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow(DownloadError);
   });
 });

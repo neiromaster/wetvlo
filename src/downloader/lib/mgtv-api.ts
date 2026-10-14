@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { CookieError } from '../../errors/custom-errors.js';
+import { CookieError, DownloadError } from '../../errors/custom-errors.js';
 
 /**
  * MGTV International API layer (tinker*.glb.mgtv.com).
@@ -108,4 +108,59 @@ export async function readMgtvCookieHeader(cookieFile: string): Promise<string> 
     throw new CookieError(`No mgtv.com cookies found in "${cookieFile}" — re-export cookies from a logged-in browser`);
   }
   return pairs.join('; ');
+}
+
+/**
+ * Unwrap a MGTV API response body: plain JSON or JSONP (`jsonp_<ts>_<n>({...})`).
+ */
+function parseJsonp(text: string): unknown {
+  const s = text.trim();
+  if (s.startsWith('{') || s.startsWith('[')) return JSON.parse(s);
+  const start = s.indexOf('(');
+  const end = s.lastIndexOf(')');
+  return JSON.parse(s.slice(start + 1, end));
+}
+
+/**
+ * Fetch a MGTV API endpoint and return the parsed payload.
+ *
+ * - Sends browser-like headers on every request.
+ * - Attaches the `Cookie` header ONLY when the target host is mgtv.com —
+ *   the cookie file may contain cookies for unrelated sites and those
+ *   must never leave the machine.
+ * - Throws `DownloadError` with the API `msg` when the payload carries a
+ *   non-200 `code`. (The subtitle `vod.do` endpoint has no `code` field at
+ *   all — only `status: "ok"` — so a missing code is not an error.)
+ *
+ * @param url - Absolute endpoint URL
+ * @param cookies - Optional Cookie header value (from readMgtvCookieHeader)
+ */
+export async function mgtvFetchJson(url: string, cookies?: string): Promise<any> {
+  const headers: Record<string, string> = {
+    'User-Agent': MGTV_UA,
+    Referer: 'https://w.mgtv.com/',
+    Accept: '*/*',
+  };
+  const host = new URL(url).hostname;
+  if (cookies && (host === 'mgtv.com' || host.endsWith('.mgtv.com'))) {
+    headers.Cookie = cookies;
+  }
+
+  const res = await fetch(url, { headers });
+  const text = await res.text();
+
+  let parsed: any;
+  try {
+    parsed = parseJsonp(text);
+  } catch {
+    throw new DownloadError(
+      `MGTV API returned an unparseable response (HTTP ${res.status}): ${text.slice(0, 200)}`,
+      url,
+    );
+  }
+
+  if (parsed && typeof parsed === 'object' && 'code' in parsed && parsed.code !== 200) {
+    throw new DownloadError(`MGTV API error (code ${parsed.code}): ${parsed.msg ?? 'unknown error'}`, url);
+  }
+  return parsed;
 }

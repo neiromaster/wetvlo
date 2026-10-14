@@ -116,11 +116,11 @@ describe('readMgtvCookieHeader', () => {
 
 describe('mgtvFetchJson', () => {
   const originalFetch = global.fetch;
-  let capturedUrl: string | undefined;
+  let _capturedUrl: string | undefined;
   let capturedHeaders: Record<string, string>;
 
   beforeEach(() => {
-    capturedUrl = undefined;
+    _capturedUrl = undefined;
     capturedHeaders = {};
   });
 
@@ -130,7 +130,7 @@ describe('mgtvFetchJson', () => {
 
   function stubFetch(body: string, status = 200) {
     global.fetch = mock(async (input: any, init?: any) => {
-      capturedUrl = String(input);
+      _capturedUrl = String(input);
       capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
       return new Response(body, { status });
     }) as unknown as typeof fetch;

@@ -91,9 +91,13 @@ export async function readMgtvCookieHeader(cookieFile: string): Promise<string> 
   const seen = new Set<string>();
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const fields = trimmed.split('\t');
-    if (fields.length < 7 || !fields[0]?.includes('mgtv.com') || !fields[5] || !fields[6]) continue;
+    // "#HttpOnly_" prefix is curl's convention for HTTP-only cookies — not a comment
+    const effective = trimmed.startsWith('#HttpOnly_') ? trimmed.slice(10) : trimmed;
+    if (!effective || effective.startsWith('#')) continue;
+    const fields = effective.split('\t');
+    const domain = fields[0] ?? '';
+    if (fields.length < 7 || (domain !== 'mgtv.com' && !domain.endsWith('.mgtv.com')) || !fields[5] || !fields[6])
+      continue;
     const key = `${fields[5]}|${fields[0]}`;
     if (seen.has(key)) continue;
     seen.add(key);

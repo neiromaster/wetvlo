@@ -51,6 +51,7 @@ describe('readMgtvCookieHeader', () => {
     '.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tPHPSESSID\tabc123',
     'w.mgtv.com\tFALSE\t/\tTRUE\t1790000000\tsessionid\tvip-session-42',
     '.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tPHPSESSID\tduplicate-domain-skipped',
+    'evil-mgtv.com.attacker.com\tTRUE\t/\tTRUE\t1790000000\tspoof\tMUST-NOT-LEAK',
     'short-line',
   ].join('\n');
 
@@ -64,6 +65,7 @@ describe('readMgtvCookieHeader', () => {
     expect(header).toBe('PHPSESSID=abc123; sessionid=vip-session-42');
     expect(header).not.toContain('SECRET-MUST-NOT-LEAK');
     expect(header).not.toContain('ALIPAY-SECRET');
+    expect(header).not.toContain('MUST-NOT-LEAK');
   });
 
   it('throws CookieError when the file has no mgtv.com cookies', async () => {
@@ -76,5 +78,22 @@ describe('readMgtvCookieHeader', () => {
 
   it('throws CookieError when the file does not exist', async () => {
     expect(readMgtvCookieHeader('Z:/definitely/not/here.txt')).rejects.toThrow(CookieError);
+  });
+
+  it('parses #HttpOnly_ cookies and handles CRLF line endings', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mgtv-cookie-test-'));
+    const file = join(dir, 'cookies.txt');
+    // \r\n line endings are what Windows exports produce
+    await writeFile(
+      file,
+      [
+        '#HttpOnly_.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tsessionid\thttponly-session',
+        '.openai.com\tTRUE\t/\tTRUE\t0\tk\tv',
+      ].join('\r\n'),
+      'utf-8',
+    );
+
+    const header = await readMgtvCookieHeader(file);
+    expect(header).toBe('sessionid=httponly-session');
   });
 });

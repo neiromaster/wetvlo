@@ -84,21 +84,21 @@ export class MgtvDownloader extends BaseDownloader {
 
     // Subtitles are best-effort: a failure here keeps the valid video
     if (options?.subLangs && options.subLangs.length > 0) {
-      try {
-        const entries = matchSubLangs(await this.api.fetchSubtitleList(videoId, cookies), options.subLangs);
-        onLog(`MGTV: downloading ${entries.length} subtitle track(s)`);
-        for (const entry of entries) {
+      const entries = matchSubLangs(await this.api.fetchSubtitleList(videoId, cookies), options.subLangs);
+      onLog(`MGTV: downloading ${entries.length} subtitle track(s)`);
+      for (const entry of entries) {
+        try {
           const srtUrl = await this.api.resolveSubtitleUrl(entry);
           const srt = await this.api.downloadSubtitle(srtUrl);
           const subPath = join(dir, `${filenameWithoutExt}.${langTag(entry)}.srt`);
           await writeFile(subPath, srt, 'utf-8');
           allFiles.push(subPath);
           onLog(`MGTV: subtitle saved: ${basename(subPath)}`);
+        } catch (error) {
+          onLog(
+            `MGTV: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-      } catch (error) {
-        onLog(
-          `MGTV: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
-        );
       }
     }
 

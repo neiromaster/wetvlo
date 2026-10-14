@@ -193,6 +193,35 @@ describe('MgtvDownloader', () => {
       expect(logs.some((m) => m.includes('subtitle download failed'))).toBe(true);
     });
 
+    it('continues the subtitle loop after one track fails', async () => {
+      const api = makeApi({
+        fetchSubtitleList: mock(async () => [
+          { name: 'Русский', code: 'RU', url: '/vod.do?ru' },
+          { name: 'English', code: 'EN', url: '/vod.do?en' },
+          { name: '简体中文', code: 'ZH_CN', url: '/vod.do?zhcn' },
+        ]),
+        resolveSubtitleUrl: mock(async (entry: MgtvSubtitleEntry) => {
+          if (entry.code === 'RU') throw new Error('signed url expired');
+          return `https://subtitle.hitv.com/${entry.code.toLowerCase()}.srt`;
+        }),
+      });
+      const wrapper = makeWrapper();
+      const logs: string[] = [];
+      const dl = new MgtvDownloader(api, wrapper);
+
+      const result = await dl.download(makeEpisode(), dir, 'E10', {
+        subLangs: ['ru.*', 'en.*', 'zho.*', 'zh.*'],
+        onLog: (m) => logs.push(m),
+      });
+
+      expect(result.filename).toBe('out/E10.mp4');
+      expect(wrapper.download).toHaveBeenCalledTimes(1);
+      expect(result.allFiles).toContain(join(dir, 'E10.en.srt'));
+      expect(result.allFiles).toContain(join(dir, 'E10.zh_cn.srt'));
+      expect(result.allFiles).not.toContain(join(dir, 'E10.ru.srt'));
+      expect(logs.join('\n')).toContain('subtitle download failed');
+    });
+
     it('does not touch subtitles when subLangs is empty', async () => {
       const api = makeApi();
       const dl = new MgtvDownloader(api, makeWrapper());

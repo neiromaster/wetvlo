@@ -14,10 +14,15 @@ describe('makeTk2', () => {
   });
 
   it('defaults clit to current unix time when omitted', () => {
+    const before = Math.floor(Date.now() / 1000);
     const tk2 = makeTk2('11111111-1111-4111-8111-111111111111');
-    expect(typeof tk2).toBe('string');
-    expect(tk2.length).toBeGreaterThan(0);
-    // reversed URL-safe base64 never contains raw '+', '/', '='
+    const after = Math.floor(Date.now() / 1000);
+    // Decode the tk2: un-reverse, restore base64 chars, decode
+    const restored = tk2.split('').reverse().join('').replace(/_/g, '+').replace(/~/g, '/').replace(/-/g, '=');
+    const raw = Buffer.from(restored, 'base64').toString('utf-8');
+    const clit = Number(raw.match(/clit=(\d+)/)?.[1]);
+    expect(clit).toBeGreaterThanOrEqual(before);
+    expect(clit).toBeLessThanOrEqual(after);
     expect(tk2).not.toMatch(/[+/=]/);
   });
 });

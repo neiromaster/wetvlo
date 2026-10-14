@@ -19,6 +19,7 @@ import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import type { EpisodeType } from '../types/episode-type';
+import { readCookieHeaderForUrl } from '../utils/cookie-extractor';
 import { CookieRefreshManager } from '../utils/cookie-sync';
 import { extractDomain } from '../utils/url-utils';
 import type { CheckQueueItem, DownloadQueueItem } from './types';
@@ -658,8 +659,28 @@ export class QueueManager {
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Checking URL: ${seriesUrl}`);
 
-    // Extract episodes from the series page
-    const episodes = await handler.extractEpisodes(seriesUrl);
+    // Extract episodes from the series page. Cookie files may hold credentials
+    // for unrelated sites, so only cookies scoped to the series URL's domain
+    // are sent. Best-effort: a missing/empty cookie file must not block checks.
+    let cookies: string | undefined;
+    if (config.cookieFile) {
+      try {
+        const cookieHeader = await readCookieHeaderForUrl(config.cookieFile, seriesUrl);
+        if (cookieHeader) {
+          cookies = cookieHeader;
+        } else {
+          notifier.notify(
+            NotificationLevel.WARNING,
+            `[${domain}] ${seriesName}: cookie file has no cookies for this domain - VIP episodes may resolve to previews`,
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        notifier.notify(NotificationLevel.WARNING, `[${domain}] ${seriesName}: cookie file unreadable - ${message}`);
+      }
+    }
+
+    const episodes = await handler.extractEpisodes(seriesUrl, cookies);
 
     // Log episodes by type
     const episodesByType = new Map<EpisodeType, number>();

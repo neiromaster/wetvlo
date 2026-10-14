@@ -117,3 +117,55 @@ export async function readCookieFile(cookieFile: string): Promise<string> {
 
   return cookies.join('; ');
 }
+
+/**
+ * Read a Netscape-format cookie file and build a `Cookie` header containing
+ * ONLY cookies whose domain matches the given URL's host. Cookie files may
+ * contain credentials for unrelated sites — nothing outside the target
+ * domain may ever be sent. Deduplicates by name+domain (first wins).
+ *
+ * @param cookieFile - Path to the Netscape-format cookie file
+ * @param url - Target URL whose host determines the domain filter
+ * @returns Cookie header value; empty string when no cookies match
+ * @throws CookieError when the file is unreadable
+ */
+export async function readCookieHeaderForUrl(cookieFile: string, url: string): Promise<string> {
+  let content: string;
+  try {
+    content = await readFile(cookieFile, 'utf-8');
+  } catch (error) {
+    throw new CookieError(
+      `Cannot read cookie file "${cookieFile}": ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    throw new CookieError(`Invalid URL for cookie domain filter: "${url}"`);
+  }
+
+  const pairs: string[] = [];
+  const seen = new Set<string>();
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    // "#HttpOnly_" prefix is curl's convention for HTTP-only cookies — not a comment
+    const effective = trimmed.startsWith('#HttpOnly_') ? trimmed.slice(10) : trimmed;
+    if (!effective || effective.startsWith('#')) continue;
+    const fields = effective.split('\t');
+    const domain = (fields[0] ?? '').toLowerCase();
+    if (fields.length < 7 || !fields[5] || !fields[6]) continue;
+    const matches =
+      host === domain ||
+      host.endsWith(`.${domain}`) ||
+      (domain.startsWith('.') && (host === domain.slice(1) || host.endsWith(domain)));
+    if (!matches) continue;
+    const key = `${fields[5]}|${fields[0]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push(`${fields[5]}=${fields[6].trim()}`);
+  }
+
+  return pairs.join('; ');
+}

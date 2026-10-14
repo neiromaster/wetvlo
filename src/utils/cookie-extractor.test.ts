@@ -138,6 +138,24 @@ describe('Cookie Extractor', () => {
       }
     });
 
+    it('should parse CRLF-terminated files (Windows exports)', async () => {
+      const path = writeFile(
+        'scoped-cookies-crlf',
+        [
+          '#HttpOnly_.mgtv.com\tTRUE\t/\tTRUE\t2147483647\t__HC\tvalue1',
+          '.mgtv.com\tTRUE\t/\tFALSE\t2147483647\tvisid\tvalue2',
+          'openai.com\tTRUE\t/\tTRUE\t2147483647\topenai_sid\toai456',
+        ].join('\r\n'),
+      );
+
+      try {
+        const header = await readCookieHeaderForUrl(path, 'https://w.mgtv.com/b/1/2.html');
+        expect(header).toBe('__HC=value1; visid=value2');
+      } finally {
+        cleanupFile(path);
+      }
+    });
+
     it('should throw CookieError when the file is missing', async () => {
       await expect(
         readCookieHeaderForUrl('/non/existent/cookies.txt', 'https://w.mgtv.com/b/1/2.html'),

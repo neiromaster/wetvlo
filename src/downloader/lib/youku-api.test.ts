@@ -27,6 +27,7 @@ describe('readYoukuCookiePairs', () => {
     '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tcna\tduplicate-domain-skipped',
     'www.youku.tv\tFALSE\t/\tFALSE\t1790000000\tcsrfToken\tcsrf-42',
     '.www.youku.tv\tTRUE\t/\tFALSE\t1790000000\tP_F\tf-token',
+    '.youku.com\tTRUE\t/\tTRUE\t1790000000\tsid\tCOMVAL',
     'evil-youku.tv\tTRUE\t/\tTRUE\t1790000000\tspoof\tMUST-NOT-LEAK',
     'youku.tv.evil.com\tTRUE\t/\tTRUE\t1790000000\tspoof2\tMUST-NOT-LEAK-EITHER',
     'short-line',
@@ -40,7 +41,7 @@ describe('readYoukuCookiePairs', () => {
 
     const pairs = await readYoukuCookiePairs(file);
 
-    expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'P_F=f-token']);
+    expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'P_F=f-token', 'sid=COMVAL']);
     expect(pairs.join('; ')).not.toContain('MUST-NOT-LEAK');
     expect(pairs.join('; ')).not.toContain('ALIPAY-SECRET');
   });

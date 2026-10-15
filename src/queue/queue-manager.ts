@@ -530,6 +530,23 @@ export class QueueManager {
       const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = resolvedConfig.download;
 
       if (retryCount < maxRetries) {
+        // Best-effort cookie refresh before the retry: a poisoned cookie jar
+        // can be the cause of the check failure, and the refresh on the
+        // success path only runs after a successful check - so heal the jar
+        // here, otherwise the next attempt reads the same bad cookies.
+        if (resolvedConfig.cookieRefreshBrowser) {
+          try {
+            const cookieManager = CookieRefreshManager.getInstance();
+            await cookieManager.refreshCookies(seriesUrl);
+          } catch (refreshError) {
+            const refreshMessage = refreshError instanceof Error ? refreshError.message : String(refreshError);
+            notifier.notify(
+              NotificationLevel.WARNING,
+              `[${domain}] ${seriesName}: cookie refresh after failed check failed - ${refreshMessage}`,
+            );
+          }
+        }
+
         // Retry with exponential backoff (convert seconds to ms)
         const retryDelay = this.calculateBackoff(
           retryCount,

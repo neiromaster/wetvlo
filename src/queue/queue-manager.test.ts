@@ -35,6 +35,15 @@ mock.module('../handlers/handler-registry.js', () => ({
   },
 }));
 
+// Mock CookieRefreshManager singleton
+const mockRefreshCookies = mock(() => Promise.resolve());
+
+mock.module('../utils/cookie-sync', () => ({
+  CookieRefreshManager: {
+    getInstance: () => ({ refreshCookies: mockRefreshCookies }),
+  },
+}));
+
 describe('QueueManager', () => {
   let queueManager: QueueManager;
   let mockScheduler: any;
@@ -48,6 +57,8 @@ describe('QueueManager', () => {
     mockHandler.extractEpisodes.mockResolvedValue([]);
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.isDownloaded.mockReturnValue(false);
+    mockRefreshCookies.mockClear();
+    mockRefreshCookies.mockResolvedValue(undefined as any);
 
     // Initialize AppContext for tests
     // Create a proper config structure for testing
@@ -272,6 +283,83 @@ describe('QueueManager', () => {
     await schedulerExecutor(task, 'check:wetv.vip');
 
     expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+  });
+
+  it('should refresh cookies when a check fails and cookieRefreshBrowser is configured', async () => {
+    const configWithRefresh = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 },
+          cookieRefreshBrowser: 'firefox',
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithRefresh as any), mockNotifier as any);
+
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockRefreshCookies).toHaveBeenCalledWith('https://wetv.vip/play/123');
+    // Retry is still scheduled after the refresh attempt
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
+  });
+
+  it('should not refresh cookies when a check fails without cookieRefreshBrowser', async () => {
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockRefreshCookies).not.toHaveBeenCalled();
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
+  });
+
+  it('should still schedule check retry when cookie refresh fails', async () => {
+    const configWithRefresh = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 },
+          cookieRefreshBrowser: 'firefox',
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithRefresh as any), mockNotifier as any);
+
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
+    mockRefreshCookies.mockRejectedValue(new Error('page.goto: NS_ERROR_NET_EMPTY_RESPONSE'));
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockRefreshCookies).toHaveBeenCalledWith('https://wetv.vip/play/123');
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
   });
 
   it('should proceed without cookies when cookieFile points to a missing file', async () => {

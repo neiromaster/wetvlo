@@ -8,6 +8,7 @@ import type { SeriesConfigResolved } from './config/config-schema';
 import { DownloadManager } from './downloader/download-manager';
 import { downloaderRegistry } from './downloader/downloader-registry';
 import { MgtvDownloader } from './downloader/impl/mgtv-downloader';
+import { YoukuDownloader } from './downloader/impl/youku-downloader';
 import { ConfigError } from './errors/custom-errors';
 import type { EventBus } from './events/event-bus.js';
 import { getEventBus } from './events/event-bus.js';
@@ -15,6 +16,7 @@ import { handlerRegistry } from './handlers/handler-registry';
 import { IQiyiHandler } from './handlers/impl/iqiyi-handler';
 import { MGTVHandler } from './handlers/impl/mgtv-handler';
 import { WeTVHandler } from './handlers/impl/wetv-handler';
+import { YoukuHandler } from './handlers/impl/youku-handler';
 import { CompositeNotifier } from './notifications/composite-notifier';
 import { ConsoleNotifier } from './notifications/console-notifier';
 import { NotificationLevel } from './notifications/notification-level';
@@ -121,11 +123,13 @@ export async function runApp(
   handlerRegistry.register(new WeTVHandler());
   handlerRegistry.register(new IQiyiHandler());
   handlerRegistry.register(new MGTVHandler());
+  handlerRegistry.register(new YoukuHandler());
   notifier.notify(NotificationLevel.DEBUG, `Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
   // Register custom downloaders (checked before the default yt-dlp downloader)
   downloaderRegistry.register(new MgtvDownloader());
-  notifier.notify(NotificationLevel.DEBUG, 'Registered custom downloaders: mgtv');
+  downloaderRegistry.register(new YoukuDownloader());
+  notifier.notify(NotificationLevel.DEBUG, 'Registered custom downloaders: mgtv, youku');
 
   // Create download manager
   const downloadManager = deps.createDownloadManager();

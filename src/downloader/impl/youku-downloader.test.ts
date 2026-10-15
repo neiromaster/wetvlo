@@ -65,7 +65,7 @@ function makeWrapper(result: Partial<YtdlpDownloadResult> = {}): YtdlpWrapper {
         ...result,
       }),
     ),
-  } as unknown as YtdlpWrapper;
+  };
 }
 
 describe('YoukuDownloader', () => {
@@ -101,17 +101,23 @@ describe('YoukuDownloader', () => {
     it('mints at download time and hands the best m3u8 to yt-dlp with referer, no cookies', async () => {
       const api = makeApi();
       const wrapper = makeWrapper();
+      const logs: string[] = [];
       const dl = new YoukuDownloader(api, wrapper);
 
-      const result = await dl.download(makeEpisode(), dir, 'E08', { cookieFile: undefined });
+      const result = await dl.download(makeEpisode(), dir, 'E08', {
+        cookieFile: undefined,
+        onLog: (m) => logs.push(m),
+      });
 
       expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', []);
       expect(wrapper.download).toHaveBeenCalledTimes(1);
       expect(wrapper.download).toHaveBeenCalledWith('http://pl-ali.youku.tv/hd2.m3u8?x=1', 'E08', dir, {
         args: ['--referer', 'https://www.youku.tv/'],
         onProgress: undefined,
-        onLog: undefined,
+        onLog: expect.any(Function),
       });
+      // best-overall == best-usable here: no degradation may be logged
+      expect(logs.join('\n')).not.toMatch(/degrad|unlocked/i);
       expect(result).toEqual({ filename: 'out/E08.mp4', allFiles: ['out/E08.mp4'] });
     });
 
@@ -226,7 +232,7 @@ describe('YoukuDownloader', () => {
       expect(logs.join('\n')).toContain('subtitle download failed');
     });
 
-    it('keeps the video when subtitle matching throws', async () => {
+    it('keeps the video when every subtitle download fails', async () => {
       const api = makeApi({
         fetchSubtitle: mock(async () => {
           throw new Error('boom');

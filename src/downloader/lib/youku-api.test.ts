@@ -315,6 +315,26 @@ describe('mintUps', () => {
 
     await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/trial|logged in|cookies/i);
   });
+
+  it('throws DownloadError surfacing unknown ups error codes with the server note', async () => {
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"ups":{},"error":{"code":-6005,"note":"账号异常"}}}})',
+    );
+
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/-6005/);
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/账号异常/);
+  });
+
+  it('normalizes partial stream/subtitle entries to defined strings', async () => {
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"video":{"title":"T"},"stream":[{"stream_type":"cmfv4hd"}],"subtitle":[{"subtitle_lang":"en"}]}}})',
+    );
+
+    const ups = await mintUps('XNjU3NzMxMTcxNg==', ['cna=1']);
+
+    expect(ups.streams[0]!.m3u8_url).toBe('');
+    expect(ups.subtitles[0]!.url).toBe('');
+  });
 });
 
 describe('pickBestStream', () => {
@@ -350,6 +370,22 @@ describe('pickBestStream', () => {
       ]),
     ).toThrow(DownloadError);
   });
+
+  it('breaks height ties deterministically, keeping the first stream', () => {
+    const first = { stream_type: 'cmfv4a', width: 1280, height: 720, drm_type: 'default', m3u8_url: 'http://x/a.m3u8' };
+    const second = {
+      stream_type: 'cmfv4b',
+      width: 1280,
+      height: 720,
+      drm_type: 'default',
+      m3u8_url: 'http://x/b.m3u8',
+    };
+
+    const { stream, degraded } = pickBestStream([first, second]);
+
+    expect(stream).toBe(first);
+    expect(degraded).toBe(false);
+  });
 });
 
 describe('matchYoukuSubLangs / subtitleLangTag', () => {
@@ -382,6 +418,10 @@ describe('extractVideoId', () => {
     expect(extractVideoId('https://www.youku.tv/nowplaying')).toBeNull();
     expect(extractVideoId('not a url')).toBeNull();
   });
+
+  it('extracts the encodevid from URLs with a query string', () => {
+    expect(extractVideoId('https://www.youku.tv/v/v_show/id_XNjU3NzMxMTcxNg==.html?spm=x')).toBe('XNjU3NzMxMTcxNg==');
+  });
 });
 
 describe('fetchSubtitle', () => {
@@ -407,5 +447,13 @@ describe('fetchSubtitle', () => {
   it('throws DownloadError on HTTP errors', async () => {
     global.fetch = mock(async () => new Response('gone', { status: 404 })) as unknown as typeof fetch;
     await expect(fetchSubtitle('http://sub.ykimg.com/en.ass')).rejects.toThrow(DownloadError);
+  });
+
+  it('wraps network failures in DownloadError', async () => {
+    global.fetch = mock(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    await expect(fetchSubtitle('http://sub.ykimg.com/en.ass')).rejects.toThrow(/subtitle request failed/);
   });
 });

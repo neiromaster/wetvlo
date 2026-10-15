@@ -229,7 +229,7 @@ const BIZ_PARAMS_BASE = {
 
 /** Shape of the ups inner payload this module consumes (rest is ignored). */
 type UpsInner = {
-  error?: { code?: number };
+  error?: { code?: number; note?: string };
   trial?: unknown;
   video?: { title?: string; seconds?: number };
   controller?: { max_stream_level?: number };
@@ -266,10 +266,15 @@ export async function mintUps(vid: string, cookiePairs: string[]): Promise<Youku
   const inner = await mtopGet<UpsInner>(UPS_API, UPS_VERSION, dataObj, cookiePairs);
 
   if (inner?.error?.code === -6004) {
+    const note = inner.error.note ? `: ${inner.error.note}` : '';
     throw new DownloadError(
-      'Youku risk control rejected the request (-6004) — re-export cookies from the browser, making sure the cna cookie is included',
+      `Youku risk control rejected the request (-6004) — re-export cookies from the browser, making sure the cna cookie is included${note}`,
       'https://www.youku.tv/',
     );
+  }
+  if (inner?.error?.code !== undefined) {
+    const note = inner.error?.note ? `: ${inner.error.note}` : '';
+    throw new DownloadError(`Youku ups error ${inner.error.code}${note}`, 'https://www.youku.tv/');
   }
   if (inner?.trial) {
     throw new DownloadError(
@@ -282,8 +287,17 @@ export async function mintUps(vid: string, cookiePairs: string[]): Promise<Youku
     title: inner?.video?.title ?? '',
     seconds: inner?.video?.seconds ?? 0,
     maxStreamLevel: inner?.controller?.max_stream_level ?? null,
-    streams: inner?.stream ?? [],
-    subtitles: inner?.subtitle ?? [],
+    streams: (inner?.stream ?? []).map((s) => ({
+      stream_type: String(s.stream_type ?? ''),
+      width: s.width ?? 0,
+      height: s.height ?? 0,
+      drm_type: s.drm_type,
+      m3u8_url: String(s.m3u8_url ?? ''),
+    })),
+    subtitles: (inner?.subtitle ?? []).map((s) => ({
+      subtitle_lang: String(s.subtitle_lang ?? ''),
+      url: String(s.url ?? ''),
+    })),
   };
 }
 
@@ -343,19 +357,27 @@ export function matchYoukuSubLangs(subs: YoukuSubtitle[], subLangs: string[]): Y
  * the CDN is a different company domain and the URLs need no auth (verified).
  */
 export async function fetchSubtitle(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': BROWSER_UA, Referer: 'https://www.youku.tv/' },
-    signal: AbortSignal.timeout(20_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { 'User-Agent': BROWSER_UA, Referer: 'https://www.youku.tv/' },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (error) {
+    throw new DownloadError(
+      `Youku subtitle request failed: ${error instanceof Error ? error.message : String(error)}`,
+      url,
+    );
+  }
   if (!res.ok) {
     throw new DownloadError(`Youku subtitle HTTP ${res.status}`, url);
   }
   return res.text();
 }
 
-/** Extract the encodevid from an episode URL (accepts the `id_` prefix or none). */
+/** Extract the encodevid from an episode URL (accepts the `id_` prefix or none; any `XN…` encodevid matches). */
 export function extractVideoId(url: string): string | null {
-  const match = url.match(/\/v_show\/(?:id_)?(XNj[A-Za-z0-9+/=]+)\.html/);
+  const match = url.match(/\/v_show\/(?:id_)?(XN[A-Za-z0-9+/=]+)\.html/);
   return match ? (match[1] ?? null) : null;
 }
 

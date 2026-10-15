@@ -1,10 +1,39 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { YtdlpWrapper } from './ytdlp-wrapper.js';
 
 describe('YtdlpWrapper output parsing', () => {
+  it('downloads into the same directory twice without EEXIST (bun mkdir recursive quirk)', async () => {
+    // Relative parent-style path that already exists: bun's
+    // fsPromises.mkdir(..., {recursive: true}) throws EEXIST on it, which
+    // killed every download after the first one. Cleanup must go through
+    // the resolved absolute path (bun rmSync rejects relative ".." too).
+    const dir = '../tmp/ytdlp-wrapper-eexist-probe';
+    const dirAbs = resolve(dir);
+    rmSync(dirAbs, { recursive: true, force: true });
+
+    mock.module('execa', () => ({
+      execa: mock(() => {
+        const subprocess = (async () => 'done')() as unknown as Record<string, unknown>;
+        subprocess.all = (async function* () {
+          yield '[download] Destination: out.mp4';
+        })();
+        return subprocess;
+      }),
+    }));
+
+    try {
+      const wrapper = new YtdlpWrapper();
+      await wrapper.download('https://example.com/video', 'ep', dir, {});
+      await wrapper.download('https://example.com/video', 'ep', dir, {});
+      expect(true).toBe(true);
+    } finally {
+      rmSync(dirAbs, { recursive: true, force: true });
+    }
+  });
+
   it('returns the merged output path when yt-dlp downloads separate video and audio formats', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ytdlp-wrapper-'));
 

@@ -17,13 +17,46 @@ type NetscapeCookie = {
 
 /**
  * Detect junk cookies whose domain was corrupted to a host-prefixed dot-domain
- * (e.g. `.www.iq.com`). Legitimate servers do not set `Domain=www.` cookies;
- * such entries are foreign cookies re-domained inside a corrupted cookie file.
- * Sent to the target site they bloat the Cookie header until the server starts
- * rejecting requests (HTTP 413 / dropped connections).
+ * (e.g. `.www.iq.com`). These arrive during runs as `Set-Cookie` with
+ * `Domain=www.<host>` on the visited site - observed with foreign cookies
+ * (GitHub, Microsoft, WordPress session cookies) re-domained to iq.com - and
+ * yt-dlp writes them back into the cookie file on exit. Sent to the target
+ * site they bloat the Cookie header until the server starts rejecting
+ * requests (HTTP 413 / dropped connections).
  */
 export function isJunkCookieDomain(domain: string): boolean {
   return domain.startsWith('.www.');
+}
+
+/**
+ * Remove junk cookies (see isJunkCookieDomain) from a Netscape cookie file
+ * in place. yt-dlp rewrites the `--cookies` file from its in-memory jar on
+ * exit, so junk accumulated from responses during the run must be stripped
+ * afterwards or the next run sends it back to the site.
+ *
+ * @returns the number of removed cookie lines
+ */
+export async function sanitizeCookieFile(cookieFile: string): Promise<number> {
+  if (!existsSync(cookieFile)) {
+    return 0;
+  }
+
+  const content = await readFile(cookieFile, 'utf-8');
+  const lines = content.split('\n');
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      return true;
+    }
+    return !isJunkCookieDomain(trimmed.split('\t')[0] ?? '');
+  });
+
+  if (kept.length === lines.length) {
+    return 0;
+  }
+
+  await writeFile(cookieFile, kept.join('\n'), 'utf-8');
+  return lines.length - kept.length;
 }
 
 /**

@@ -1,6 +1,7 @@
 import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import { execa } from 'execa';
+import { sanitizeCookieFile } from '../../utils/cookie-sync.js';
 
 export type YtdlpWrapperOptions = {
   /** Additional yt-dlp CLI arguments (flexible - any yt-dlp args) */
@@ -167,6 +168,14 @@ export class YtdlpWrapper {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const fullLog = outputBuffer.join('\n');
       throw new Error(`yt-dlp failed: ${errorMsg}\n\nLog output:\n${fullLog}`);
+    } finally {
+      // yt-dlp rewrites the --cookies file from its in-memory jar on exit
+      // (even on failures), and responses during the run can add `.www.*`
+      // junk cookies that bloat the Cookie header until the site starts
+      // rejecting requests (HTTP 413). Strip them so the jar cannot regress.
+      if (cookieFile) {
+        await sanitizeCookieFile(cookieFile);
+      }
     }
   }
 

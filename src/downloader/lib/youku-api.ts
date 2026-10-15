@@ -289,8 +289,8 @@ export async function mintUps(vid: string, cookiePairs: string[]): Promise<Youku
     maxStreamLevel: inner?.controller?.max_stream_level ?? null,
     streams: (inner?.stream ?? []).map((s) => ({
       stream_type: String(s.stream_type ?? ''),
-      width: s.width ?? 0,
-      height: s.height ?? 0,
+      width: Number(s.width ?? 0),
+      height: Number(s.height ?? 0),
       drm_type: s.drm_type,
       m3u8_url: String(s.m3u8_url ?? ''),
     })),
@@ -357,22 +357,24 @@ export function matchYoukuSubLangs(subs: YoukuSubtitle[], subLangs: string[]): Y
  * the CDN is a different company domain and the URLs need no auth (verified).
  */
 export async function fetchSubtitle(url: string): Promise<string> {
-  let res: Response;
+  let text: string;
   try {
-    res = await fetch(url, {
+    const res = await fetch(url, {
       headers: { 'User-Agent': BROWSER_UA, Referer: 'https://www.youku.tv/' },
       signal: AbortSignal.timeout(20_000),
     });
+    if (!res.ok) {
+      throw new DownloadError(`Youku subtitle HTTP ${res.status}`, url);
+    }
+    text = await res.text();
   } catch (error) {
+    if (error instanceof DownloadError) throw error;
     throw new DownloadError(
       `Youku subtitle request failed: ${error instanceof Error ? error.message : String(error)}`,
       url,
     );
   }
-  if (!res.ok) {
-    throw new DownloadError(`Youku subtitle HTTP ${res.status}`, url);
-  }
-  return res.text();
+  return text;
 }
 
 /** Extract the encodevid from an episode URL (accepts the `id_` prefix or none; any `XN…` encodevid matches). */

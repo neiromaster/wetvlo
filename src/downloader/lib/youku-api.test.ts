@@ -456,4 +456,18 @@ describe('fetchSubtitle', () => {
 
     await expect(fetchSubtitle('http://sub.ykimg.com/en.ass')).rejects.toThrow(/subtitle request failed/);
   });
+
+  it('wraps body-read failures in DownloadError', async () => {
+    global.fetch = mock(async () => {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => {
+          throw new TypeError('body read failed');
+        },
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await expect(fetchSubtitle('http://sub.ykimg.com/en.ass')).rejects.toThrow(/subtitle request failed/);
+  });
 });

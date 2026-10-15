@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
 
@@ -169,15 +169,23 @@ export async function mtopGet<T = unknown>(
       throw new CookieError(`Refusing to send youku cookies to non-youku host: ${url.host}`);
     }
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': BROWSER_UA,
-        Accept: '*/*',
-        Referer: 'https://www.youku.tv/',
-        Cookie: cookiePairs.join('; '),
-      },
-      signal: AbortSignal.timeout(20_000),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          Accept: '*/*',
+          Referer: 'https://www.youku.tv/',
+          Cookie: cookiePairs.join('; '),
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      throw new DownloadError(
+        `Youku request failed: ${error instanceof Error ? error.message : String(error)}`,
+        url.toString(),
+      );
+    }
     return { body: await res.text(), setCookie: res.headers.get('set-cookie') ?? '' };
   };
 
@@ -199,3 +207,169 @@ export async function mtopGet<T = unknown>(
   }
   return inner;
 }
+
+const UPS_API = 'mtop.youku.play.ups.appinfo.get';
+const UPS_VERSION = '1.1';
+
+/** Captured template values (2026-10-15). `current_showid` is server-ignored (verified: blank/wrong/absent all mint). */
+const BIZ_PARAMS_BASE = {
+  current_showid: '816853',
+  preferClarity: -1,
+  media_type: 'standard,subtitle',
+  app_ver: '9.8.10',
+  extag: 'EXT-X-PRIVINF',
+  play_ability: 16782592,
+  close_ability: 655360,
+  master_m3u8: 1,
+  skh: 1,
+  last_clarity: -1,
+  wdm: 1,
+  enc_ver: 2,
+};
+
+/** Shape of the ups inner payload this module consumes (rest is ignored). */
+type UpsInner = {
+  error?: { code?: number };
+  trial?: unknown;
+  video?: { title?: string; seconds?: number };
+  controller?: { max_stream_level?: number };
+  stream?: YoukuStream[];
+  subtitle?: YoukuSubtitle[];
+};
+
+/**
+ * Mint stream + subtitle URLs for one episode via the ups API.
+ *
+ * `utid` MUST be a device id the server already associates with these cookies:
+ * the `cna` cookie value works; a fresh random id trips risk control
+ * (`error.code === -6004`, "suspicious behavior", no streams). When `cna` is
+ * absent we still try a generated id — the -6004 branch below turns the
+ * inevitable rejection into an actionable error.
+ *
+ * Throws DownloadError on: risk control -6004, trial response (anonymous or
+ * expired cookies — VIP episodes get a 6-minute trial), or transport failures.
+ */
+export async function mintUps(vid: string, cookiePairs: string[]): Promise<YoukuUpsResult> {
+  const cna = cookiePairs.find((p) => p.startsWith('cna='))?.slice('cna='.length) ?? '';
+  const dataObj = {
+    steal_params: JSON.stringify({
+      ccode: '0597',
+      utid: cna || randomUUID(),
+      version: '9.8.10',
+      client_ip: '127.0.0.1',
+      client_ts: Math.floor(Date.now() / 1000),
+    }),
+    biz_params: JSON.stringify({ ...BIZ_PARAMS_BASE, vid, local_vid: vid }),
+    ad_params: '{}',
+  };
+
+  const inner = await mtopGet<UpsInner>(UPS_API, UPS_VERSION, dataObj, cookiePairs);
+
+  if (inner?.error?.code === -6004) {
+    throw new DownloadError(
+      'Youku risk control rejected the request (-6004) — re-export cookies from the browser, making sure the cna cookie is included',
+      'https://www.youku.tv/',
+    );
+  }
+  if (inner?.trial) {
+    throw new DownloadError(
+      'Youku: not logged in or cookies expired — the server issued a 6-minute trial; re-export cookies from a logged-in browser session',
+      'https://www.youku.tv/',
+    );
+  }
+
+  return {
+    title: inner?.video?.title ?? '',
+    seconds: inner?.video?.seconds ?? 0,
+    maxStreamLevel: inner?.controller?.max_stream_level ?? null,
+    streams: inner?.stream ?? [],
+    subtitles: inner?.subtitle ?? [],
+  };
+}
+
+export type PickedYoukuStream = { stream: YoukuStream; degraded: boolean };
+
+/**
+ * Best downloadable stream: highest height among streams with a real playlist
+ * URL. The `auto` entry carries inline master-playlist text in `m3u8_url` (not
+ * a URL) and is skipped; DRM-labeled streams (drm_type other than "default")
+ * never appear in plain responses but are excluded defensively.
+ */
+export function pickBestStream(streams: YoukuStream[]): PickedYoukuStream {
+  const height = (s: YoukuStream) => s.height || 0;
+  const usable = streams.filter(
+    (s) => s.m3u8_url.startsWith('http') && (s.drm_type === undefined || s.drm_type === 'default'),
+  );
+
+  const bestOverall = streams.reduce<YoukuStream | null>((a, b) => (a === null || height(b) > height(a) ? b : a), null);
+  if (bestOverall === null) {
+    throw new DownloadError('Youku returned no streams for this episode', '');
+  }
+  const bestUsable = usable.reduce<YoukuStream | null>((a, b) => (a === null || height(b) > height(a) ? b : a), null);
+  if (bestUsable === null) {
+    throw new DownloadError('All Youku streams are DRM-protected or unusable', '');
+  }
+  return { stream: bestUsable, degraded: height(bestOverall) > height(bestUsable) };
+}
+
+/** Filename tag for a subtitle track; Youku's `default` is the simplified-Chinese track. */
+export function subtitleLangTag(sub: YoukuSubtitle): string {
+  return sub.subtitle_lang === 'default' ? 'chs' : sub.subtitle_lang.toLowerCase();
+}
+
+/**
+ * Match subtitle entries against config `subLangs` patterns (yt-dlp-style
+ * globs, same semantics as the MGTV matcher): `chs.*`/`chs*` → prefix match,
+ * `chs` (no asterisk) → exact match. Patterns compare against the filename tag
+ * (`chs`, `cht`, `en`, …).
+ */
+export function matchYoukuSubLangs(subs: YoukuSubtitle[], subLangs: string[]): YoukuSubtitle[] {
+  if (subLangs.length === 0) return [];
+
+  const patterns = subLangs.map((pattern) => {
+    const base = pattern.toLowerCase().replace(/\.\*$/, '').replace(/\*$/, '');
+    return { base, exact: !pattern.includes('*') };
+  });
+
+  return subs.filter((s) => {
+    const tag = subtitleLangTag(s);
+    if (!tag) return false;
+    return patterns.some((p) => (p.exact ? tag === p.base : tag.startsWith(p.base)));
+  });
+}
+
+/**
+ * Fetch an unsigned subtitle file from the Youku CDN. Cookies are never sent:
+ * the CDN is a different company domain and the URLs need no auth (verified).
+ */
+export async function fetchSubtitle(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': BROWSER_UA, Referer: 'https://www.youku.tv/' },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    throw new DownloadError(`Youku subtitle HTTP ${res.status}`, url);
+  }
+  return res.text();
+}
+
+/** Extract the encodevid from an episode URL (accepts the `id_` prefix or none). */
+export function extractVideoId(url: string): string | null {
+  const match = url.match(/\/v_show\/(?:id_)?(XNj[A-Za-z0-9+/=]+)\.html/);
+  return match ? (match[1] ?? null) : null;
+}
+
+/** Injectable surface of everything YoukuDownloader needs from this module. */
+export type YoukuApi = {
+  extractVideoId(url: string): string | null;
+  readYoukuCookiePairs(cookieFile: string): Promise<string[]>;
+  mintUps(vid: string, cookiePairs: string[]): Promise<YoukuUpsResult>;
+  fetchSubtitle(url: string): Promise<string>;
+};
+
+export const youkuApi: YoukuApi = {
+  extractVideoId,
+  readYoukuCookiePairs,
+  mintUps,
+  fetchSubtitle,
+};

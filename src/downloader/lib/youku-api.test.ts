@@ -3,7 +3,17 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
-import { mtopGet, mtopSign, readYoukuCookiePairs } from './youku-api';
+import {
+  extractVideoId,
+  fetchSubtitle,
+  matchYoukuSubLangs,
+  mintUps,
+  mtopGet,
+  mtopSign,
+  pickBestStream,
+  readYoukuCookiePairs,
+  subtitleLangTag,
+} from './youku-api';
 
 describe('mtopSign', () => {
   it('produces the golden-vector signature for fixed inputs', () => {
@@ -180,5 +190,222 @@ describe('mtopGet', () => {
     stubFetch([{ body: '<html>502 Bad Gateway</html>' }]);
 
     await expect(mtopGet('mtop.youku.play.ups.appinfo.get', '1.1', {}, [])).rejects.toThrow(DownloadError);
+  });
+
+  it('wraps network failures in DownloadError', async () => {
+    global.fetch = mock(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    await expect(mtopGet('mtop.youku.play.ups.appinfo.get', '1.1', {}, ['cna=1'])).rejects.toThrow(
+      /Youku request failed/,
+    );
+  });
+});
+
+describe('mintUps', () => {
+  const originalFetch = global.fetch;
+  let captured: { url: string; headers: Record<string, string> }[];
+
+  beforeEach(() => {
+    captured = [];
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function stubFetch(body: string) {
+    global.fetch = mock(async (input: any, init?: any) => {
+      captured.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string> });
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  /** Realistic ups payload (shape copied from live responses 2026-10-15/16). */
+  const UPS_OK = JSON.stringify({
+    api: 'mtop.youku.play.ups.appinfo.get',
+    ret: ['SUCCESS::调用成功'],
+    data: {
+      data: {
+        controller: { max_stream_level: 4 },
+        video: { title: 'Good Night 08', seconds: 2749.32 },
+        stream: [
+          { stream_type: 'auto', width: 640, height: 360, drm_type: 'default', m3u8_url: '#EXTM3U inline text' },
+          {
+            stream_type: 'cmfv4sd',
+            width: 640,
+            height: 360,
+            drm_type: 'default',
+            m3u8_url: 'http://pl-ali.youku.tv/sd.m3u8?x=1',
+          },
+          {
+            stream_type: 'cmfv4hd',
+            width: 864,
+            height: 486,
+            drm_type: 'default',
+            m3u8_url: 'http://pl-ali.youku.tv/hd.m3u8?x=1',
+          },
+          {
+            stream_type: 'cmfv4hd2',
+            width: 1280,
+            height: 720,
+            drm_type: 'default',
+            m3u8_url: 'http://pl-ali.youku.tv/hd2.m3u8?x=1',
+          },
+        ],
+        subtitle: [
+          { subtitle_lang: 'default', url: 'http://sub.ykimg.com/chs.ass' },
+          { subtitle_lang: 'cht', url: 'http://sub.ykimg.com/cht.ass' },
+          { subtitle_lang: 'en', url: 'http://sub.ykimg.com/en.ass' },
+        ],
+      },
+    },
+  });
+
+  it('mints the ups payload and maps the result', async () => {
+    stubFetch(`mtopjsonp1(${UPS_OK})`);
+    const pairs = ['cna=CNA-DEVICE-ID-24', '_m_h5_tk=T_1'];
+
+    const ups = await mintUps('XNjU3NzMxMTcxNg==', pairs);
+
+    expect(ups.title).toBe('Good Night 08');
+    expect(ups.seconds).toBe(2749.32);
+    expect(ups.maxStreamLevel).toBe(4);
+    expect(ups.streams).toHaveLength(4);
+    expect(ups.subtitles).toHaveLength(3);
+
+    // request template: cna is the utid, no ckey, vid/local_vid = target, ad_params "{}"
+    const dataObj = JSON.parse(new URL(captured[0]!.url).searchParams.get('data')!);
+    const sp = JSON.parse(dataObj.steal_params);
+    expect(sp.utid).toBe('CNA-DEVICE-ID-24');
+    expect(sp.ccode).toBe('0597');
+    expect(sp).not.toHaveProperty('ckey');
+    expect(typeof sp.client_ts).toBe('number');
+    const biz = JSON.parse(dataObj.biz_params);
+    expect(biz.vid).toBe('XNjU3NzMxMTcxNg==');
+    expect(biz.local_vid).toBe('XNjU3NzMxMTcxNg==');
+    expect(biz.master_m3u8).toBe(1);
+    expect(dataObj.ad_params).toBe('{}');
+  });
+
+  it('falls back to a generated utid when cna is absent', async () => {
+    stubFetch(`mtopjsonp1(${UPS_OK})`);
+
+    await mintUps('XNjU3NzMxMTcxNg==', ['_m_h5_tk=T_1']);
+
+    const dataObj = JSON.parse(new URL(captured[0]!.url).searchParams.get('data')!);
+    const sp = JSON.parse(dataObj.steal_params);
+    expect(typeof sp.utid).toBe('string');
+    expect(sp.utid.length).toBeGreaterThan(0);
+  });
+
+  it('throws DownloadError with a re-export hint on risk control -6004', async () => {
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"ups":{},"error":{"code":-6004,"note":"该账号检测到有可疑违规、侵权等行为，已限制播放"}}}})',
+    );
+
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/-6004.*cna/s);
+  });
+
+  it('throws DownloadError on a trial response (not logged in / cookies expired)', async () => {
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"controller":{"max_stream_level":4},"video":{"title":"Good Night 08","seconds":2749.32},"stream":[{"stream_type":"cmfv4hd2","width":1280,"height":720,"drm_type":"default","m3u8_url":"http://pl-ali.youku.tv/hd2.m3u8?x=1"}],"subtitle":[],"trial":{"trial_str":"您可以免费试看前6分钟","time":360,"type":"time"}}}})',
+    );
+
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/trial|logged in|cookies/i);
+  });
+});
+
+describe('pickBestStream', () => {
+  it('picks the highest non-DRM stream with a real playlist URL (auto is inline text)', () => {
+    const { stream, degraded } = pickBestStream([
+      { stream_type: 'auto', width: 640, height: 360, drm_type: 'default', m3u8_url: '#EXTM3U inline text' },
+      { stream_type: 'cmfv4sd', width: 640, height: 360, drm_type: 'default', m3u8_url: 'http://x/sd.m3u8' },
+      { stream_type: 'cmfv4hd', width: 864, height: 486, drm_type: 'default', m3u8_url: 'http://x/hd.m3u8' },
+      { stream_type: 'cmfv4hd2', width: 1280, height: 720, drm_type: 'default', m3u8_url: 'http://x/hd2.m3u8' },
+    ]);
+    expect(stream.stream_type).toBe('cmfv4hd2');
+    expect(degraded).toBe(false);
+  });
+
+  it('skips DRM-labeled streams and reports the degradation', () => {
+    const { stream, degraded } = pickBestStream([
+      { stream_type: 'cmfv4hd3', width: 1920, height: 1080, drm_type: 'widevine', m3u8_url: 'http://x/hd3.m3u8' },
+      { stream_type: 'cmfv4hd', width: 864, height: 486, drm_type: 'default', m3u8_url: 'http://x/hd.m3u8' },
+    ]);
+    expect(stream.stream_type).toBe('cmfv4hd');
+    expect(degraded).toBe(true);
+  });
+
+  it('throws when there are no streams at all', () => {
+    expect(() => pickBestStream([])).toThrow(DownloadError);
+  });
+
+  it('throws when every stream is DRM or inline text', () => {
+    expect(() =>
+      pickBestStream([
+        { stream_type: 'auto', width: 640, height: 360, drm_type: 'default', m3u8_url: '#EXTM3U inline text' },
+        { stream_type: 'cmfv4hd3', width: 1920, height: 1080, drm_type: 'widevine', m3u8_url: 'http://x/hd3.m3u8' },
+      ]),
+    ).toThrow(DownloadError);
+  });
+});
+
+describe('matchYoukuSubLangs / subtitleLangTag', () => {
+  const SUBS = [
+    { subtitle_lang: 'default', url: 'http://sub.ykimg.com/chs.ass' },
+    { subtitle_lang: 'cht', url: 'http://sub.ykimg.com/cht.ass' },
+    { subtitle_lang: 'en', url: 'http://sub.ykimg.com/en.ass' },
+    { subtitle_lang: 'kr', url: 'http://sub.ykimg.com/kr.ass' },
+  ];
+
+  it('maps default to chs and matches prefix and exact patterns', () => {
+    expect(subtitleLangTag(SUBS[0]!)).toBe('chs');
+    expect(subtitleLangTag(SUBS[1]!)).toBe('cht');
+
+    expect(matchYoukuSubLangs(SUBS, ['chs', 'en']).map((s) => s.subtitle_lang)).toEqual(['default', 'en']);
+    expect(matchYoukuSubLangs(SUBS, ['zh.*']).map((s) => s.subtitle_lang)).toEqual([]);
+    expect(matchYoukuSubLangs(SUBS, ['c']).map((s) => s.subtitle_lang)).toEqual([]);
+    expect(matchYoukuSubLangs(SUBS, ['c*']).map((s) => s.subtitle_lang)).toEqual(['default', 'cht']);
+    expect(matchYoukuSubLangs(SUBS, [])).toEqual([]);
+  });
+});
+
+describe('extractVideoId', () => {
+  it('extracts the encodevid with and without the id_ prefix', () => {
+    expect(extractVideoId('https://www.youku.tv/v/v_show/id_XNjU3NzMxMTcxNg==.html')).toBe('XNjU3NzMxMTcxNg==');
+    expect(extractVideoId('https://www.youku.tv/v/v_show/XNjU2Mzg5MzA4OA==.html')).toBe('XNjU2Mzg5MzA4OA==');
+  });
+
+  it('returns null for non-episode URLs and garbage', () => {
+    expect(extractVideoId('https://www.youku.tv/nowplaying')).toBeNull();
+    expect(extractVideoId('not a url')).toBeNull();
+  });
+});
+
+describe('fetchSubtitle', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('fetches the subtitle text without cookies', async () => {
+    let capturedInit: any;
+    global.fetch = mock(async (_input: any, init?: any) => {
+      capturedInit = init;
+      return new Response('SUBTITLE TEXT', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const text = await fetchSubtitle('http://sub.ykimg.com/en.ass');
+    expect(text).toBe('SUBTITLE TEXT');
+    expect(capturedInit?.headers?.Referer).toBe('https://www.youku.tv/');
+    expect(capturedInit?.headers).not.toHaveProperty('Cookie');
+  });
+
+  it('throws DownloadError on HTTP errors', async () => {
+    global.fetch = mock(async () => new Response('gone', { status: 404 })) as unknown as typeof fetch;
+    await expect(fetchSubtitle('http://sub.ykimg.com/en.ass')).rejects.toThrow(DownloadError);
   });
 });

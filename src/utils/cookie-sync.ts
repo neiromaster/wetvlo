@@ -16,6 +16,17 @@ type NetscapeCookie = {
 };
 
 /**
+ * Detect junk cookies whose domain was corrupted to a host-prefixed dot-domain
+ * (e.g. `.www.iq.com`). Legitimate servers do not set `Domain=www.` cookies;
+ * such entries are foreign cookies re-domained inside a corrupted cookie file.
+ * Sent to the target site they bloat the Cookie header until the server starts
+ * rejecting requests (HTTP 413 / dropped connections).
+ */
+export function isJunkCookieDomain(domain: string): boolean {
+  return domain.startsWith('.www.');
+}
+
+/**
  * CookieRefreshManager - Singleton class for managing Playwright browser sessions
  *
  * Features:
@@ -256,7 +267,12 @@ export class CookieRefreshManager {
     }
     const content = await readFile(cookieFile, 'utf-8');
     const netscape = this.parseNetscapeCookies(content);
-    const playwrightCookies = this.toPlaywrightCookies(netscape);
+    const safeNetscape = netscape.filter((c) => !isJunkCookieDomain(c.domain));
+    const skipped = netscape.length - safeNetscape.length;
+    if (skipped > 0) {
+      notifier.notify(NotificationLevel.INFO, `Skipped ${skipped} junk cookies with .www.* domains`);
+    }
+    const playwrightCookies = this.toPlaywrightCookies(safeNetscape);
     if (playwrightCookies.length > 0) {
       await context.addCookies(playwrightCookies);
       notifier.notify(NotificationLevel.INFO, `Imported ${playwrightCookies.length} cookies into Playwright context`);
@@ -275,8 +291,8 @@ export class CookieRefreshManager {
     cookieFile: string,
     notifier: import('../notifications/notifier.js').Notifier,
   ): Promise<void> {
-    // Get ALL cookies from context (no filtering!)
-    const allCookies = await context.cookies();
+    // Get ALL cookies from context, minus junk cookies so the file self-heals
+    const allCookies = (await context.cookies()).filter((c) => !isJunkCookieDomain(c.domain || ''));
 
     // Write all cookies to file
     const serialized = this.serializeNetscapeCookies(allCookies);

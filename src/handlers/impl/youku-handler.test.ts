@@ -67,6 +67,23 @@ describe('YoukuHandler', () => {
       expect(episodes).toHaveLength(10);
     });
 
+    it('tolerates a malformed anchor slice and keeps the intact episodes', async () => {
+      // Corrupt item: braces still balance (so the balanced-brace scan finds an
+      // end and JSON.parse runs) but the payload is invalid JSON — the per-item
+      // try/catch must drop it silently while the intact sibling survives.
+      const intact =
+        '{"type":10013,"data":{"videoType":"正片","title":"Good Night 01","stage":1,"action":{"value":"VID1"}}}';
+      const corrupt =
+        '{"type":10013,"data":{"videoType" "正片","title":"Good Night 02","stage":2,"action":{"value":"VID2"}}}';
+      stubPage(`<html><body><script>{"items":[${intact},${corrupt}]}</script></body></html>`);
+
+      const episodes = await handler.extractEpisodes(EP_URL);
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.number).toBe(1);
+      expect(episodes[0]?.title).toBe('Good Night 01');
+    });
+
     it('returns [] when the anthology blob is missing (structural change)', async () => {
       stubPage('<html><body>unexpected structure</body></html>');
 

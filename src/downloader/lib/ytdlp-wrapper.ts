@@ -98,7 +98,8 @@ export class YtdlpWrapper {
             allFiles.add(subMatch[1]);
           }
 
-          const mergeMatch = text.match(/\[merge\] Merging formats into "(.*)"/);
+          // yt-dlp prints the merge tag as "[Merger]" (older builds "[merge]")
+          const mergeMatch = text.match(/\[merger\] Merging formats into "(.*)"/i);
           if (mergeMatch) {
             filename = mergeMatch[1];
             if (filename) allFiles.add(filename);

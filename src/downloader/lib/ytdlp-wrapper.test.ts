@@ -4,6 +4,33 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { YtdlpWrapper } from './ytdlp-wrapper.js';
 
+describe('YtdlpWrapper output parsing', () => {
+  it('returns the merged output path when yt-dlp downloads separate video and audio formats', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ytdlp-wrapper-'));
+
+    mock.module('execa', () => ({
+      execa: mock(() => {
+        const subprocess = (async () => 'done')() as unknown as Record<string, unknown>;
+        subprocess.all = (async function* () {
+          // Dual-format DASH sequence as yt-dlp prints it: the last
+          // Destination is the audio stream, which [Merger] then deletes.
+          yield '[download] Destination: downloads\\Ep - 01.f543.mp4';
+          yield '[download] Destination: downloads\\Ep - 01.faac-aac_1.mp4';
+          yield '[Merger] Merging formats into "downloads\\Ep - 01.mp4"';
+          yield '[download] Deleting original file downloads\\Ep - 01.f543.mp4 (pass -k to keep)';
+        })();
+        return subprocess;
+      }),
+    }));
+
+    const wrapper = new YtdlpWrapper();
+    const result = await wrapper.download('https://example.com/video.m3u8', 'Ep - 01', dir, {});
+
+    expect(result.filename).toBe('downloads\\Ep - 01.mp4');
+    expect(result.allFiles).toContain('downloads\\Ep - 01.mp4');
+  });
+});
+
 describe('YtdlpWrapper cookie file sanitization', () => {
   it('removes .www.* junk from the cookie file after yt-dlp exits (dump-back simulation)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ytdlp-wrapper-'));

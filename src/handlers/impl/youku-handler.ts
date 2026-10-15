@@ -70,7 +70,7 @@ export class YoukuHandler extends BaseHandler {
   /**
    * Pull every `type:10013` node out of the SSR HTML. The anthology JSON also
    * exists as a `\"`-escaped string copy which the plain `"type":10013` anchor
-   * cannot match (verified: 26 plain anchors = exactly 2 × (container + 11
+   * cannot match (verified: 26 plain anchors = exactly 2 × (container + 10
    * episodes + 2 trailers)). Each anchor is expanded to its enclosing object
    * with a balanced-brace scan (string/escape aware) and parsed individually;
    * a malformed slice is ignored — zero items overall triggers the WARN path.

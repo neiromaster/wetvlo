@@ -401,10 +401,23 @@ describe('matchYoukuSubLangs / subtitleLangTag', () => {
     expect(subtitleLangTag(SUBS[1]!)).toBe('cht');
 
     expect(matchYoukuSubLangs(SUBS, ['chs', 'en']).map((s) => s.subtitle_lang)).toEqual(['default', 'en']);
-    expect(matchYoukuSubLangs(SUBS, ['zh.*']).map((s) => s.subtitle_lang)).toEqual([]);
+    expect(matchYoukuSubLangs(SUBS, ['zh.*']).map((s) => s.subtitle_lang)).toEqual(['default', 'cht']);
     expect(matchYoukuSubLangs(SUBS, ['c']).map((s) => s.subtitle_lang)).toEqual([]);
     expect(matchYoukuSubLangs(SUBS, ['c*']).map((s) => s.subtitle_lang)).toEqual(['default', 'cht']);
     expect(matchYoukuSubLangs(SUBS, [])).toEqual([]);
+  });
+
+  it('matches zh-family patterns against the chs/cht tags like other domains do', () => {
+    // `zh.*` already matches MGTV's zh_cn/zh_hk codes; zho/zh-hans/zh-hant
+    // must reach Youku's chs/cht the same way, exact or prefixed.
+    expect(matchYoukuSubLangs(SUBS, ['zho.*']).map((s) => s.subtitle_lang)).toEqual(['default', 'cht']);
+    expect(matchYoukuSubLangs(SUBS, ['zh-hans']).map((s) => s.subtitle_lang)).toEqual(['default']);
+    expect(matchYoukuSubLangs(SUBS, ['zh-hant.*']).map((s) => s.subtitle_lang)).toEqual(['cht']);
+    expect(matchYoukuSubLangs(SUBS, ['zh']).map((s) => s.subtitle_lang)).toEqual(['default', 'cht']);
+
+    // Non-Chinese patterns stay untouched.
+    expect(matchYoukuSubLangs(SUBS, ['ru.*']).map((s) => s.subtitle_lang)).toEqual([]);
+    expect(matchYoukuSubLangs(SUBS, ['en.*']).map((s) => s.subtitle_lang)).toEqual(['en']);
   });
 });
 

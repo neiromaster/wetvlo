@@ -332,10 +332,21 @@ export function subtitleLangTag(sub: YoukuSubtitle): string {
 }
 
 /**
+ * Aliases letting the shared `zh`-family config patterns (`zh.*`, `zho.*`,
+ * `zh-hans`, …) reach Youku's idiosyncratic `chs`/`cht` track codes — on MGTV
+ * `zh.*` already matches `zh_cn`/`zh_hk`, so user config carries over.
+ */
+const ZH_TAG_ALIASES: Record<string, string[]> = {
+  chs: ['zh', 'zho', 'zh-hans'],
+  cht: ['zh', 'zho', 'zh-hant'],
+};
+
+/**
  * Match subtitle entries against config `subLangs` patterns (yt-dlp-style
  * globs, same semantics as the MGTV matcher): `chs.*`/`chs*` → prefix match,
  * `chs` (no asterisk) → exact match. Patterns compare against the filename tag
- * (`chs`, `cht`, `en`, …).
+ * (`chs`, `cht`, `en`, …) and, for the Chinese tracks, their `zh`-family
+ * aliases.
  */
 export function matchYoukuSubLangs(subs: YoukuSubtitle[], subLangs: string[]): YoukuSubtitle[] {
   if (subLangs.length === 0) return [];
@@ -348,7 +359,8 @@ export function matchYoukuSubLangs(subs: YoukuSubtitle[], subLangs: string[]): Y
   return subs.filter((s) => {
     const tag = subtitleLangTag(s);
     if (!tag) return false;
-    return patterns.some((p) => (p.exact ? tag === p.base : tag.startsWith(p.base)));
+    const names = [tag, ...(ZH_TAG_ALIASES[tag] ?? [])];
+    return patterns.some((p) => names.some((name) => (p.exact ? name === p.base : name.startsWith(p.base))));
   });
 }
 

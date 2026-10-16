@@ -95,8 +95,13 @@ export class DownloadManager {
       if (downloadOptions.tempDir && downloadOptions.tempDir !== downloadOptions.downloadDir) {
         notifier.notify(NotificationLevel.INFO, `Moving to ${downloadOptions.downloadDir}...`);
 
-        // Ensure download directory exists
-        await fsPromises.mkdir(downloadOptions.downloadDir, { recursive: true });
+        // Ensure download directory exists (same bun EEXIST quirk as
+        // ytdlp-wrapper.ts for existing relative ".." paths)
+        await fsPromises
+          .mkdir(downloadOptions.downloadDir, { recursive: true })
+          .catch((error: NodeJS.ErrnoException) => {
+            if (error?.code !== 'EEXIST') throw error;
+          });
 
         for (const file of result.allFiles) {
           try {

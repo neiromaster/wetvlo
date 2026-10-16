@@ -34,6 +34,17 @@
   "overrides": [
     {
       "includes": [
+        "src/handlers/impl/fixtures/**"
+      ],
+      "linter": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": [
         "**/*.test.{ts,tsx,mts,cts}",
         "**/*.spec.{ts,tsx,mts,cts}"
       ],

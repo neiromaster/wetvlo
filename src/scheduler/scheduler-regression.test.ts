@@ -51,6 +51,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
         backoffMultiplier: 2,
         jitterPercentage: 10,
         minDuration: 0,
+        subsBeforeVideo: false,
       },
       notifications: {
         consoleMinLevel: 'info' as const,
@@ -76,6 +77,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
         backoffMultiplier: 2,
         jitterPercentage: 10,
         minDuration: 0,
+        subsBeforeVideo: false,
       },
       notifications: {
         consoleMinLevel: 'info' as const,
@@ -101,6 +103,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
         backoffMultiplier: 2,
         jitterPercentage: 10,
         minDuration: 0,
+        subsBeforeVideo: false,
       },
       notifications: {
         consoleMinLevel: 'info' as const,
@@ -157,6 +160,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
             backoffMultiplier: 2,
             jitterPercentage: 10,
             minDuration: 0,
+            subsBeforeVideo: false,
           },
           notifications: {
             consoleMinLevel: 'info' as const,
@@ -182,6 +186,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
             backoffMultiplier: 2,
             jitterPercentage: 10,
             minDuration: 0,
+            subsBeforeVideo: false,
           },
           notifications: {
             consoleMinLevel: 'info' as const,
@@ -345,6 +350,7 @@ describe('Scheduler Regression Tests - Multi-Domain Scheduling', () => {
           backoffMultiplier: 2,
           jitterPercentage: 10,
           minDuration: 0,
+          subsBeforeVideo: false,
         },
         notifications: {
           consoleMinLevel: 'info' as const,

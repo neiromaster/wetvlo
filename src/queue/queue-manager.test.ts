@@ -445,6 +445,51 @@ describe('QueueManager', () => {
     );
   });
 
+  it('should pass express episodes through when download.subsBeforeVideo is true', async () => {
+    const configWithSubsBeforeVideo = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10, subsBeforeVideo: true },
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithSubsBeforeVideo as any), mockNotifier as any);
+
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const expressEp = [{ number: 4, url: 'url4', type: EpisodeType.EXPRESS, extractedAt: new Date() }];
+    mockHandler.extractEpisodes.mockResolvedValue(expressEp as any);
+
+    await schedulerExecutor({ seriesUrl: 'https://wetv.vip/play/123', attemptNumber: 1 }, 'check:wetv.vip');
+
+    expect(mockScheduler.addTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ episode: expressEp[0] }),
+      0,
+    );
+  });
+
+  it('should filter express episodes out without download.subsBeforeVideo', async () => {
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const expressEp = [{ number: 4, url: 'url4', type: EpisodeType.EXPRESS, extractedAt: new Date() }];
+    mockHandler.extractEpisodes.mockResolvedValue(expressEp as any);
+
+    await schedulerExecutor({ seriesUrl: 'https://wetv.vip/play/123', attemptNumber: 1 }, 'check:wetv.vip');
+
+    // No download task; the check falls into the "no new episodes" requeue flow
+    expect(mockScheduler.addTask).not.toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ episode: expressEp[0] }),
+      0,
+    );
+  });
+
   it('should execute download task successfully', async () => {
     const task = {
       seriesUrl: 'https://wetv.vip/play/123',

@@ -6,6 +6,7 @@ export type DownloadOptions = {
   cookieFile?: string;
   minDuration: number;
   subLangs?: string[];
+  subsBeforeVideo: boolean;
 };
 
 export function extractDownloadOptions(resolvedConfig: ResolvedConfig<'series'>): DownloadOptions {
@@ -15,5 +16,6 @@ export function extractDownloadOptions(resolvedConfig: ResolvedConfig<'series'>)
     cookieFile: resolvedConfig.cookieFile,
     minDuration: resolvedConfig.download.minDuration,
     subLangs: resolvedConfig.subLangs,
+    subsBeforeVideo: resolvedConfig.download.subsBeforeVideo,
   };
 }

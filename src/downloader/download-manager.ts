@@ -65,6 +65,7 @@ export class DownloadManager {
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
         cookieFile: downloadOptions.cookieFile,
         subLangs: downloadOptions.subLangs,
+        subsOnly: downloadOptions.subsBeforeVideo,
         onProgress: (progress) => notifier.progress(progress),
         onLog: (message) => notifier.notify(NotificationLevel.INFO, message),
       });
@@ -72,22 +73,29 @@ export class DownloadManager {
       // End progress display (add newline)
       notifier.endProgress();
 
+      // A subs-only result (locked/TVOD episode, subsBeforeVideo enabled) has
+      // no video to verify — the subtitle files are the whole delivery
+      const isSubsOnly = result.subsOnly === true;
+
       // Verify file exists and has size
-      const fileSize = this.verifyDownload(result.filename);
+      let fileSize = 0;
+      if (!isSubsOnly) {
+        fileSize = this.verifyDownload(result.filename);
 
-      if (fileSize === 0) {
-        await this.cleanupFiles(result.allFiles);
-        throw new Error('Downloaded file is empty or does not exist');
-      }
-
-      // Verify duration if required
-      if (downloadOptions.minDuration > 0) {
-        const fullPath = resolve(result.filename);
-        const duration = await VideoValidator.getVideoDuration(fullPath, notifier);
-        if (duration < downloadOptions.minDuration) {
-          // Delete all downloaded files
+        if (fileSize === 0) {
           await this.cleanupFiles(result.allFiles);
-          throw new Error(`Video duration ${duration}s is less than minimum ${downloadOptions.minDuration}s`);
+          throw new Error('Downloaded file is empty or does not exist');
+        }
+
+        // Verify duration if required
+        if (downloadOptions.minDuration > 0) {
+          const fullPath = resolve(result.filename);
+          const duration = await VideoValidator.getVideoDuration(fullPath, notifier);
+          if (duration < downloadOptions.minDuration) {
+            // Delete all downloaded files
+            await this.cleanupFiles(result.allFiles);
+            throw new Error(`Video duration ${duration}s is less than minimum ${downloadOptions.minDuration}s`);
+          }
         }
       }
 
@@ -127,7 +135,17 @@ export class DownloadManager {
         }
       }
 
-      // Add to state
+      // Add to state — subs-only episodes carry the "NN:subs" marker so a
+      // later check retries them and upgrades to the full video
+      if (isSubsOnly) {
+        await this.stateManager.addSubsOnlyEpisode(statePath, seriesName, episode.number);
+        notifier.notify(
+          NotificationLevel.SUCCESS,
+          `${seriesName} - ${paddedNumber}: subtitles only (video pending) — ${result.allFiles.length} file(s)`,
+        );
+        return true;
+      }
+
       await this.stateManager.addDownloadedEpisode(statePath, seriesName, episode.number);
 
       notifier.notify(

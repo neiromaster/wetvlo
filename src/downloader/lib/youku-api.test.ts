@@ -316,6 +316,39 @@ describe('mintUps', () => {
     await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/trial|logged in|cookies/i);
   });
 
+  it('returns the trial payload with allowTrial instead of throwing (subs survive)', async () => {
+    // Live-verified 2026-10-16: trial payloads carry the full subtitle array
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"controller":{"max_stream_level":4},"video":{"title":"Good Night 09","seconds":3151.84},"stream":[{"stream_type":"cmfv4hd2","width":1280,"height":720,"drm_type":"default","m3u8_url":"http://pl-ali.youku.tv/hd2.m3u8?x=1"}],"subtitle":[{"subtitle_lang":"default","url":"http://sub.ykimg.com/chs.ass"},{"subtitle_lang":"cht","url":"http://sub.ykimg.com/cht.ass"},{"subtitle_lang":"en","url":"http://sub.ykimg.com/en.ass"}],"trial":{"trial_str":"您可以免费试看前6分钟","time":360,"type":"time","episodes":[]}}}})',
+    );
+
+    const ups = await mintUps('XNjU3NzMxMTcxNg==', ['cna=1'], { allowTrial: true });
+
+    expect(ups.trial).toBe(true);
+    expect(ups.title).toBe('Good Night 09');
+    expect(ups.seconds).toBe(3151.84);
+    expect(ups.subtitles.map((s) => s.subtitle_lang)).toEqual(['default', 'cht', 'en']);
+    expect(ups.subtitles.every((s) => s.url.startsWith('http'))).toBe(true);
+    // trial stream entries are 6-minute previews — still mapped, callers must not use them
+    expect(ups.streams).toHaveLength(1);
+  });
+
+  it('a normal payload is not flagged as trial', async () => {
+    stubFetch(`mtopjsonp1(${UPS_OK})`);
+
+    const ups = await mintUps('XNjU3NzMxMTcxNg==', ['cna=1'], { allowTrial: true });
+
+    expect(ups.trial).toBe(false);
+  });
+
+  it('allowTrial does not bypass risk control -6004 (no data there)', async () => {
+    stubFetch(
+      'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"ups":{},"error":{"code":-6004,"note":"该账号检测到有可疑违规、侵权等行为，已限制播放"}}}})',
+    );
+
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'], { allowTrial: true })).rejects.toThrow(/-6004.*cna/s);
+  });
+
   it('throws DownloadError surfacing unknown ups error codes with the server note', async () => {
     stubFetch(
       'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"ups":{},"error":{"code":-6005,"note":"账号异常"}}}})',

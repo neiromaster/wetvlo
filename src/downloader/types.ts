@@ -1,16 +1,20 @@
 import type { Episode } from '../types/episode.types';
 
 export type DownloadResult = {
-  /** Main file path (video) */
+  /** Main file path (video); '' when subsOnly */
   filename: string;
   /** All downloaded/generated files (video, subs, etc.) */
   allFiles: string[];
+  /** No video was available (locked/TVOD); allFiles holds subtitles only */
+  subsOnly?: boolean;
 };
 
 export type DownloaderOptions = {
   cookieFile?: string;
   /** List of subtitle languages to download (e.g., ['en', 'ru']) */
   subLangs?: string[];
+  /** Allow a subtitles-only result when the video is locked/trial (TVOD) */
+  subsOnly?: boolean;
   /** Callback for progress updates (e.g. percentage, ETA) - usually printed on same line */
   onProgress?: (progress: string) => void;
   /** Callback for log messages (e.g. info, extracting) - printed as new lines */

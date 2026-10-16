@@ -109,7 +109,7 @@ describe('YoukuDownloader', () => {
         onLog: (m) => logs.push(m),
       });
 
-      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', []);
+      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', [], { allowTrial: false });
       expect(wrapper.download).toHaveBeenCalledTimes(1);
       expect(wrapper.download).toHaveBeenCalledWith('http://pl-ali.youku.tv/hd2.m3u8?x=1', 'E08', dir, {
         args: ['--referer', 'https://www.youku.tv/'],
@@ -133,7 +133,7 @@ describe('YoukuDownloader', () => {
       });
 
       expect(api.readYoukuCookiePairs).toHaveBeenCalledWith(join(dir, 'cookies.txt'));
-      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', ['cna=CNA-1', 'P_sck=S-1']);
+      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', ['cna=CNA-1', 'P_sck=S-1'], { allowTrial: false });
       expect(logs.join('\n')).toContain('loaded 2 youku cookies');
       // cookie VALUES never appear in logs
       expect(logs.join('\n')).not.toContain('CNA-1');
@@ -258,6 +258,83 @@ describe('YoukuDownloader', () => {
       await dl.download(makeEpisode(), dir, 'E08', { subLangs: [] });
 
       expect(api.fetchSubtitle).not.toHaveBeenCalled();
+    });
+
+    it('mints with allowTrial when subsOnly is requested', async () => {
+      const api = makeApi();
+      const dl = new YoukuDownloader(api, makeWrapper());
+
+      await dl.download(makeEpisode(), dir, 'E08', { subsOnly: true });
+
+      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', [], { allowTrial: true });
+    });
+
+    it('returns a subs-only result for a trial payload and never calls yt-dlp', async () => {
+      // trial payload as minted live on a TVOD episode 2026-10-16: full subs, preview streams
+      const api = makeApi({
+        mintUps: mock(
+          async (): Promise<YoukuUpsResult> => ({
+            ...UPS_OK,
+            title: 'Where the Mask Ends 04',
+            trial: true,
+            streams: [
+              {
+                stream_type: 'cmfv4hd2',
+                width: 1280,
+                height: 720,
+                drm_type: 'default',
+                m3u8_url: 'http://pl-ali.youku.tv/trial.m3u8?x=1',
+              },
+            ],
+          }),
+        ),
+      });
+      const wrapper = makeWrapper();
+      const logs: string[] = [];
+      const dl = new YoukuDownloader(api, wrapper);
+
+      const result = await dl.download(makeEpisode(), dir, 'E08', {
+        subLangs: ['zh.*', 'en.*'],
+        subsOnly: true,
+        onLog: (m) => logs.push(m),
+      });
+
+      expect(wrapper.download).not.toHaveBeenCalled();
+      expect(result.subsOnly).toBe(true);
+      expect(result.filename).toBe('');
+      expect(result.allFiles).toEqual([join(dir, 'E08.chs.ass'), join(dir, 'E08.cht.ass'), join(dir, 'E08.en.ass')]);
+      expect(logs.join('\n')).toMatch(/trial.*postpon|video.*pending|locked/i);
+    });
+
+    it('throws when the episode is trial and no subLang matches', async () => {
+      const api = makeApi({
+        mintUps: mock(async (): Promise<YoukuUpsResult> => ({ ...UPS_OK, trial: true, subtitles: [] })),
+      });
+      const dl = new YoukuDownloader(api, makeWrapper());
+
+      await expect(dl.download(makeEpisode(), dir, 'E08', { subLangs: ['ru.*'], subsOnly: true })).rejects.toThrow(
+        /locked.*no subtitles|no subtitles.*matched/i,
+      );
+    });
+
+    it('throws a trial error when a trial payload arrives without subsOnly', async () => {
+      const api = makeApi({ mintUps: mock(async (): Promise<YoukuUpsResult> => ({ ...UPS_OK, trial: true })) });
+      const dl = new YoukuDownloader(api, makeWrapper());
+
+      await expect(dl.download(makeEpisode(), dir, 'E08')).rejects.toThrow(/trial/i);
+    });
+
+    it('still downloads the full video when subsOnly is on but the payload is normal', async () => {
+      const api = makeApi();
+      const wrapper = makeWrapper();
+      const dl = new YoukuDownloader(api, wrapper);
+
+      const result = await dl.download(makeEpisode(), dir, 'E08', { subLangs: ['en.*'], subsOnly: true });
+
+      expect(wrapper.download).toHaveBeenCalledTimes(1);
+      expect(result.subsOnly).toBeUndefined();
+      expect(result.filename).toBe('out/E08.mp4');
+      expect(result.allFiles).toContain(join(dir, 'E08.en.ass'));
     });
   });
 });

@@ -4,7 +4,7 @@ import { DownloadError } from '../../errors/custom-errors.js';
 import type { Episode } from '../../types/episode.types.js';
 import { extractDomain } from '../../utils/url-utils.js';
 import { BaseDownloader } from '../base-downloader.js';
-import type { YoukuApi } from '../lib/youku-api.js';
+import type { YoukuApi, YoukuUpsResult } from '../lib/youku-api.js';
 import { matchYoukuSubLangs, pickBestStream, subtitleLangTag, youkuApi } from '../lib/youku-api.js';
 import { YtdlpWrapper } from '../lib/ytdlp-wrapper.js';
 import type { DownloaderOptions, DownloadResult } from '../types.js';
@@ -62,9 +62,37 @@ export class YoukuDownloader extends BaseDownloader {
       onLog(`Youku: loaded ${cookies.length} youku cookies`);
     }
 
-    // Signed playlist URLs expire (~5 h): mint right before downloading
-    const ups = await this.api.mintUps(videoId, cookies);
+    // Signed playlist URLs expire (~5 h): mint right before downloading.
+    // With subsOnly a trial payload (locked/TVOD episode) is returned instead
+    // of thrown — it still carries the full subtitle array.
+    const subsOnlyMode = options?.subsOnly === true;
+    const ups = await this.api.mintUps(videoId, cookies, { allowTrial: subsOnlyMode });
     onLog(`Youku: "${ups.title}" (${Math.round(ups.seconds / 60)} min, max_stream_level=${ups.maxStreamLevel ?? '?'})`);
+
+    // Trial payloads carry preview streams only — never hand them to yt-dlp
+    if (ups.trial === true && !subsOnlyMode) {
+      throw new DownloadError(
+        'Youku: not logged in or cookies expired — the server issued a 6-minute trial; re-export cookies from a logged-in browser session',
+        episode.url,
+      );
+    }
+
+    const usableStreams = ups.streams.filter(
+      (s) => s.m3u8_url.startsWith('http') && (s.drm_type === undefined || s.drm_type === 'default'),
+    );
+
+    // Locked/TVOD episode with subsBeforeVideo: grab the subtitles, skip the video
+    if ((ups.trial === true || usableStreams.length === 0) && subsOnlyMode) {
+      const subPaths = await this.downloadSubtitles(ups, dir, filenameWithoutExt, options);
+      if (subPaths.length === 0) {
+        throw new DownloadError(
+          'Youku: video locked (trial) and no subtitles matched subLangs — nothing to download yet',
+          episode.url,
+        );
+      }
+      onLog(`Youku: video locked (trial) — saved ${subPaths.length} subtitle track(s), video postponed`);
+      return { filename: '', allFiles: subPaths, subsOnly: true };
+    }
 
     const { stream, degraded } = pickBestStream(ups.streams);
     if (degraded) {
@@ -80,30 +108,47 @@ export class YoukuDownloader extends BaseDownloader {
     const allFiles = [...video.allFiles];
 
     // Subtitles are unsigned CDN files — best-effort, a failure keeps the video
-    if (options?.subLangs && options.subLangs.length > 0) {
-      try {
-        const subs = matchYoukuSubLangs(ups.subtitles, options.subLangs);
-        onLog(`Youku: downloading ${subs.length} subtitle track(s)`);
-        for (const sub of subs) {
-          try {
-            const text = await this.api.fetchSubtitle(sub.url);
-            const subPath = join(dir, `${filenameWithoutExt}.${subtitleLangTag(sub)}.ass`);
-            await writeFile(subPath, text, 'utf-8');
-            allFiles.push(subPath);
-            onLog(`Youku: subtitle saved: ${basename(subPath)}`);
-          } catch (error) {
-            onLog(
-              `Youku: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-      } catch (error) {
-        onLog(
-          `Youku: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    allFiles.push(...(await this.downloadSubtitles(ups, dir, filenameWithoutExt, options)));
 
     return { filename: video.filename, allFiles };
+  }
+
+  /**
+   * Download every subLang-matching track as `<name>.<tag>.ass`. Unsigned CDN
+   * files, fetched without cookies. Best-effort: individual failures are logged
+   * and skipped; returns the paths actually saved.
+   */
+  private async downloadSubtitles(
+    ups: YoukuUpsResult,
+    dir: string,
+    filenameWithoutExt: string,
+    options?: DownloaderOptions,
+  ): Promise<string[]> {
+    const onLog = options?.onLog ?? (() => {});
+    if (!options?.subLangs || options.subLangs.length === 0) return [];
+
+    const saved: string[] = [];
+    try {
+      const subs = matchYoukuSubLangs(ups.subtitles, options.subLangs);
+      onLog(`Youku: downloading ${subs.length} subtitle track(s)`);
+      for (const sub of subs) {
+        try {
+          const text = await this.api.fetchSubtitle(sub.url);
+          const subPath = join(dir, `${filenameWithoutExt}.${subtitleLangTag(sub)}.ass`);
+          await writeFile(subPath, text, 'utf-8');
+          saved.push(subPath);
+          onLog(`Youku: subtitle saved: ${basename(subPath)}`);
+        } catch (error) {
+          onLog(
+            `Youku: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    } catch (error) {
+      onLog(
+        `Youku: subtitle download failed (video is kept): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return saved;
   }
 }

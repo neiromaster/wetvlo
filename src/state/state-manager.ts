@@ -51,6 +51,8 @@ export class StateManager {
   /**
    * Add a downloaded episode to state (atomic operation: read → modify → write)
    *
+   * Upgrades a `"NN:subs"` marker (subtitles-only placeholder) to `"NN"`.
+   *
    * @param statePath - Path to state file (relative or absolute)
    * @param seriesName - Series name
    * @param episodeNumber - Episode number
@@ -65,10 +67,12 @@ export class StateManager {
         }
 
         const episodeStr = String(episodeNumber).padStart(2, '0');
-        if (!state.series[seriesName].includes(episodeStr)) {
-          state.series[seriesName].push(episodeStr);
-          state.series[seriesName].sort();
-        }
+        const episodes = state.series[seriesName]!;
+        const subsOnlyStr = `${episodeStr}:subs`;
+        const subsOnlyIdx = episodes.indexOf(subsOnlyStr);
+        if (subsOnlyIdx >= 0) episodes[subsOnlyIdx] = episodeStr;
+        else if (!episodes.includes(episodeStr)) episodes.push(episodeStr);
+        episodes.sort();
 
         await this.saveState(statePath, state);
       } catch (error) {
@@ -76,6 +80,60 @@ export class StateManager {
         throw error;
       }
     });
+  }
+
+  /**
+   * Mark an episode as subtitles-only downloaded (atomic read → modify → write).
+   *
+   * Stored as `"NN:subs"`. Deliberately NOT counted by `isDownloaded`, so the
+   * episode keeps being retried on later checks and upgrades to a full
+   * download once the video becomes available (`addDownloadedEpisode` replaces
+   * the marker). No-op when the episode is already fully downloaded.
+   */
+  async addSubsOnlyEpisode(statePath: string, seriesName: string, episodeNumber: number): Promise<void> {
+    return this.withLock(statePath, async () => {
+      try {
+        const state = this.loadState(statePath);
+
+        if (!state.series[seriesName]) {
+          state.series[seriesName] = [];
+        }
+
+        const episodes = state.series[seriesName]!;
+        const episodeStr = String(episodeNumber).padStart(2, '0');
+        const subsOnlyStr = `${episodeStr}:subs`;
+        if (!episodes.includes(episodeStr) && !episodes.includes(subsOnlyStr)) {
+          episodes.push(subsOnlyStr);
+          episodes.sort();
+        }
+
+        await this.saveState(statePath, state);
+      } catch (error) {
+        this.handleError(error, `Failed to mark episode for ${seriesName}`);
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Check whether an episode carries the `"NN:subs"` subtitles-only marker
+   *
+   * @param statePath - Path to state file (relative or absolute)
+   * @param seriesName - Series name
+   * @param episodeNumber - Episode number
+   */
+  isSubsOnly(statePath: string, seriesName: string, episodeNumber: number): boolean {
+    try {
+      const state = this.loadState(statePath);
+      const episodes = state.series[seriesName];
+      if (!episodes) return false;
+
+      const subsOnlyStr = `${String(episodeNumber).padStart(2, '0')}:subs`;
+      return episodes.includes(subsOnlyStr);
+    } catch (error) {
+      this.handleError(error, `Failed to check episode status for ${seriesName}`);
+      return false;
+    }
   }
 
   /**

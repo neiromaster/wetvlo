@@ -35,6 +35,10 @@ export const DownloadSettingsSchema = z.object({
   backoffMultiplier: z.number().positive().optional().describe('Multiplier for exponential backoff'),
   jitterPercentage: z.number().int().min(0).max(100).optional().describe('Jitter percentage for retry delays'),
   minDuration: z.number().nonnegative().optional().describe('Minimum duration in seconds for downloads'),
+  subsBeforeVideo: z
+    .boolean()
+    .optional()
+    .describe('Download subtitles for locked/TVOD episodes and fetch the video once it appears'),
 });
 
 export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;

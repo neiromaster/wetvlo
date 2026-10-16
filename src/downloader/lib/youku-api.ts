@@ -47,6 +47,13 @@ export type YoukuUpsResult = {
   maxStreamLevel: number | null;
   streams: YoukuStream[];
   subtitles: YoukuSubtitle[];
+  /**
+   * True when the server answered with a 6-minute trial (locked/TVOD episode).
+   * Only ever `true` for callers passing `{ allowTrial: true }`; such payloads
+   * still carry the full subtitle array (verified 2026-10-16), while their
+   * stream entries are trial previews and must not be downloaded.
+   */
+  trial?: boolean;
 };
 
 /**
@@ -246,10 +253,19 @@ type UpsInner = {
  * absent we still try a generated id — the -6004 branch below turns the
  * inevitable rejection into an actionable error.
  *
- * Throws DownloadError on: risk control -6004, trial response (anonymous or
- * expired cookies — VIP episodes get a 6-minute trial), or transport failures.
+ * By default a trial response (locked/TVOD episode, anonymous or expired
+ * cookies) throws. With `{ allowTrial: true }` the payload is returned with
+ * `trial: true` instead — used by the subtitles-before-video flow: trial
+ * payloads carry the full subtitle array but only preview streams.
+ *
+ * Throws DownloadError on: risk control -6004, trial response (unless
+ * allowTrial), or transport failures.
  */
-export async function mintUps(vid: string, cookiePairs: string[]): Promise<YoukuUpsResult> {
+export async function mintUps(
+  vid: string,
+  cookiePairs: string[],
+  options?: { allowTrial?: boolean },
+): Promise<YoukuUpsResult> {
   const cna = cookiePairs.find((p) => p.startsWith('cna='))?.slice('cna='.length) ?? '';
   const dataObj = {
     steal_params: JSON.stringify({
@@ -276,7 +292,7 @@ export async function mintUps(vid: string, cookiePairs: string[]): Promise<Youku
     const note = inner.error?.note ? `: ${inner.error.note}` : '';
     throw new DownloadError(`Youku ups error ${inner.error.code}${note}`, 'https://www.youku.tv/');
   }
-  if (inner?.trial) {
+  if (inner?.trial && !options?.allowTrial) {
     throw new DownloadError(
       'Youku: not logged in or cookies expired — the server issued a 6-minute trial; re-export cookies from a logged-in browser session',
       'https://www.youku.tv/',
@@ -298,6 +314,7 @@ export async function mintUps(vid: string, cookiePairs: string[]): Promise<Youku
       subtitle_lang: String(s.subtitle_lang ?? ''),
       url: String(s.url ?? ''),
     })),
+    trial: Boolean(inner?.trial),
   };
 }
 
@@ -399,7 +416,7 @@ export function extractVideoId(url: string): string | null {
 export type YoukuApi = {
   extractVideoId(url: string): string | null;
   readYoukuCookiePairs(cookieFile: string): Promise<string[]>;
-  mintUps(vid: string, cookiePairs: string[]): Promise<YoukuUpsResult>;
+  mintUps(vid: string, cookiePairs: string[], options?: { allowTrial?: boolean }): Promise<YoukuUpsResult>;
   fetchSubtitle(url: string): Promise<string>;
 };
 

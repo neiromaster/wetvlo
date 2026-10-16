@@ -5,11 +5,13 @@ import { AppContext } from '../app-context';
 import { NotificationLevel } from '../notifications/notification-level';
 import * as VideoValidator from '../utils/video-validator';
 import { DownloadManager } from './download-manager';
+import { downloaderRegistry } from './downloader-registry';
 
 // Mock StateManager
 const mockStateManager = {
   isDownloaded: mock(() => false),
   addDownloadedEpisode: mock(async () => {}),
+  addSubsOnlyEpisode: mock(async () => {}),
   getSeriesEpisodes: mock(() => []),
 };
 
@@ -49,7 +51,7 @@ const mockConfigRegistry = {
   resolve: mock(() => ({
     stateFile: 'state.json',
     name: 'Test Series',
-    download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0 },
+    download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0, subsBeforeVideo: false },
     cookieFile: undefined,
   })),
   getConfig: mock(() => ({
@@ -69,15 +71,23 @@ describe('DownloadManager', () => {
     renameSpy.mockRestore();
     unlinkSpy.mockRestore();
     statSpy.mockRestore();
+    getDownloaderSpy.mockRestore();
   });
 
   afterEach(() => {
     AppContext.reset();
   });
 
+  // Spy on the registry so individual tests can inject a fake downloader
+  const originalGetDownloader = downloaderRegistry.getDownloader.bind(downloaderRegistry);
+  const getDownloaderSpy = spyOn(downloaderRegistry, 'getDownloader');
+
   beforeEach(() => {
+    getDownloaderSpy.mockReset();
+    getDownloaderSpy.mockImplementation(originalGetDownloader);
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.addDownloadedEpisode.mockClear();
+    mockStateManager.addSubsOnlyEpisode.mockClear();
     mockNotifier.notify.mockClear();
     mockNotifier.progress.mockClear();
     mockNotifier.endProgress.mockClear();
@@ -105,7 +115,7 @@ describe('DownloadManager', () => {
     mockConfigRegistry.resolve.mockImplementation(() => ({
       stateFile: 'state.json',
       name: 'Test Series',
-      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0 },
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0, subsBeforeVideo: false },
       cookieFile: undefined,
     }));
 
@@ -213,6 +223,69 @@ describe('DownloadManager', () => {
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.ERROR,
       expect.stringContaining('Video duration'),
+    );
+  });
+
+  it('should mark subs-only result in state and skip video validation', async () => {
+    mockConfigRegistry.resolve.mockReturnValue({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50, subsBeforeVideo: true },
+      cookieFile: undefined,
+    } as any);
+
+    const subsOnlyResult = {
+      filename: '',
+      allFiles: ['/downloads/Test Series - 01.chs.ass', '/downloads/Test Series - 01.en.ass'],
+      subsOnly: true,
+    };
+    const fakeDownload = mock(async () => subsOnlyResult);
+    getDownloaderSpy.mockReturnValue({
+      getName: () => 'fake',
+      supports: () => true,
+      download: fakeDownload as any,
+    } as any);
+
+    mockStateManager.isDownloaded.mockReturnValue(false);
+
+    const result = await downloadManager.download('https://youku.tv/v/1', { number: 1, url: 'u' } as any);
+
+    expect(result).toBe(true);
+    // Downloader was told subs-only is allowed
+    expect(fakeDownload).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ subsOnly: true }),
+    );
+    // No video validation
+    expect(getVideoDurationSpy).not.toHaveBeenCalled();
+    // State: subs-only marker, not a full download
+    expect(mockStateManager.addSubsOnlyEpisode).toHaveBeenCalledWith('state.json', 'Test Series', 1);
+    expect(mockStateManager.addDownloadedEpisode).not.toHaveBeenCalled();
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.SUCCESS,
+      expect.stringContaining('subtitles only'),
+    );
+  });
+
+  it('should pass subsOnly: false to the downloader by default', async () => {
+    const fakeDownload = mock(async () => ({ filename: 'v.mp4', allFiles: ['v.mp4'] }));
+    getDownloaderSpy.mockReturnValue({
+      getName: () => 'fake',
+      supports: () => true,
+      download: fakeDownload as any,
+    } as any);
+
+    mockStateManager.isDownloaded.mockReturnValue(false);
+
+    await downloadManager.download('url', { number: 1, url: 'url' } as any);
+
+    expect(fakeDownload).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ subsOnly: false }),
     );
   });
 });

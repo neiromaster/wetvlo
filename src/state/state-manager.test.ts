@@ -95,4 +95,67 @@ describe('StateManager', () => {
     expect(stateManager.isDownloaded(testStateFile, 'Series 2', 2)).toBe(true);
     expect(stateManager.isDownloaded(testStateFile, 'Series 1', 2)).toBe(false);
   });
+
+  describe('subs-only marker', () => {
+    it('should mark an episode as subs-only and report it', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+
+      expect(stateManager.isSubsOnly(testStateFile, seriesName, 9)).toBe(true);
+      expect(stateManager.getSeriesEpisodes(testStateFile, seriesName)).toEqual(['09:subs']);
+    });
+
+    it('should keep subs-only episodes not-downloaded so they are retried', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+
+      expect(stateManager.isDownloaded(testStateFile, seriesName, 9)).toBe(false);
+    });
+
+    it('should not duplicate subs-only markers', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+
+      expect(stateManager.getSeriesEpisodes(testStateFile, seriesName)).toEqual(['09:subs']);
+    });
+
+    it('should not mark subs-only when the episode is already fully downloaded', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addDownloadedEpisode(testStateFile, seriesName, 9);
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+
+      expect(stateManager.getSeriesEpisodes(testStateFile, seriesName)).toEqual(['09']);
+      expect(stateManager.isSubsOnly(testStateFile, seriesName, 9)).toBe(false);
+    });
+
+    it('should sort subs-only markers alongside plain numbers', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addDownloadedEpisode(testStateFile, seriesName, 3);
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+      await stateManager.addDownloadedEpisode(testStateFile, seriesName, 1);
+
+      expect(stateManager.getSeriesEpisodes(testStateFile, seriesName)).toEqual(['01', '03', '09:subs']);
+    });
+
+    it('should upgrade a subs-only marker to a full download', async () => {
+      const seriesName = 'TVOD Series';
+
+      await stateManager.addSubsOnlyEpisode(testStateFile, seriesName, 9);
+      await stateManager.addDownloadedEpisode(testStateFile, seriesName, 9);
+
+      expect(stateManager.getSeriesEpisodes(testStateFile, seriesName)).toEqual(['09']);
+      expect(stateManager.isDownloaded(testStateFile, seriesName, 9)).toBe(true);
+      expect(stateManager.isSubsOnly(testStateFile, seriesName, 9)).toBe(false);
+    });
+
+    it('should report isSubsOnly false for unknown episodes', () => {
+      expect(stateManager.isSubsOnly(testStateFile, 'Nope', 1)).toBe(false);
+    });
+  });
 });

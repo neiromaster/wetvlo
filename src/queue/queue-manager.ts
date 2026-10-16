@@ -18,7 +18,7 @@ import { handlerRegistry } from '../handlers/handler-registry';
 import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
-import type { EpisodeType } from '../types/episode-type';
+import { EpisodeType } from '../types/episode-type';
 import { readCookieHeaderForUrl } from '../utils/cookie-extractor';
 import { CookieRefreshManager } from '../utils/cookie-sync';
 import { extractDomain } from '../utils/url-utils';
@@ -723,9 +723,14 @@ export class QueueManager {
     // Get download types from config
     const { downloadTypes } = config.check;
 
-    // Filter for episodes matching download types and not yet downloaded
+    // Filter for episodes matching download types and not yet downloaded.
+    // subsBeforeVideo additionally lets express (TVOD) episodes through: the
+    // download turns into a subtitles-only grab while the video is locked and
+    // upgrades to the full episode once it is available.
+    const subsBeforeVideo = config.download.subsBeforeVideo === true;
     const newEpisodes = episodes.filter((ep) => {
-      const shouldDownload = downloadTypes.includes(ep.type as EpisodeType);
+      const shouldDownload =
+        downloadTypes.includes(ep.type as EpisodeType) || (subsBeforeVideo && ep.type === EpisodeType.EXPRESS);
       // Get state path from config
       const statePath = config.stateFile;
       const notDownloaded = !this.stateManager.isDownloaded(statePath, seriesName, ep.number);

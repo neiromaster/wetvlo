@@ -23,6 +23,7 @@ export type DefaultConfig = {
     backoffMultiplier: number;
     jitterPercentage: number;
     minDuration: number;
+    subsBeforeVideo: boolean;
   };
 
   notifications: {
@@ -49,6 +50,7 @@ export const defaults: DefaultConfig = {
     backoffMultiplier: 2,
     jitterPercentage: 10,
     minDuration: 0,
+    subsBeforeVideo: false,
   },
   telegram: {
     minLevel: NotificationLevel.ERROR,

@@ -445,20 +445,21 @@ describe('QueueManager', () => {
     );
   });
 
-  it('should pass express episodes through when download.subsBeforeVideo is true', async () => {
-    const configWithSubsBeforeVideo = {
+  it('should pass express episodes through when express is in check.downloadTypes', async () => {
+    const configWithExpress = {
       series: [
         {
           name: 'Test Series',
           url: 'https://wetv.vip/play/123',
           startTime: '12:00',
+          check: { downloadTypes: ['available', 'express'] as EpisodeType[] },
           download: { downloadDelay: 10, subsBeforeVideo: true },
         },
       ],
       stateFile: 'test-state.json',
       browser: 'chrome' as const,
     };
-    AppContext.initialize(new ConfigRegistry(configWithSubsBeforeVideo as any), mockNotifier as any);
+    AppContext.initialize(new ConfigRegistry(configWithExpress as any), mockNotifier as any);
 
     (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
 
@@ -474,7 +475,21 @@ describe('QueueManager', () => {
     );
   });
 
-  it('should filter express episodes out without download.subsBeforeVideo', async () => {
+  it('should filter express episodes out when express is not in downloadTypes even with subsBeforeVideo', async () => {
+    const configWithSubsBeforeVideo = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10, subsBeforeVideo: true },
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithSubsBeforeVideo as any), mockNotifier as any);
+
     (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
 
     const expressEp = [{ number: 4, url: 'url4', type: EpisodeType.EXPRESS, extractedAt: new Date() }];

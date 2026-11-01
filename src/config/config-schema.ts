@@ -38,7 +38,10 @@ export const DownloadSettingsSchema = z.object({
   subsBeforeVideo: z
     .boolean()
     .optional()
-    .describe('Download subtitles for locked/TVOD episodes and fetch the video once it appears'),
+    .describe(
+      'Download subtitles for locked/TVOD episodes and fetch the video once it appears ' +
+        '(attempting TVOD episodes additionally requires "express" in check.downloadTypes)',
+    ),
 });
 
 export type DownloadSettings = z.infer<typeof DownloadSettingsSchema>;

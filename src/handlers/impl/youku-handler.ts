@@ -23,9 +23,11 @@ type AnthologyItem = {
  * The episode list is embedded in the episode-page SSR HTML itself (no list
  * API): an anthology JSON component appears twice per page. Numbering uses the
  * `stage` of 正片 items — NEVER list position (trailers can sit anywhere with
- * any stage). Mark vocabulary: '' → available, VIP → vip, Express → express;
- * 预告片/Trailer rows are skipped entirely (they are noise for downloading and
- * would collide with real episode numbers).
+ * any stage). Mark vocabulary (live-verified 2026-11-01): '' → available,
+ * VIP → vip, Express and TVOD → express; unknown non-empty marks fail safe
+ * to express with a warning (a new site label must never become silently
+ * downloadable). 预告片/Trailer rows are skipped entirely (they are noise for
+ * downloading and would collide with real episode numbers).
  */
 export class YoukuHandler extends BaseHandler {
   getDomain(): string {
@@ -37,6 +39,7 @@ export class YoukuHandler extends BaseHandler {
     const items = this.extractAnthologyItems(html);
 
     const byVid = new Map<string, Episode>();
+    const warnedMarks = new Set<string>();
     for (const item of items) {
       const vid = item.data?.action?.value;
       if (!vid || byVid.has(vid)) continue; // container rows + the duplicated blob copy
@@ -48,10 +51,23 @@ export class YoukuHandler extends BaseHandler {
       const stage = item.data?.stage;
       if (typeof stage !== 'number') continue;
 
+      let type: EpisodeType = EpisodeType.AVAILABLE;
+      if (mark === 'VIP') {
+        type = EpisodeType.VIP;
+      } else if (mark === 'Express' || mark === 'TVOD') {
+        type = EpisodeType.EXPRESS;
+      } else if (mark !== '') {
+        if (!warnedMarks.has(mark)) {
+          warnedMarks.add(mark);
+          console.warn(`[youku] unknown availability mark "${mark}" on ${url} — treating as express`);
+        }
+        type = EpisodeType.EXPRESS;
+      }
+
       byVid.set(vid, {
         number: stage,
         url: `https://www.youku.tv/v/v_show/id_${vid}.html`,
-        type: mark === 'VIP' ? EpisodeType.VIP : mark === 'Express' ? EpisodeType.EXPRESS : EpisodeType.AVAILABLE,
+        type,
         title: item.data?.title,
         extractedAt: new Date(),
       });

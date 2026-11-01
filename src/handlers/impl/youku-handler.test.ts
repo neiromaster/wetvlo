@@ -84,6 +84,41 @@ describe('YoukuHandler', () => {
       expect(episodes[0]?.title).toBe('Good Night 01');
     });
 
+    it('types TVOD-marked episodes as express', async () => {
+      // Live mark vocabulary (Notes of DNA Appraiser, 2026-11-01): TVOD is the
+      // pay-per-view label — a paid category like Express, not free content.
+      const item =
+        '{"type":10013,"data":{"videoType":"正片","title":"Notes of DNA Appraiser 07","stage":7,"action":{"value":"VID7"},"mark":{"data":{"text":"TVOD"}}}}';
+      stubPage(`<html><body><script>{"items":[${item}]}</script></body></html>`);
+
+      const episodes = await handler.extractEpisodes(EP_URL);
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.number).toBe(7);
+      expect(episodes[0]?.type).toBe(EpisodeType.EXPRESS);
+    });
+
+    it('fails safe on an unknown mark: express with a warning', async () => {
+      const item =
+        '{"type":10013,"data":{"videoType":"正片","title":"Good Night 02","stage":2,"action":{"value":"VID2"},"mark":{"data":{"text":"FuturePaywall"}}}}';
+      stubPage(`<html><body><script>{"items":[${item}]}</script></body></html>`);
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (message?: unknown) => {
+        warnings.push(String(message));
+      };
+
+      try {
+        const episodes = await handler.extractEpisodes(EP_URL);
+
+        expect(episodes).toHaveLength(1);
+        expect(episodes[0]?.type).toBe(EpisodeType.EXPRESS);
+        expect(warnings.some((w) => w.includes('FuturePaywall'))).toBe(true);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
     it('returns [] when the anthology blob is missing (structural change)', async () => {
       stubPage('<html><body>unexpected structure</body></html>');
 

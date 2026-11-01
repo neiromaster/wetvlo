@@ -44,16 +44,41 @@ describe('readYoukuCookiePairs', () => {
     '',
   ].join('\n');
 
-  it('keeps only youku.tv/youku.com cookies, dedupes by name+domain, preserves order', async () => {
+  it('keeps only youku.tv/youku.com cookies, filters .www.* junk, preserves order', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
     const file = join(dir, 'cookies.txt');
     await writeFile(file, NETSCAPE, 'utf-8');
 
     const pairs = await readYoukuCookiePairs(file);
 
-    expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'P_F=f-token', 'sid=COMVAL']);
+    expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'sid=COMVAL']);
     expect(pairs.join('; ')).not.toContain('MUST-NOT-LEAK');
     expect(pairs.join('; ')).not.toContain('ALIPAY-SECRET');
+    expect(pairs.join('; ')).not.toContain('f-token');
+  });
+
+  it('dedupes by name across domains, preferring the auth domain .youku.tv', async () => {
+    // Real prod shape (2026-10-16): browsers store one name per subdomain, but
+    // this module joins all pairs into ONE header — youku answers HTTP 400 to
+    // headers with duplicate names (61 pairs / 43 unique names → 400; dedup → 200)
+    const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
+    const file = join(dir, 'cookies.txt');
+    await writeFile(
+      file,
+      [
+        '.youku.com\tTRUE\t/\tTRUE\t1790000000\tcsrfToken\tfrom-youku-com',
+        'www.youku.tv\tFALSE\t/\tFALSE\t1790000000\tcsrfToken\tfrom-www-youku-tv',
+        '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tcsrfToken\tfrom-auth-domain',
+        'so.youku.tv\tTRUE\t/\tFALSE\t1790000000\tctoken\tsearch-ctoken',
+        'pay.youku.tv\tTRUE\t/\tFALSE\t1790000000\tctoken\tpay-ctoken',
+        '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tP_sck\tauth',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const pairs = await readYoukuCookiePairs(file);
+
+    expect(pairs).toEqual(['csrfToken=from-auth-domain', 'ctoken=search-ctoken', 'P_sck=auth']);
   });
 
   it('throws CookieError when the file has no youku cookies', async () => {
@@ -300,20 +325,20 @@ describe('mintUps', () => {
     expect(sp.utid.length).toBeGreaterThan(0);
   });
 
-  it('throws DownloadError with a re-export hint on risk control -6004', async () => {
+  it('throws DownloadError on -6004 mentioning rate limiting as the likely cause', async () => {
     stubFetch(
       'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"ups":{},"error":{"code":-6004,"note":"该账号检测到有可疑违规、侵权等行为，已限制播放"}}}})',
     );
 
-    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/-6004.*cna/s);
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/-6004.*rate limit.*cna/s);
   });
 
-  it('throws DownloadError on a trial response (not logged in / cookies expired)', async () => {
+  it('throws DownloadError on a trial response mentioning the TVOD possibility', async () => {
     stubFetch(
       'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"controller":{"max_stream_level":4},"video":{"title":"Good Night 08","seconds":2749.32},"stream":[{"stream_type":"cmfv4hd2","width":1280,"height":720,"drm_type":"default","m3u8_url":"http://pl-ali.youku.tv/hd2.m3u8?x=1"}],"subtitle":[],"trial":{"trial_str":"您可以免费试看前6分钟","time":360,"type":"time"}}}})',
     );
 
-    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/trial|logged in|cookies/i);
+    await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/trial.*TVOD.*subsBeforeVideo/s);
   });
 
   it('returns the trial payload with allowTrial instead of throwing (subs survive)', async () => {

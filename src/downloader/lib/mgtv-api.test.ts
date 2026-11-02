@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { queueModuleRestore } from '../../test-utils/queue-module-restore';
 import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
 import {
   downloadSubtitle,
@@ -20,6 +21,7 @@ mock.module('../../utils/firefox-cookies.js', () => ({
   readFirefoxCookies: mockReadFirefoxCookies,
   readCookieHeaderForUrl: mock(async () => ''),
 }));
+queueModuleRestore('../../utils/firefox-cookies.js', import.meta.dir);
 
 describe('makeTk2', () => {
   it('produces the golden-vector signature for a fixed did and clit', () => {

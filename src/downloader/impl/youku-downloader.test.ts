@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { queueModuleRestore } from '../../test-utils/queue-module-restore';
 import type { Episode } from '../../types/episode.types.js';
 import { EpisodeType } from '../../types/episode-type';
 import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
@@ -16,6 +17,7 @@ mock.module('../../utils/firefox-cookies.js', () => ({
   readFirefoxCookies: mockReadFirefoxCookies,
   readCookieHeaderForUrl: mock(async () => ''),
 }));
+queueModuleRestore('../../utils/firefox-cookies.js', import.meta.dir);
 
 function makeEpisode(): Episode {
   return {

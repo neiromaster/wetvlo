@@ -1,7 +1,8 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
 import { ConfigRegistry } from '../config/config-registry';
 import { NotificationLevel } from '../notifications/notification-level';
+import { queueModuleRestore } from '../test-utils/queue-module-restore';
 import { EpisodeType } from '../types/episode-type';
 import { QueueManager } from './queue-manager';
 
@@ -31,6 +32,7 @@ mock.module('../handlers/handler-registry.js', () => ({
     getHandlerOrThrow: mock(() => mockHandler),
   },
 }));
+queueModuleRestore('../handlers/handler-registry.js', import.meta.dir);
 
 // Mock Firefox cookie reader
 const mockReadCookieHeaderForUrl = mock(() => Promise.resolve(''));
@@ -38,17 +40,7 @@ const mockReadCookieHeaderForUrl = mock(() => Promise.resolve(''));
 mock.module('../utils/firefox-cookies', () => ({
   readCookieHeaderForUrl: mockReadCookieHeaderForUrl,
 }));
-
-// bun hoists mock.module above imports and its registration outlives this
-// file when several test files share a worker. Re-register the real module
-// afterwards so files that exercise firefox-cookies directly (e.g.
-// utils/firefox-cookies.test.ts) are unaffected. The "?restore" query
-// bypasses the mock registry to fetch the unmocked module.
-afterAll(async () => {
-  const restoreSpecifier: string = '../utils/firefox-cookies?restore';
-  const actual = await import(restoreSpecifier);
-  mock.module('../utils/firefox-cookies', () => actual);
-});
+queueModuleRestore('../utils/firefox-cookies', import.meta.dir);
 
 describe('QueueManager', () => {
   let queueManager: QueueManager;
@@ -337,8 +329,39 @@ describe('QueueManager', () => {
     await schedulerExecutor(task, 'check:wetv.vip');
 
     expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.WARNING,
+      expect.stringContaining('cookies unavailable'),
+    );
     // No failure retry scheduled — the check itself succeeded
     expect(mockScheduler.addPriorityTask).not.toHaveBeenCalled();
+  });
+
+  it('should retry a check task on failure with backoff', async () => {
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+    mockHandler.extractEpisodes.mockRejectedValue(new Error('boom'));
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockNotifier.notify).toHaveBeenCalledWith(
+      NotificationLevel.WARNING,
+      expect.stringContaining('check retry 1/'),
+    );
+    // Should requeue with bumped retry count and a backoff delay
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(
+      'check:wetv.vip',
+      expect.objectContaining({
+        seriesUrl: 'https://wetv.vip/play/123',
+        attemptNumber: 1,
+        retryCount: 1,
+      }),
+      expect.any(Number),
+    );
   });
 
   it('should requeue check task if no episodes found and retries remaining', async () => {

@@ -1,7 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
 import { ConfigRegistry } from '../config/config-registry';
 import { NotificationLevel } from '../notifications/notification-level';
@@ -35,14 +32,23 @@ mock.module('../handlers/handler-registry.js', () => ({
   },
 }));
 
-// Mock CookieRefreshManager singleton
-const mockRefreshCookies = mock(() => Promise.resolve());
+// Mock Firefox cookie reader
+const mockReadCookieHeaderForUrl = mock(() => Promise.resolve(''));
 
-mock.module('../utils/cookie-sync', () => ({
-  CookieRefreshManager: {
-    getInstance: () => ({ refreshCookies: mockRefreshCookies }),
-  },
+mock.module('../utils/firefox-cookies', () => ({
+  readCookieHeaderForUrl: mockReadCookieHeaderForUrl,
 }));
+
+// bun hoists mock.module above imports and its registration outlives this
+// file when several test files share a worker. Re-register the real module
+// afterwards so files that exercise firefox-cookies directly (e.g.
+// utils/firefox-cookies.test.ts) are unaffected. The "?restore" query
+// bypasses the mock registry to fetch the unmocked module.
+afterAll(async () => {
+  const restoreSpecifier: string = '../utils/firefox-cookies?restore';
+  const actual = await import(restoreSpecifier);
+  mock.module('../utils/firefox-cookies', () => actual);
+});
 
 describe('QueueManager', () => {
   let queueManager: QueueManager;
@@ -57,8 +63,8 @@ describe('QueueManager', () => {
     mockHandler.extractEpisodes.mockResolvedValue([]);
     mockStateManager.isDownloaded.mockClear();
     mockStateManager.isDownloaded.mockReturnValue(false);
-    mockRefreshCookies.mockClear();
-    mockRefreshCookies.mockResolvedValue(undefined as any);
+    mockReadCookieHeaderForUrl.mockClear();
+    mockReadCookieHeaderForUrl.mockResolvedValue('');
 
     // Initialize AppContext for tests
     // Create a proper config structure for testing
@@ -227,52 +233,23 @@ describe('QueueManager', () => {
     expect(mockScheduler.markTaskComplete).toHaveBeenCalled();
   });
 
-  it('should pass domain-scoped cookies to extractEpisodes when cookieFile is configured', async () => {
-    const cookieFile = join(tmpdir(), `qm-cookies-${Date.now()}.txt`);
-    writeFileSync(
-      cookieFile,
-      [
-        '# Netscape HTTP Cookie File',
-        '',
-        '.wetv.vip\tTRUE\t/\tTRUE\t2147483647\twt_token\tabc123',
-        'openai.com\tTRUE\t/\tTRUE\t2147483647\topenai_sid\toai456',
-      ].join('\n'),
-    );
+  it('should pass Firefox cookies to extractEpisodes when cookiesFromBrowser is configured', async () => {
+    const configWithCookies = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 },
+          cookiesFromBrowser: 'firefox:default-release-1',
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
+    mockReadCookieHeaderForUrl.mockResolvedValue('QC005=abc');
 
-    try {
-      const configWithCookies = {
-        series: [
-          {
-            name: 'Test Series',
-            url: 'https://wetv.vip/play/123',
-            startTime: '12:00',
-            download: { downloadDelay: 10 },
-            cookieFile,
-          },
-        ],
-        stateFile: 'test-state.json',
-        browser: 'chrome' as const,
-      };
-      AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
-
-      (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
-
-      const task = {
-        seriesUrl: 'https://wetv.vip/play/123',
-        attemptNumber: 1,
-      };
-
-      await schedulerExecutor(task, 'check:wetv.vip');
-
-      expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', 'wt_token=abc123');
-    } finally {
-      if (existsSync(cookieFile)) {
-        unlinkSync(cookieFile);
-      }
-    }
-  });
-
-  it('should pass undefined cookies when cookieFile is not configured', async () => {
     (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
 
     const task = {
@@ -282,101 +259,40 @@ describe('QueueManager', () => {
 
     await schedulerExecutor(task, 'check:wetv.vip');
 
+    expect(mockReadCookieHeaderForUrl).toHaveBeenCalledWith('firefox:default-release-1', 'https://wetv.vip/play/123');
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', 'QC005=abc');
+  });
+
+  it('should not read cookies when cookiesFromBrowser is not configured', async () => {
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockReadCookieHeaderForUrl).not.toHaveBeenCalled();
     expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
   });
 
-  it('should refresh cookies when a check fails and cookieRefreshBrowser is configured', async () => {
-    const configWithRefresh = {
+  it('should warn and proceed when the Firefox profile has no cookies for the domain', async () => {
+    const configWithCookies = {
       series: [
         {
           name: 'Test Series',
           url: 'https://wetv.vip/play/123',
           startTime: '12:00',
           download: { downloadDelay: 10 },
-          cookieRefreshBrowser: 'firefox',
+          cookiesFromBrowser: 'firefox:default-release-1',
         },
       ],
       stateFile: 'test-state.json',
       browser: 'chrome' as const,
     };
-    AppContext.initialize(new ConfigRegistry(configWithRefresh as any), mockNotifier as any);
-
-    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
-    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
-
-    const task = {
-      seriesUrl: 'https://wetv.vip/play/123',
-      attemptNumber: 1,
-    };
-
-    await schedulerExecutor(task, 'check:wetv.vip');
-
-    expect(mockRefreshCookies).toHaveBeenCalledWith('https://wetv.vip/play/123');
-    // Retry is still scheduled after the refresh attempt
-    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
-  });
-
-  it('should not refresh cookies when a check fails without cookieRefreshBrowser', async () => {
-    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
-    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
-
-    const task = {
-      seriesUrl: 'https://wetv.vip/play/123',
-      attemptNumber: 1,
-    };
-
-    await schedulerExecutor(task, 'check:wetv.vip');
-
-    expect(mockRefreshCookies).not.toHaveBeenCalled();
-    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
-  });
-
-  it('should still schedule check retry when cookie refresh fails', async () => {
-    const configWithRefresh = {
-      series: [
-        {
-          name: 'Test Series',
-          url: 'https://wetv.vip/play/123',
-          startTime: '12:00',
-          download: { downloadDelay: 10 },
-          cookieRefreshBrowser: 'firefox',
-        },
-      ],
-      stateFile: 'test-state.json',
-      browser: 'chrome' as const,
-    };
-    AppContext.initialize(new ConfigRegistry(configWithRefresh as any), mockNotifier as any);
-
-    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
-    mockHandler.extractEpisodes.mockRejectedValue(new Error('HTTP Error 413'));
-    mockRefreshCookies.mockRejectedValue(new Error('page.goto: NS_ERROR_NET_EMPTY_RESPONSE'));
-
-    const task = {
-      seriesUrl: 'https://wetv.vip/play/123',
-      attemptNumber: 1,
-    };
-
-    await schedulerExecutor(task, 'check:wetv.vip');
-
-    expect(mockRefreshCookies).toHaveBeenCalledWith('https://wetv.vip/play/123');
-    expect(mockScheduler.addPriorityTask).toHaveBeenCalled();
-  });
-
-  it('should proceed without cookies when cookieFile points to a missing file', async () => {
-    const configWithMissingCookies = {
-      series: [
-        {
-          name: 'Test Series',
-          url: 'https://wetv.vip/play/123',
-          startTime: '12:00',
-          download: { downloadDelay: 10 },
-          cookieFile: join(tmpdir(), `qm-missing-${Date.now()}.txt`),
-        },
-      ],
-      stateFile: 'test-state.json',
-      browser: 'chrome' as const,
-    };
-    AppContext.initialize(new ConfigRegistry(configWithMissingCookies as any), mockNotifier as any);
+    AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
+    mockReadCookieHeaderForUrl.mockResolvedValue('');
 
     (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
 
@@ -387,13 +303,42 @@ describe('QueueManager', () => {
 
     await schedulerExecutor(task, 'check:wetv.vip');
 
-    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
     expect(mockNotifier.notify).toHaveBeenCalledWith(
       NotificationLevel.WARNING,
-      expect.stringContaining('cookie file unreadable'),
+      expect.stringContaining('Firefox profile has no cookies for this domain'),
     );
-    // Check still completes
-    expect(mockScheduler.markTaskComplete).toHaveBeenCalled();
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+  });
+
+  it('should still run the check when the cookie read fails', async () => {
+    const configWithCookies = {
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          startTime: '12:00',
+          download: { downloadDelay: 10 },
+          cookiesFromBrowser: 'firefox:default-release-1',
+        },
+      ],
+      stateFile: 'test-state.json',
+      browser: 'chrome' as const,
+    };
+    AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
+    mockReadCookieHeaderForUrl.mockRejectedValue(new Error('Firefox profile "default-release-1" not found'));
+
+    (queueManager as any).domainHandlers.set('wetv.vip', mockHandler);
+
+    const task = {
+      seriesUrl: 'https://wetv.vip/play/123',
+      attemptNumber: 1,
+    };
+
+    await schedulerExecutor(task, 'check:wetv.vip');
+
+    expect(mockHandler.extractEpisodes).toHaveBeenCalledWith('https://wetv.vip/play/123', undefined);
+    // No failure retry scheduled — the check itself succeeded
+    expect(mockScheduler.addPriorityTask).not.toHaveBeenCalled();
   });
 
   it('should requeue check task if no episodes found and retries remaining', async () => {

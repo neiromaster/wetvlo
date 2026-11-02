@@ -42,10 +42,15 @@ import { afterAll, mock } from 'bun:test';
  *      time) hands back the mock itself, because bun hoists `mock.module`
  *      above imports.
  * 4. The registration itself MUST stay a literal `mock.module()` call in the
- *    test file — only those are hoisted above imports. A helper that calls
- *    `mock.module` internally is not hoisted, and bun does not rewrite the
- *    exports of modules that were already imported (verified empirically), so
- *    the module under test would keep using the real code.
+ *    test file: calls inside a helper are not hoisted above imports, so the
+ *    mock applies only from the call site onward; keep registrations literal
+ *    in the test file so they reliably precede every import.
+ *
+ * Scope: only modules with cross-file consumers in the suite need this
+ * restore. Files mocking modules that nothing else imports as a test subject
+ * (execa in downloader/ytdlp/video-validator tests, cmd-ts in index.test.ts,
+ * the logger in console-notifier.test.ts) register without a restore and are
+ * fine as-is.
  *
  * If the specifier cannot be resolved or the `?restore` re-import fails, the
  * registration (or the afterAll hook) throws and the test file fails loudly

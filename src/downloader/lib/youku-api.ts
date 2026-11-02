@@ -20,7 +20,7 @@ const ACS_BASE = 'https://acs.youku.tv/h5';
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** Netscape cookie domains we may ever transmit to: youku.tv / youku.com and subdomains. */
+/** Firefox profile cookie domains we may ever transmit to: youku.tv / youku.com and subdomains. */
 const YOUKU_DOMAIN = /^\.?(?:[a-z0-9-]+\.)*youku\.(?:tv|com)$/;
 
 /**
@@ -303,7 +303,7 @@ export async function mintUps(
     const note = inner.error.note ? `: ${inner.error.note}` : '';
     throw new DownloadError(
       `Youku risk control rejected the request (-6004) — usually rate limiting from frequent mints (wait 10-30 min and retry), ` +
-        `not expired cookies; if it persists, re-export cookies from the browser making sure the cna cookie is included${note}`,
+        `not expired cookies; if it persists, log in to a youku site in Firefox and make sure the cna cookie is stored in the profile${note}`,
       'https://www.youku.tv/',
     );
   }
@@ -314,7 +314,7 @@ export async function mintUps(
   if (inner?.trial && !options?.allowTrial) {
     throw new DownloadError(
       'Youku: the server issued a 6-minute trial — for TVOD (paid) episodes this is normal even with valid cookies ' +
-        '(set download.subsBeforeVideo: true to fetch subtitles now); otherwise cookies are logged out or expired — re-export them from a logged-in browser session',
+        '(set download.subsBeforeVideo: true to fetch subtitles now); otherwise cookies are logged out or expired — log in to a youku site in Firefox',
       'https://www.youku.tv/',
     );
   }

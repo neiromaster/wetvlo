@@ -105,7 +105,7 @@ function parseJsonp(text: string): unknown {
  *
  * - Sends browser-like headers on every request.
  * - Attaches the `Cookie` header ONLY when the target host is mgtv.com —
- *   the cookie file may contain cookies for unrelated sites and those
+ *   the Firefox profile may contain cookies for unrelated sites and those
  *   must never leave the machine.
  * - Throws `DownloadError` for every failure mode: malformed URL / network
  *   error / non-2xx HTTP status, and a payload carrying a non-200 `code`.
@@ -169,7 +169,7 @@ export async function fetchPlayerInfo(videoId: string, cookies?: string): Promis
   const pm2 = String(data?.data?.atc?.pm2 ?? '');
   if (pm2 === '') {
     throw new DownloadError(
-      'MGTV returned no pm2 token — cookies likely expired; re-export cookies.txt from a logged-in browser',
+      'MGTV returned no pm2 token — cookies likely expired; log in to mgtv.com in Firefox and make sure cookiesFromBrowser is set in config',
       url,
     );
   }

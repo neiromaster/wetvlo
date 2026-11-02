@@ -72,6 +72,9 @@ describe('readYoukuCookiePairs', () => {
 
     const pairs = await readYoukuCookiePairs('firefox:default-release');
 
+    // Pinned: NO url filter — both .youku.tv and .youku.com cookies must reach
+    // the parser, so the call carries exactly one argument (no opts object)
+    expect(mockReadFirefoxCookies).toHaveBeenCalledWith('firefox:default-release');
     expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'sid=COMVAL']);
     expect(pairs.join('; ')).not.toContain('MUST-NOT-LEAK');
     expect(pairs.join('; ')).not.toContain('ALIPAY-SECRET');

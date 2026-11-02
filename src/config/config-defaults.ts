@@ -3,11 +3,7 @@ import { EpisodeType } from '../types/episode-type';
 
 export type DefaultConfig = {
   stateFile: string;
-  browser?: string;
   cookiesFromBrowser?: string;
-  cookieFile?: string;
-  cookieRefreshBrowser?: string;
-  playwrightHeadless?: boolean;
 
   check: {
     count: number;
@@ -60,8 +56,6 @@ export const defaults: DefaultConfig = {
     consoleMinLevel: NotificationLevel.INFO,
   },
   stateFile: 'wetvlo-state.json',
-  browser: 'chrome',
-  playwrightHeadless: true,
 };
 
 /**

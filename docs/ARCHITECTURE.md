@@ -14,7 +14,6 @@
 type AppDependencies = {
   loadConfig: typeof loadConfig,
   checkYtDlpInstalled: () => Promise<boolean>,
-  readCookieFile: typeof readCookieFile,
   createDownloadManager: () => DownloadManager,
   createScheduler: (
     configs: SeriesConfigResolved[],

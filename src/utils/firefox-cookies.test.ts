@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppContext } from '../app-context';
@@ -112,6 +112,10 @@ describe('findProfileDir', () => {
 
 type CookieRow = [name: string, value: string, host: string, path: string, expiry: number, isSecure: number];
 
+const MOZ_COOKIES_SCHEMA =
+  'CREATE TABLE moz_cookies (id INTEGER PRIMARY KEY, originAttributes TEXT NOT NULL DEFAULT "", ' +
+  'name TEXT, value TEXT, host TEXT, path TEXT, expiry INTEGER, isSecure INTEGER)';
+
 /**
  * Build a fixture cookies.sqlite with the moz_cookies schema Firefox uses.
  * `userVersion` >= 16 (FF142+) means the reader interprets `expiry` as
@@ -119,10 +123,7 @@ type CookieRow = [name: string, value: string, host: string, path: string, expir
  */
 function makeProfileDb(dbPath: string, userVersion: number, rows: CookieRow[]): void {
   const db = new Database(dbPath);
-  db.run(
-    'CREATE TABLE moz_cookies (id INTEGER PRIMARY KEY, originAttributes TEXT NOT NULL DEFAULT "", ' +
-      'name TEXT, value TEXT, host TEXT, path TEXT, expiry INTEGER, isSecure INTEGER)',
-  );
+  db.run(MOZ_COOKIES_SCHEMA);
   for (const row of rows) {
     db.run('INSERT INTO moz_cookies (name, value, host, path, expiry, isSecure) VALUES (?, ?, ?, ?, ?, ?)', row);
   }
@@ -221,6 +222,46 @@ describe('readFirefoxCookies', () => {
 
   it('propagates CookieError for a bad spec', async () => {
     await expect(readFirefoxCookies('chrome:x')).rejects.toThrow(CookieError);
+  });
+
+  it('wraps a corrupt cookies.sqlite in CookieError naming the profile', async () => {
+    const root = makeProfileRoot();
+    writeFileSync(join(root, 'abc.default-release', 'cookies.sqlite'), 'this is not a sqlite database');
+
+    const error = await readFirefoxCookies(SPEC, { url: IQ_URL, roots: [root] }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CookieError);
+    expect((error as CookieError).message).toMatch(/default-release/);
+    expect((error as CookieError).message).toMatch(/cannot read cookies\.sqlite/);
+    expect((error as CookieError).message).toMatch(/not a database/); // original sqlite error preserved
+  });
+
+  it('recovers cookies that live only in the wal file', async () => {
+    const root = makeProfileRoot();
+    const profileDir = join(root, 'abc.default-release');
+    const dbPath = join(profileDir, 'cookies.sqlite');
+    // Keep the writer open: bun:sqlite checkpoints the wal into the main db on
+    // close even when other connections exist, which would make this test
+    // vacuous. An open writer guarantees schema and row stay in the wal —
+    // verified: opening the main-db copy alone yields "no such table".
+    const writer = new Database(dbPath);
+    try {
+      writer.run('PRAGMA journal_mode = WAL');
+      writer.run(MOZ_COOKIES_SCHEMA);
+      writer.run('INSERT INTO moz_cookies (name, value, host, path, expiry, isSecure) VALUES (?, ?, ?, ?, ?, ?)', [
+        'walOnly',
+        'w',
+        '.iq.com',
+        '/',
+        1900000000,
+        0,
+      ]);
+      expect(existsSync(join(profileDir, 'cookies.sqlite-wal'))).toBe(true);
+
+      const names = (await readFirefoxCookies(SPEC, { url: IQ_URL, roots: [root] })).map((c) => c.name);
+      expect(names).toEqual(['walOnly']);
+    } finally {
+      writer.close();
+    }
   });
 });
 

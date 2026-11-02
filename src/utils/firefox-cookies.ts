@@ -152,46 +152,61 @@ export async function readFirefoxCookies(
         }
         continue; // wal/shm are optional
       }
-      await copyFile(src, join(tmp, name));
+      try {
+        await copyFile(src, join(tmp, name));
+      } catch (error) {
+        if (name !== 'cookies.sqlite' && (error as { code?: string }).code === 'ENOENT') {
+          continue; // wal/shm vanished between existsSync and copyFile — still fine
+        }
+        throw error;
+      }
     }
 
-    const db = new Database(join(tmp, 'cookies.sqlite'), { readonly: true });
+    // Open and read inside one guard: a torn copy (Firefox checkpointing
+    // between the main db and wal copies) surfaces as a raw SQLiteError at
+    // open OR query time — wrap it in the module's CookieError contract.
     try {
-      const { user_version: schemaVersion } = db.query('PRAGMA user_version').get() as { user_version: number };
-      const msExpiry = schemaVersion >= MS_EXPIRY_SCHEMA_VERSION;
-      const rows = db.query('SELECT name, value, host, path, expiry, isSecure FROM moz_cookies').all() as Array<{
-        name: string;
-        value: string;
-        host: string;
-        path: string;
-        expiry: number | null;
-        isSecure: number;
-      }>;
+      const db = new Database(join(tmp, 'cookies.sqlite'), { readonly: true });
+      try {
+        const { user_version: schemaVersion } = db.query('PRAGMA user_version').get() as { user_version: number };
+        const msExpiry = schemaVersion >= MS_EXPIRY_SCHEMA_VERSION;
+        const rows = db.query('SELECT name, value, host, path, expiry, isSecure FROM moz_cookies').all() as Array<{
+          name: string;
+          value: string;
+          host: string;
+          path: string;
+          expiry: number | null;
+          isSecure: number;
+        }>;
 
-      const nowSeconds = Math.floor(Date.now() / 1000);
-      const cookies: FirefoxCookie[] = [];
-      const seen = new Set<string>();
-      for (const row of rows) {
-        if (!row.name || !row.value) continue;
-        let expiry = row.expiry ?? 0;
-        if (msExpiry && expiry > 0) expiry = Math.floor(expiry / 1000);
-        if (expiry > 0 && expiry <= nowSeconds) continue; // expired
-        if (opts.url && !domainMatchesUrl(row.host, opts.url)) continue;
-        const key = `${row.name}|${row.host}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        cookies.push({
-          name: row.name,
-          value: row.value,
-          domain: row.host,
-          path: row.path || '/',
-          secure: row.isSecure === 1,
-          expiry,
-        });
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const cookies: FirefoxCookie[] = [];
+        const seen = new Set<string>();
+        for (const row of rows) {
+          if (!row.name || !row.value) continue;
+          let expiry = row.expiry ?? 0;
+          if (msExpiry && expiry > 0) expiry = Math.floor(expiry / 1000);
+          if (expiry > 0 && expiry <= nowSeconds) continue; // expired
+          if (opts.url && !domainMatchesUrl(row.host, opts.url)) continue;
+          const key = `${row.name}|${row.host}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          cookies.push({
+            name: row.name,
+            value: row.value,
+            domain: row.host,
+            path: row.path || '/',
+            secure: row.isSecure === 1,
+            expiry,
+          });
+        }
+        return cookies;
+      } finally {
+        db.close();
       }
-      return cookies;
-    } finally {
-      db.close();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new CookieError(`Firefox profile "${profile}": cannot read cookies.sqlite in ${profileDir}: ${message}`);
     }
   } finally {
     await rm(tmp, { recursive: true, force: true });

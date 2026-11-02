@@ -10,7 +10,8 @@ export type DownloadResult = {
 };
 
 export type DownloaderOptions = {
-  cookieFile?: string;
+  /** Firefox profile cookie spec: "firefox:<profile>" */
+  cookiesFromBrowser?: string;
   /** List of subtitle languages to download (e.g., ['en', 'ru']) */
   subLangs?: string[];
   /** Allow a subtitles-only result when the video is locked/trial (TVOD) */

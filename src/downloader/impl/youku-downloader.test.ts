@@ -5,9 +5,17 @@ import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
 import type { Episode } from '../../types/episode.types.js';
 import { EpisodeType } from '../../types/episode-type';
-import type { YoukuApi, YoukuUpsResult } from '../lib/youku-api.js';
+import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
+import { readYoukuCookiePairs, type YoukuApi, type YoukuUpsResult } from '../lib/youku-api.js';
 import type { YtdlpDownloadResult, YtdlpWrapper } from '../lib/ytdlp-wrapper.js';
 import { YoukuDownloader } from './youku-downloader';
+
+const mockReadFirefoxCookies = mock(async () => [] as FirefoxCookie[]);
+
+mock.module('../../utils/firefox-cookies.js', () => ({
+  readFirefoxCookies: mockReadFirefoxCookies,
+  readCookieHeaderForUrl: mock(async () => ''),
+}));
 
 function makeEpisode(): Episode {
   return {
@@ -49,7 +57,8 @@ const UPS_OK: YoukuUpsResult = {
 function makeApi(overrides: Partial<YoukuApi> = {}): YoukuApi {
   return {
     extractVideoId: mock((url: string) => url.match(/(XNj[A-Za-z0-9+/=]+)\.html/)?.[1] ?? null),
-    readYoukuCookiePairs: mock(async () => ['cna=CNA-1', 'P_sck=S-1']),
+    // Delegate to the real parser: it reads through the mocked firefox-cookies module
+    readYoukuCookiePairs: mock((spec: string) => readYoukuCookiePairs(spec)),
     mintUps: mock(async () => UPS_OK),
     fetchSubtitle: mock(async () => 'SUBTITLE TEXT'),
     ...overrides,
@@ -72,6 +81,8 @@ describe('YoukuDownloader', () => {
   let dir: string;
 
   beforeEach(async () => {
+    mockReadFirefoxCookies.mockClear();
+    mockReadFirefoxCookies.mockResolvedValue([]);
     dir = await mkdtemp(join(tmpdir(), 'youku-dl-test-'));
   });
 
@@ -105,7 +116,7 @@ describe('YoukuDownloader', () => {
       const dl = new YoukuDownloader(api, wrapper);
 
       const result = await dl.download(makeEpisode(), dir, 'E08', {
-        cookieFile: undefined,
+        cookiesFromBrowser: undefined,
         onLog: (m) => logs.push(m),
       });
 
@@ -121,36 +132,35 @@ describe('YoukuDownloader', () => {
       expect(result).toEqual({ filename: 'out/E08.mp4', allFiles: ['out/E08.mp4'] });
     });
 
-    it('loads domain-filtered cookies, logs only the count, and passes pairs to mintUps', async () => {
+    it('passes Firefox profile youku cookies to the ups mint', async () => {
+      mockReadFirefoxCookies.mockResolvedValue([
+        { name: 'cna', value: 'aaa', domain: '.youku.tv', path: '/', secure: false, expiry: 1900000000 },
+        { name: 'cna', value: 'bbb', domain: '.youku.com', path: '/', secure: false, expiry: 1900000000 },
+      ]);
       const api = makeApi();
       const logs: string[] = [];
       const dl = new YoukuDownloader(api, makeWrapper());
 
       await dl.download(makeEpisode(), dir, 'E08', {
-        cookieFile: join(dir, 'cookies.txt'),
-        subLangs: [],
+        cookiesFromBrowser: 'firefox:default-release',
         onLog: (m) => logs.push(m),
       });
 
-      expect(api.readYoukuCookiePairs).toHaveBeenCalledWith(join(dir, 'cookies.txt'));
-      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', ['cna=CNA-1', 'P_sck=S-1'], { allowTrial: false });
-      expect(logs.join('\n')).toContain('loaded 2 youku cookies');
+      // youku.tv ranks above youku.com for the same cookie name
+      expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', ['cna=aaa'], { allowTrial: false });
+      expect(logs.join('\n')).toMatch(/loaded 1 youku cookies/);
       // cookie VALUES never appear in logs
-      expect(logs.join('\n')).not.toContain('CNA-1');
-      expect(logs.join('\n')).not.toContain('S-1');
+      expect(logs.join('\n')).not.toContain('aaa');
+      expect(logs.join('\n')).not.toContain('bbb');
     });
 
     it('propagates CookieError from cookie loading', async () => {
-      const api = makeApi({
-        readYoukuCookiePairs: mock(async () => {
-          throw new CookieError('No youku.tv/youku.com cookies in the cookie file');
-        }),
-      });
-      const dl = new YoukuDownloader(api, makeWrapper());
+      mockReadFirefoxCookies.mockResolvedValue([]);
+      const dl = new YoukuDownloader(makeApi(), makeWrapper());
 
-      await expect(dl.download(makeEpisode(), dir, 'E08', { cookieFile: join(dir, 'cookies.txt') })).rejects.toThrow(
-        CookieError,
-      );
+      await expect(
+        dl.download(makeEpisode(), dir, 'E08', { cookiesFromBrowser: 'firefox:default-release' }),
+      ).rejects.toThrow(CookieError);
     });
 
     it('propagates the trial DownloadError from mintUps', async () => {

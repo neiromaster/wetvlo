@@ -24,7 +24,6 @@ export class YtDlpDownloader extends BaseDownloader {
     // Note: wrapper already handles URL, so we don't need to pass it in args
     return this.wrapper.download(episode.url, filenameWithoutExt, dir, {
       args: [], // No additional args needed for basic download
-      cookieFile: options?.cookieFile,
       subLangs: options?.subLangs,
       onProgress: options?.onProgress,
       onLog: options?.onLog,

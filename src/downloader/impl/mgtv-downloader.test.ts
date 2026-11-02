@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CookieError } from '../../errors/custom-errors.js';
 import type { Episode } from '../../types/episode.types.js';
 import { EpisodeType } from '../../types/episode-type';
+import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
 import type { MgtvApi, MgtvSubtitleEntry } from '../lib/mgtv-api.js';
 import type { YtdlpDownloadResult, YtdlpWrapper } from '../lib/ytdlp-wrapper.js';
 import { MgtvDownloader } from './mgtv-downloader';
+
+const mockReadFirefoxCookies = mock(async () => [] as FirefoxCookie[]);
+
+mock.module('../../utils/firefox-cookies.js', () => ({
+  readFirefoxCookies: mockReadFirefoxCookies,
+  readCookieHeaderForUrl: mock(async () => ''),
+}));
 
 function makeEpisode(): Episode {
   return {
@@ -51,6 +59,8 @@ describe('MgtvDownloader', () => {
   let dir: string;
 
   beforeEach(async () => {
+    mockReadFirefoxCookies.mockClear();
+    mockReadFirefoxCookies.mockResolvedValue([]);
     dir = await mkdtemp(join(tmpdir(), 'mgtv-dl-test-'));
   });
 
@@ -82,7 +92,7 @@ describe('MgtvDownloader', () => {
       const wrapper = makeWrapper();
       const dl = new MgtvDownloader(api, wrapper);
 
-      const result = await dl.download(makeEpisode(), dir, 'E10', { cookieFile: undefined });
+      const result = await dl.download(makeEpisode(), dir, 'E10', { cookiesFromBrowser: undefined });
 
       expect(api.fetchPlayerInfo).toHaveBeenCalledWith('24677071', undefined);
       expect(api.fetchSourceStreams).toHaveBeenCalledWith('24677071', 'pm2', undefined);
@@ -95,40 +105,36 @@ describe('MgtvDownloader', () => {
       expect(result).toEqual({ filename: 'out/E10.mp4', allFiles: ['out/E10.mp4'] });
     });
 
-    it('passes domain-filtered cookies to every API call and never leaks other domains', async () => {
-      const cookieFile = join(dir, 'cookies.txt');
-      await writeFile(
-        cookieFile,
-        [
-          '.mgtv.com\tTRUE\t/\tFALSE\t1900000000\ta\t1',
-          'foo.mgtv.com\tTRUE\t/\tFALSE\t1900000000\tb\t2',
-          'openai.com\tTRUE\t/\tFALSE\t1900000000\tsecret\tMUST-NOT-LEAK',
-          '',
-        ].join('\n'),
-      );
+    it('passes Firefox profile cookies to every API call and never leaks other domains', async () => {
+      mockReadFirefoxCookies.mockResolvedValue([
+        { name: 'a', value: '1', domain: '.mgtv.com', path: '/', secure: false, expiry: 1900000000 },
+        { name: 'b', value: '2', domain: 'foo.mgtv.com', path: '/', secure: false, expiry: 1900000000 },
+        { name: 'secret', value: 'MUST-NOT-LEAK', domain: 'openai.com', path: '/', secure: false, expiry: 1900000000 },
+      ]);
       const api = makeApi();
       const logs: string[] = [];
       const dl = new MgtvDownloader(api, makeWrapper());
 
       await dl.download(makeEpisode(), dir, 'E10', {
-        cookieFile,
+        cookiesFromBrowser: 'firefox:default-release',
         subLangs: ['ru.*'],
         onLog: (m) => logs.push(m),
       });
 
+      expect(mockReadFirefoxCookies).toHaveBeenCalledWith('firefox:default-release', { url: 'https://w.mgtv.com/' });
       expect(api.fetchPlayerInfo).toHaveBeenCalledWith('24677071', 'a=1; b=2');
       expect(api.fetchSourceStreams).toHaveBeenCalledWith('24677071', 'pm2', 'a=1; b=2');
       expect(api.fetchSubtitleList).toHaveBeenCalledWith('24677071', 'a=1; b=2');
       expect(logs.join('\n')).toMatch(/loaded 2 mgtv\.com cookies/);
-      expect(logs.join('\n')).not.toContain('MUST-NOT-LEAK');
     });
 
-    it('throws CookieError when the cookie file is missing', async () => {
+    it('throws CookieError when the Firefox profile has no mgtv cookies', async () => {
+      mockReadFirefoxCookies.mockResolvedValue([]);
       const dl = new MgtvDownloader(makeApi(), makeWrapper());
 
-      await expect(dl.download(makeEpisode(), dir, 'E10', { cookieFile: join(dir, 'missing.txt') })).rejects.toThrow(
-        CookieError,
-      );
+      await expect(
+        dl.download(makeEpisode(), dir, 'E10', { cookiesFromBrowser: 'firefox:default-release' }),
+      ).rejects.toThrow(CookieError);
     });
 
     it('falls back to the best unlocked stream and logs the degradation', async () => {

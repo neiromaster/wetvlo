@@ -1,6 +1,5 @@
-import { readFile } from 'node:fs/promises';
-
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { readFirefoxCookies } from '../../utils/firefox-cookies.js';
 
 /**
  * MGTV International API layer (tinker*.glb.mgtv.com).
@@ -68,46 +67,26 @@ export function extractVideoId(url: string): string | null {
 }
 
 /**
- * Read a Netscape-format cookies.txt and build a `Cookie` header containing
- * ONLY mgtv.com cookies. Users export their whole browser (500+ lines with
- * unrelated accounts) — nothing outside *.mgtv.com may ever be sent.
- * Deduplicates by name+domain (first occurrence wins).
+ * Build a `Cookie` header containing ONLY mgtv.com cookies from a Firefox
+ * profile. Nothing outside *.mgtv.com may ever be sent.
  *
- * @param cookieFile - Path to the Netscape-format cookie file
+ * @param cookiesFromBrowser - Cookie spec, "firefox:<profile>"
  * @returns Cookie header value, e.g. "PHPSESSID=abc; sessionid=xyz"
- * @throws CookieError when the file is unreadable or has no mgtv.com cookies
+ * @throws CookieError when the profile has no mgtv.com cookies
  */
-export async function readMgtvCookieHeader(cookieFile: string): Promise<string> {
-  let content: string;
-  try {
-    content = await readFile(cookieFile, 'utf-8');
-  } catch (error) {
-    throw new CookieError(
-      `Cannot read MGTV cookie file "${cookieFile}": ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  const pairs: string[] = [];
-  const seen = new Set<string>();
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    // "#HttpOnly_" prefix is curl's convention for HTTP-only cookies — not a comment
-    const effective = trimmed.startsWith('#HttpOnly_') ? trimmed.slice(10) : trimmed;
-    if (!effective || effective.startsWith('#')) continue;
-    const fields = effective.split('\t');
-    const domain = fields[0] ?? '';
-    if (fields.length < 7 || (domain !== 'mgtv.com' && !domain.endsWith('.mgtv.com')) || !fields[5] || !fields[6])
-      continue;
-    const key = `${fields[5]}|${fields[0]}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    pairs.push(`${fields[5]}=${fields[6].trim()}`);
-  }
+export async function readMgtvCookieHeader(cookiesFromBrowser: string): Promise<string> {
+  const all = await readFirefoxCookies(cookiesFromBrowser, { url: 'https://w.mgtv.com/' });
+  const pairs = all.filter((c) => {
+    const d = c.domain.toLowerCase();
+    return d === 'mgtv.com' || d.endsWith('.mgtv.com');
+  });
 
   if (pairs.length === 0) {
-    throw new CookieError(`No mgtv.com cookies found in "${cookieFile}" — re-export cookies from a logged-in browser`);
+    throw new CookieError(
+      `No mgtv.com cookies in Firefox profile "${cookiesFromBrowser}" — log in to mgtv.com in Firefox`,
+    );
   }
-  return pairs.join('; ');
+  return pairs.map((c) => `${c.name}=${c.value}`).join('; ');
 }
 
 /**

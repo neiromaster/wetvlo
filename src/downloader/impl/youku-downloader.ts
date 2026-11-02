@@ -57,8 +57,8 @@ export class YoukuDownloader extends BaseDownloader {
 
     // Cookies: domain-filtered at parse time — only youku.tv/youku.com pairs survive
     let cookies: string[] = [];
-    if (options?.cookieFile) {
-      cookies = await this.api.readYoukuCookiePairs(options.cookieFile);
+    if (options?.cookiesFromBrowser) {
+      cookies = await this.api.readYoukuCookiePairs(options.cookiesFromBrowser);
       onLog(`Youku: loaded ${cookies.length} youku cookies`);
     }
 

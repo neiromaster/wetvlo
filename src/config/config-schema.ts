@@ -76,6 +76,7 @@ const CommonSettingsSchema = z.object({
   telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
   stateFile: z.string().optional().describe('Path to state file'),
   browser: BrowserSchema.optional().describe('Browser to use for scraping'),
+  cookiesFromBrowser: z.string().optional().describe('Firefox profile cookie spec: "firefox:<profile>"'),
   cookieFile: z.string().optional().describe('Path to cookie file'),
   subLangs: z.array(z.string()).optional().describe('List of subtitle languages to download'),
   cookieRefreshBrowser: BrowserSchema.optional().describe('Browser to use for Playwright cookie refresh'),

@@ -4,6 +4,7 @@ import { EpisodeType } from '../types/episode-type';
 export type DefaultConfig = {
   stateFile: string;
   browser?: string;
+  cookiesFromBrowser?: string;
   cookieFile?: string;
   cookieRefreshBrowser?: string;
   playwrightHeadless?: boolean;

@@ -135,6 +135,22 @@ describe('Config Schema', () => {
     });
   });
 
+  describe('cookiesFromBrowser', () => {
+    it('accepts cookiesFromBrowser at series level', () => {
+      const parsed = SeriesConfigSchema.parse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: 'firefox:default-release-1',
+      });
+      expect(parsed.cookiesFromBrowser).toBe('firefox:default-release-1');
+    });
+
+    it('leaves cookiesFromBrowser undefined when not set', () => {
+      const parsed = SeriesConfigSchema.parse({ name: 'X', url: 'https://wetv.vip/play/1' });
+      expect(parsed.cookiesFromBrowser).toBeUndefined();
+    });
+  });
+
   describe('TelegramConfigSchema', () => {
     it('should validate valid telegram config', () => {
       const valid = {

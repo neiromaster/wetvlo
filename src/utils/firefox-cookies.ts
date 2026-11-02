@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { type Dirent, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppContext } from '../app-context';
 import { CookieError } from '../errors/custom-errors';
@@ -71,13 +71,15 @@ export function defaultProfileRoots(): string[] {
 export function findProfileDir(profile: string, roots: string[] = defaultProfileRoots()): string {
   const matches: string[] = [];
   for (const root of roots) {
-    let entries: string[];
+    let entries: Dirent[];
     try {
-      entries = readdirSync(root);
+      entries = readdirSync(root, { withFileTypes: true });
     } catch {
       continue; // root missing (e.g. no MS Store Firefox)
     }
-    for (const name of entries) {
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue; // a file named like a profile is not a profile
+      const name = entry.name;
       if (name === profile || name.endsWith(`.${profile}`)) {
         matches.push(join(root, name));
       }
@@ -86,7 +88,8 @@ export function findProfileDir(profile: string, roots: string[] = defaultProfile
   matches.sort();
   const first = matches[0];
   if (first === undefined) {
-    throw new CookieError(`Firefox profile "${profile}" not found in: ${roots.join(', ')}`);
+    const searched = roots.length ? roots.join(', ') : '(no profile roots found)';
+    throw new CookieError(`Firefox profile "${profile}" not found in: ${searched}`);
   }
   if (matches.length > 1) {
     try {

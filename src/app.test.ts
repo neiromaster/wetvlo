@@ -21,7 +21,6 @@ describe('App', () => {
     mockConfig = {
       series: [],
       stateFile: 'state.json',
-      browser: 'chrome' as const,
     } as any;
   });
 

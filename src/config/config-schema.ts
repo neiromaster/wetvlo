@@ -72,9 +72,14 @@ const CommonSettingsSchema = z.object({
   stateFile: z.string().optional().describe('Path to state file'),
   cookiesFromBrowser: z
     .string()
-    .refine((s) => s.startsWith('firefox:') && s.length > 'firefox:'.length, {
-      message: 'cookiesFromBrowser must be "firefox:<profile>" - only Firefox is supported',
-    })
+    .refine(
+      (s) =>
+        /^\$\{[^}]+\}$/.test(s) || // env placeholder — resolved before the spec is parsed
+        (s.startsWith('firefox:') && s.slice('firefox:'.length).trim().length > 0),
+      {
+        message: 'cookiesFromBrowser must be "firefox:<profile>" - only Firefox is supported',
+      },
+    )
     .optional()
     .describe('Firefox profile cookie spec: "firefox:<profile>"'),
   subLangs: z.array(z.string()).optional().describe('List of subtitle languages to download'),

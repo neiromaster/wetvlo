@@ -70,7 +70,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     const configRegistry = new ConfigRegistry(mockConfig as any);
     AppContext.initialize(configRegistry, mockNotifier as any);
@@ -237,7 +236,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
     mockReadCookieHeaderForUrl.mockResolvedValue('QC005=abc');
@@ -281,7 +279,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
     mockReadCookieHeaderForUrl.mockResolvedValue('');
@@ -314,7 +311,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     AppContext.initialize(new ConfigRegistry(configWithCookies as any), mockNotifier as any);
     mockReadCookieHeaderForUrl.mockRejectedValue(new Error('Firefox profile "default-release-1" not found'));
@@ -425,7 +421,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     AppContext.initialize(new ConfigRegistry(configWithExpress as any), mockNotifier as any);
 
@@ -454,7 +449,6 @@ describe('QueueManager', () => {
         },
       ],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     AppContext.initialize(new ConfigRegistry(configWithSubsBeforeVideo as any), mockNotifier as any);
 

@@ -29,7 +29,6 @@ describe('App Interactive Mode', () => {
     mockConfig = {
       series: [],
       stateFile: 'state.json',
-      browser: 'chrome' as const,
     } as any;
 
     // Mock process.stdin

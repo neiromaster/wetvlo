@@ -150,6 +150,15 @@ describe('Config Schema', () => {
       expect(parsed.cookiesFromBrowser).toBeUndefined();
     });
 
+    it('accepts an env placeholder (resolved before the spec is parsed)', () => {
+      const parsed = SeriesConfigSchema.parse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: '${WETVLO_PROFILE}',
+      });
+      expect(parsed.cookiesFromBrowser).toBe('${WETVLO_PROFILE}');
+    });
+
     it('rejects non-firefox browser specs', () => {
       for (const spec of ['chrome:default', 'edge:Profile 1']) {
         const result = SeriesConfigSchema.safeParse({
@@ -166,6 +175,15 @@ describe('Config Schema', () => {
         name: 'X',
         url: 'https://wetv.vip/play/1',
         cookiesFromBrowser: 'firefox',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects firefox spec with a blank profile', () => {
+      const result = SeriesConfigSchema.safeParse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: 'firefox: ',
       });
       expect(result.success).toBe(false);
     });
@@ -265,7 +283,7 @@ describe('Config Schema', () => {
       return calls;
     };
 
-    it('warns when cookieFile is at the top level or in series', () => {
+    it('warns when cookieFile is at the top level, in series or in domainConfigs', () => {
       const warnings = captureWarnings();
       validateConfigWithWarnings({
         cookieFile: './cookies.txt',
@@ -276,11 +294,19 @@ describe('Config Schema', () => {
             cookieFile: './cookies.txt',
           },
         ],
+        domainConfigs: [
+          {
+            domain: 'wetv.vip',
+            cookieFile: './cookies.txt',
+          },
+        ],
       } as RawConfig);
 
       const text = warnings.join(' ');
       expect(text).toContain("'cookieFile' found in the top level is no longer supported");
       expect(text).toContain("'cookieFile' found in series[0] is no longer supported");
+      expect(text).toContain("'cookieFile' found in domainConfigs[0] is no longer supported");
+      expect(text).toContain('yt-dlp.conf');
     });
 
     it('warns that browser and playwrightHeadless have no effect', () => {

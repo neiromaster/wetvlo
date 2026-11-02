@@ -68,7 +68,6 @@ describe('QueueManager Retry Logic', () => {
       ],
       domainConfigs: [mockConfig],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     const configRegistry = new ConfigRegistry(mockRootConfig as any);
     AppContext.initialize(configRegistry, notifier, stateManager);

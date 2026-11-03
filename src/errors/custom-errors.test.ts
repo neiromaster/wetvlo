@@ -7,6 +7,7 @@ import {
   NotificationError,
   SchedulerError,
   StateError,
+  TrialContentError,
   WetvloError,
 } from './custom-errors.js';
 
@@ -65,5 +66,14 @@ describe('Custom Errors', () => {
     const error = new SchedulerError('scheduler error');
     expect(error).toBeInstanceOf(WetvloError);
     expect(error.name).toBe('SchedulerError');
+  });
+
+  it('TrialContentError should have url property', () => {
+    const url = 'http://example.com';
+    const error = new TrialContentError('trial content', url);
+    expect(error).toBeInstanceOf(WetvloError);
+    expect(error.name).toBe('TrialContentError');
+    expect(error.url).toBe(url);
+    expect(error.message).toBe('trial content');
   });
 });

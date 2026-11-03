@@ -55,6 +55,21 @@ export class DownloadError extends WetvloError {
 }
 
 /**
+ * Trial/preview content was served instead of the full episode — typically a
+ * stale or missing session. The queue manager treats this like CookieError:
+ * a Firefox-tab session rescue is worth a try before retrying.
+ */
+export class TrialContentError extends WetvloError {
+  constructor(
+    message: string,
+    public readonly url: string,
+  ) {
+    super(message);
+    this.name = 'TrialContentError';
+  }
+}
+
+/**
  * Notification error
  */
 export class NotificationError extends WetvloError {

@@ -49,7 +49,7 @@ export class YoukuDownloader extends BaseDownloader {
   ): Promise<DownloadResult> {
     const onLog = options?.onLog ?? (() => {});
 
-    // Fail fast on a misrouted URL before touching the cookie file
+    // Fail fast on a misrouted URL before loading cookies
     const videoId = this.api.extractVideoId(episode.url);
     if (!videoId) {
       throw new DownloadError(`Cannot extract Youku video ID from URL: ${episode.url}`, episode.url);
@@ -57,8 +57,8 @@ export class YoukuDownloader extends BaseDownloader {
 
     // Cookies: domain-filtered at parse time — only youku.tv/youku.com pairs survive
     let cookies: string[] = [];
-    if (options?.cookieFile) {
-      cookies = await this.api.readYoukuCookiePairs(options.cookieFile);
+    if (options?.cookiesFromBrowser) {
+      cookies = await this.api.readYoukuCookiePairs(options.cookiesFromBrowser);
       onLog(`Youku: loaded ${cookies.length} youku cookies`);
     }
 
@@ -72,7 +72,7 @@ export class YoukuDownloader extends BaseDownloader {
     // Trial payloads carry preview streams only — never hand them to yt-dlp
     if (ups.trial === true && !subsOnlyMode) {
       throw new DownloadError(
-        'Youku: not logged in or cookies expired — the server issued a 6-minute trial; re-export cookies from a logged-in browser session',
+        'Youku: not logged in or cookies expired — the server issued a 6-minute trial; log in to a youku site in Firefox and make sure cookiesFromBrowser is set in config',
         episode.url,
       );
     }

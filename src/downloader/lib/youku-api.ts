@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { readFirefoxCookies } from '../../utils/firefox-cookies.js';
 
 /**
  * Site API layer for Youku International (youku.tv).
@@ -20,7 +20,7 @@ const ACS_BASE = 'https://acs.youku.tv/h5';
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** Netscape cookie domains we may ever transmit to: youku.tv / youku.com and subdomains. */
+/** Firefox profile cookie domains we may ever transmit to: youku.tv / youku.com and subdomains. */
 const YOUKU_DOMAIN = /^\.?(?:[a-z0-9-]+\.)*youku\.(?:tv|com)$/;
 
 /**
@@ -84,45 +84,30 @@ export type YoukuUpsResult = {
 };
 
 /**
- * Parse a Netscape cookies.txt export into `name=value` pairs.
+ * Build `name=value` pairs from a Firefox profile for the youku API.
  *
  * Only youku.tv / youku.com cookies survive (defense in depth: the pairs are
  * the only cookie currency this module ever sends). `.www.*` re-domained junk
- * is dropped (same class as isJunkCookieDomain in utils/cookie-sync — keep in
- * sync). Dedup is by NAME across domains with youkuDomainRank precedence —
- * duplicate names in one Cookie header make youku answer HTTP 400.
- * `#HttpOnly_` prefixed lines are unescaped before parsing.
- * Throws CookieError when the file is unreadable or holds no youku cookies.
+ * is dropped. Dedup is by NAME across domains with youkuDomainRank precedence
+ * — duplicate names in one Cookie header make youku answer HTTP 400.
+ * Throws CookieError when the profile holds no youku cookies.
  */
-export async function readYoukuCookiePairs(cookieFile: string): Promise<string[]> {
-  let content: string;
-  try {
-    content = await readFile(cookieFile, 'utf-8');
-  } catch {
-    throw new CookieError(`Cannot read cookie file: ${cookieFile}`);
-  }
+export async function readYoukuCookiePairs(cookiesFromBrowser: string): Promise<string[]> {
+  const all = await readFirefoxCookies(cookiesFromBrowser); // no url filter: both .tv and .com needed
 
   const pairs = new Map<string, { rank: number; pair: string }>();
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) continue;
-    const clean = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line;
-    const f = clean.split('\t');
-    const domain = f[0];
-    const name = f[5];
-    const value = f[6];
-    if (f.length < 7 || !domain || !name || !value) continue;
-    const domainKey = domain.toLowerCase();
+  for (const c of all) {
+    const domainKey = c.domain.toLowerCase();
     if (!YOUKU_DOMAIN.test(domainKey)) continue;
     if (domainKey.startsWith('.www.')) continue; // re-domained junk — never send
-    const candidate = { rank: youkuDomainRank(domainKey), pair: `${name}=${value.trim()}` };
-    const existing = pairs.get(name);
-    if (!existing || candidate.rank < existing.rank) pairs.set(name, candidate);
+    const candidate = { rank: youkuDomainRank(domainKey), pair: `${c.name}=${c.value}` };
+    const existing = pairs.get(c.name);
+    if (!existing || candidate.rank < existing.rank) pairs.set(c.name, candidate);
   }
 
   if (pairs.size === 0) {
     throw new CookieError(
-      'No youku.tv/youku.com cookies in the cookie file — re-export cookies from a logged-in browser session',
+      `No youku.tv/youku.com cookies in Firefox profile "${cookiesFromBrowser}" — log in to a youku site in Firefox`,
     );
   }
   return [...pairs.values()].map((entry) => entry.pair);
@@ -318,7 +303,7 @@ export async function mintUps(
     const note = inner.error.note ? `: ${inner.error.note}` : '';
     throw new DownloadError(
       `Youku risk control rejected the request (-6004) — usually rate limiting from frequent mints (wait 10-30 min and retry), ` +
-        `not expired cookies; if it persists, re-export cookies from the browser making sure the cna cookie is included${note}`,
+        `not expired cookies; if it persists, log in to a youku site in Firefox and make sure the cna cookie is stored in the profile${note}`,
       'https://www.youku.tv/',
     );
   }
@@ -329,7 +314,7 @@ export async function mintUps(
   if (inner?.trial && !options?.allowTrial) {
     throw new DownloadError(
       'Youku: the server issued a 6-minute trial — for TVOD (paid) episodes this is normal even with valid cookies ' +
-        '(set download.subsBeforeVideo: true to fetch subtitles now); otherwise cookies are logged out or expired — re-export them from a logged-in browser session',
+        '(set download.subsBeforeVideo: true to fetch subtitles now); otherwise cookies are logged out or expired — log in to a youku site in Firefox',
       'https://www.youku.tv/',
     );
   }
@@ -450,7 +435,7 @@ export function extractVideoId(url: string): string | null {
 /** Injectable surface of everything YoukuDownloader needs from this module. */
 export type YoukuApi = {
   extractVideoId(url: string): string | null;
-  readYoukuCookiePairs(cookieFile: string): Promise<string[]>;
+  readYoukuCookiePairs(cookiesFromBrowser: string): Promise<string[]>;
   mintUps(vid: string, cookiePairs: string[], options?: { allowTrial?: boolean }): Promise<YoukuUpsResult>;
   fetchSubtitle(url: string): Promise<string>;
 };

@@ -24,13 +24,10 @@ import type { Notifier } from './notifications/notifier';
 import { TelegramNotifier } from './notifications/telegram-notifier';
 import { Scheduler } from './scheduler/scheduler';
 import type { SchedulerMode, SchedulerOptions } from './types/config.types';
-import { readCookieFile } from './utils/cookie-extractor';
-import { CookieRefreshManager } from './utils/cookie-sync';
 
 export type AppDependencies = {
   loadConfig: typeof loadConfig;
   checkYtDlpInstalled: () => Promise<boolean>;
-  readCookieFile: typeof readCookieFile;
   createDownloadManager: () => DownloadManager;
   createScheduler: (
     configs: SeriesConfigResolved[],
@@ -43,7 +40,6 @@ export type AppDependencies = {
 const defaultDependencies: AppDependencies = {
   loadConfig,
   checkYtDlpInstalled: DownloadManager.checkYtDlpInstalled,
-  readCookieFile,
   createDownloadManager: () => new DownloadManager(),
   createScheduler: (c, dm, opt, eb) => new Scheduler(c, dm, opt, undefined, undefined, eb),
 };
@@ -55,9 +51,6 @@ export async function handleShutdown(scheduler: Scheduler, notifier: Notifier): 
   notifier.notify(NotificationLevel.DEBUG, 'Shutting down gracefully...');
 
   try {
-    const cookieManager = CookieRefreshManager.getInstance();
-    await cookieManager.shutdown();
-
     await scheduler.stop();
     notifier.notify(NotificationLevel.DEBUG, 'Shutdown complete');
   } catch (error) {
@@ -208,10 +201,6 @@ export async function runApp(
           // Reload config registry and scheduler
           AppContext.reloadConfig(newConfigRegistry);
           await scheduler.reload(newConfigRegistry.listSeries());
-
-          // Reinitialize cookie refresh browser to apply new config
-          const cookieManager = CookieRefreshManager.getInstance();
-          await cookieManager.reinitialize();
 
           newNotifier.notify(NotificationLevel.SUCCESS, 'Configuration reloaded successfully');
         } catch (error) {

@@ -403,7 +403,7 @@ describe('Windows Specific Tests', () => {
             tempDir: '.\\temp',
           },
           stateFile: 'C:\\Users\\Test\\AppData\\Local\\wetvlo\\state.json',
-          cookieFile: 'C:\\Users\\Test\\cookies.txt',
+          cookiesFromBrowser: 'firefox:default-release-1',
         },
       };
 

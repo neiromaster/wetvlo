@@ -5,6 +5,7 @@ import type { DomainConfig } from '../config/config-schema';
 import { DownloadManager } from '../downloader/download-manager';
 import type { Notifier } from '../notifications/notifier';
 import { StateManager } from '../state/state-manager';
+import { queueModuleRestore } from '../test-utils/queue-module-restore';
 import type { Episode } from '../types/episode.types';
 import type { EpisodeType } from '../types/episode-type';
 
@@ -17,6 +18,7 @@ mock.module('../handlers/handler-registry', () => ({
     })),
   },
 }));
+queueModuleRestore('../handlers/handler-registry', import.meta.dir);
 
 import { QueueManager } from './queue-manager';
 
@@ -66,7 +68,6 @@ describe('QueueManager Retry Logic', () => {
       ],
       domainConfigs: [mockConfig],
       stateFile: 'test-state.json',
-      browser: 'chrome' as const,
     };
     const configRegistry = new ConfigRegistry(mockRootConfig as any);
     AppContext.initialize(configRegistry, notifier, stateManager);

@@ -1,13 +1,10 @@
 import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import { execa } from 'execa';
-import { sanitizeCookieFile } from '../../utils/cookie-sync.js';
 
 export type YtdlpWrapperOptions = {
   /** Additional yt-dlp CLI arguments (flexible - any yt-dlp args) */
   args?: string[];
-  /** Path to cookie file (Netscape format) */
-  cookieFile?: string;
   /** List of subtitle languages to download (e.g., ['en', 'ru']) */
   subLangs?: string[];
   /** Callback for progress updates */
@@ -26,6 +23,9 @@ export type YtdlpDownloadResult = {
 /**
  * Low-level wrapper for yt-dlp CLI
  * Provides flexible interface for running yt-dlp with arbitrary arguments
+ *
+ * Cookies are not passed via --cookies; yt-dlp picks them up from its own
+ * config file (yt-dlp.conf in the working directory).
  */
 export class YtdlpWrapper {
   /**
@@ -43,7 +43,7 @@ export class YtdlpWrapper {
     dir: string,
     options: YtdlpWrapperOptions = {},
   ): Promise<YtdlpDownloadResult> {
-    const { args = [], cookieFile, subLangs, onProgress, onLog } = options;
+    const { args = [], subLangs, onProgress, onLog } = options;
 
     // Build output template
     const outputTemplate = join(dir, `${outputName}.%(ext)s`);
@@ -57,11 +57,6 @@ export class YtdlpWrapper {
 
     // Build command arguments
     const cmdArgs = ['--no-warnings', '--newline', '-o', outputTemplate];
-
-    // Add cookie file if provided
-    if (cookieFile) {
-      cmdArgs.unshift('--cookies', cookieFile);
-    }
 
     // Add subtitle arguments if subLangs is provided
     if (subLangs && subLangs.length > 0) {
@@ -173,14 +168,6 @@ export class YtdlpWrapper {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const fullLog = outputBuffer.join('\n');
       throw new Error(`yt-dlp failed: ${errorMsg}\n\nLog output:\n${fullLog}`);
-    } finally {
-      // yt-dlp rewrites the --cookies file from its in-memory jar on exit
-      // (even on failures), and responses during the run can add `.www.*`
-      // junk cookies that bloat the Cookie header until the site starts
-      // rejecting requests (HTTP 413). Strip them so the jar cannot regress.
-      if (cookieFile) {
-        await sanitizeCookieFile(cookieFile);
-      }
     }
   }
 

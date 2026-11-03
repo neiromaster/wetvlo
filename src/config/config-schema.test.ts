@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import {
   CheckSettingsSchema,
   ConfigSchema,
@@ -8,6 +8,7 @@ import {
   TelegramConfigSchema,
   validateConfig,
   validateConfigSafe,
+  validateConfigWithWarnings,
 } from './config-schema.js';
 
 describe('Config Schema', () => {
@@ -34,7 +35,6 @@ describe('Config Schema', () => {
     ],
     globalConfig: {
       stateFile: 'state.json',
-      browser: 'chrome',
     },
   };
 
@@ -135,6 +135,60 @@ describe('Config Schema', () => {
     });
   });
 
+  describe('cookiesFromBrowser', () => {
+    it('accepts cookiesFromBrowser at series level', () => {
+      const parsed = SeriesConfigSchema.parse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: 'firefox:default-release-1',
+      });
+      expect(parsed.cookiesFromBrowser).toBe('firefox:default-release-1');
+    });
+
+    it('leaves cookiesFromBrowser undefined when not set', () => {
+      const parsed = SeriesConfigSchema.parse({ name: 'X', url: 'https://wetv.vip/play/1' });
+      expect(parsed.cookiesFromBrowser).toBeUndefined();
+    });
+
+    it('accepts an env placeholder (resolved before the spec is parsed)', () => {
+      const parsed = SeriesConfigSchema.parse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: '${WETVLO_PROFILE}',
+      });
+      expect(parsed.cookiesFromBrowser).toBe('${WETVLO_PROFILE}');
+    });
+
+    it('rejects non-firefox browser specs', () => {
+      for (const spec of ['chrome:default', 'edge:Profile 1']) {
+        const result = SeriesConfigSchema.safeParse({
+          name: 'X',
+          url: 'https://wetv.vip/play/1',
+          cookiesFromBrowser: spec,
+        });
+        expect(result.success).toBe(false);
+      }
+    });
+
+    it('rejects firefox spec without a profile', () => {
+      const result = SeriesConfigSchema.safeParse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: 'firefox',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects firefox spec with a blank profile', () => {
+      const result = SeriesConfigSchema.safeParse({
+        name: 'X',
+        url: 'https://wetv.vip/play/1',
+        cookiesFromBrowser: 'firefox: ',
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe('TelegramConfigSchema', () => {
     it('should validate valid telegram config', () => {
       const valid = {
@@ -172,10 +226,10 @@ describe('Config Schema', () => {
     // Note: stateFile is optional in domainConfigs after schema refactoring
     // This test is no longer relevant
 
-    it('should validate browser enum', () => {
+    it('should reject unsupported cookiesFromBrowser specs', () => {
       const invalidConfig = {
         ...validConfig,
-        globalConfig: { ...validConfig.globalConfig, browser: 'invalid-browser' as any },
+        globalConfig: { ...validConfig.globalConfig, cookiesFromBrowser: 'chrome:default' },
       };
       const result = ConfigSchema.safeParse(invalidConfig);
       expect(result.success).toBe(false);
@@ -190,7 +244,7 @@ describe('Config Schema', () => {
     it('should throw for invalid config', () => {
       const invalidConfig = {
         ...validConfig,
-        globalConfig: { ...validConfig.globalConfig, browser: 'invalid' as any },
+        globalConfig: { ...validConfig.globalConfig, cookiesFromBrowser: 'firefox' },
       };
       expect(() => validateConfig(invalidConfig as RawConfig)).toThrow();
     });
@@ -205,14 +259,90 @@ describe('Config Schema', () => {
     it('should return error for invalid config', () => {
       const invalidConfig = {
         ...validConfig,
-        globalConfig: { ...validConfig.globalConfig, browser: 'invalid' as any },
+        globalConfig: { ...validConfig.globalConfig, cookiesFromBrowser: 'firefox' },
       };
       const result = validateConfigSafe(invalidConfig as RawConfig);
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeDefined();
-        expect(result.error).toContain('browser');
+        expect(result.error).toContain('cookiesFromBrowser');
       }
+    });
+  });
+
+  describe('legacy key deprecation warnings', () => {
+    afterEach(() => {
+      mock.restore();
+    });
+
+    const captureWarnings = (): string[] => {
+      const calls: string[] = [];
+      spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+        calls.push(args.join(' '));
+      });
+      return calls;
+    };
+
+    it('warns when cookieFile is at the top level, in series or in domainConfigs', () => {
+      const warnings = captureWarnings();
+      validateConfigWithWarnings({
+        cookieFile: './cookies.txt',
+        series: [
+          {
+            name: 'Test Series',
+            url: 'https://wetv.vip/play/123',
+            cookieFile: './cookies.txt',
+          },
+        ],
+        domainConfigs: [
+          {
+            domain: 'wetv.vip',
+            cookieFile: './cookies.txt',
+          },
+        ],
+      } as RawConfig);
+
+      const text = warnings.join(' ');
+      expect(text).toContain("'cookieFile' found in the top level is no longer supported");
+      expect(text).toContain("'cookieFile' found in series[0] is no longer supported");
+      expect(text).toContain("'cookieFile' found in domainConfigs[0] is no longer supported");
+      expect(text).toContain('yt-dlp.conf');
+    });
+
+    it('warns that browser and playwrightHeadless have no effect', () => {
+      const warnings = captureWarnings();
+      validateConfigWithWarnings({
+        series: [
+          {
+            name: 'Test Series',
+            url: 'https://wetv.vip/play/123',
+          },
+        ],
+        globalConfig: {
+          browser: 'chrome',
+          playwrightHeadless: true,
+        },
+      } as RawConfig);
+
+      const text = warnings.join(' ');
+      expect(text).toContain("'browser' found in globalConfig is no longer supported");
+      expect(text).toContain("'playwrightHeadless' found in globalConfig is no longer supported");
+      expect(text).toContain('no effect anymore');
+    });
+
+    it('does not warn about legacy keys for a clean config', () => {
+      const warnings = captureWarnings();
+      validateConfigWithWarnings({
+        series: [
+          {
+            name: 'Test Series',
+            url: 'https://wetv.vip/play/123',
+          },
+        ],
+      } as RawConfig);
+
+      const text = warnings.join(' ');
+      expect(text).not.toContain('no longer supported');
     });
   });
 });

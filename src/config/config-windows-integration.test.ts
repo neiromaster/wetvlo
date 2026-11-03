@@ -27,7 +27,7 @@ describe('Windows Integration Tests', () => {
             tempDir: 'C:\\Users\\Пользователь\\AppData\\Local\\Temp',
           },
           stateFile: 'D:\\Сериалы\\wetvlo-state.json',
-          cookieFile: 'D:\\Сериалы\\cookies.txt',
+          cookiesFromBrowser: 'firefox:default-release-1',
         },
       };
 
@@ -55,7 +55,7 @@ describe('Windows Integration Tests', () => {
             tempDir: 'E:\\Temp',
           },
           stateFile: '.\\wetvlo-state.json',
-          cookieFile: '.\\cookies.txt',
+          cookiesFromBrowser: 'firefox:default-release',
         },
       };
 

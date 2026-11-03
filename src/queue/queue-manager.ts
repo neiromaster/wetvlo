@@ -19,8 +19,7 @@ import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import type { EpisodeType } from '../types/episode-type';
-import { readCookieHeaderForUrl } from '../utils/cookie-extractor';
-import { CookieRefreshManager } from '../utils/cookie-sync';
+import { readCookieHeaderForUrl } from '../utils/firefox-cookies';
 import { extractDomain } from '../utils/url-utils';
 import type { CheckQueueItem, DownloadQueueItem } from './types';
 import { UniversalScheduler } from './universal-scheduler';
@@ -478,19 +477,6 @@ export class QueueManager {
           `[${domain}] ${seriesName}: ${result.episodes.length} new episodes (attempt ${attemptNumber}/${checksCount})`,
         );
 
-        if (resolvedConfig.cookieRefreshBrowser) {
-          try {
-            const cookieManager = CookieRefreshManager.getInstance();
-            await cookieManager.refreshCookies(seriesUrl);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            notifier.notify(
-              NotificationLevel.ERROR,
-              `[${domain}] ${seriesName}: cookie refresh failed - ${errorMessage}`,
-            );
-          }
-        }
-
         // Add episodes to download queue
         this.addEpisodes(seriesUrl, result.episodes);
 
@@ -530,23 +516,6 @@ export class QueueManager {
       const { maxRetries, initialTimeout, backoffMultiplier, jitterPercentage } = resolvedConfig.download;
 
       if (retryCount < maxRetries) {
-        // Best-effort cookie refresh before the retry: a poisoned cookie jar
-        // can be the cause of the check failure, and the refresh on the
-        // success path only runs after a successful check - so heal the jar
-        // here, otherwise the next attempt reads the same bad cookies.
-        if (resolvedConfig.cookieRefreshBrowser) {
-          try {
-            const cookieManager = CookieRefreshManager.getInstance();
-            await cookieManager.refreshCookies(seriesUrl);
-          } catch (refreshError) {
-            const refreshMessage = refreshError instanceof Error ? refreshError.message : String(refreshError);
-            notifier.notify(
-              NotificationLevel.WARNING,
-              `[${domain}] ${seriesName}: cookie refresh after failed check failed - ${refreshMessage}`,
-            );
-          }
-        }
-
         // Retry with exponential backoff (convert seconds to ms)
         const retryDelay = this.calculateBackoff(
           retryCount,
@@ -676,24 +645,25 @@ export class QueueManager {
 
     AppContext.getNotifier().notify(NotificationLevel.DEBUG, `[${domain}] Checking URL: ${seriesUrl}`);
 
-    // Extract episodes from the series page. Cookie files may hold credentials
-    // for unrelated sites, so only cookies scoped to the series URL's domain
-    // are sent. Best-effort: a missing/empty cookie file must not block checks.
+    // Extract episodes from the series page. Cookie sources may hold
+    // credentials for unrelated sites, so only cookies scoped to the series
+    // URL's domain are sent. Best-effort: no configured profile or a failed
+    // read must not block checks.
     let cookies: string | undefined;
-    if (config.cookieFile) {
+    if (config.cookiesFromBrowser) {
       try {
-        const cookieHeader = await readCookieHeaderForUrl(config.cookieFile, seriesUrl);
+        const cookieHeader = await readCookieHeaderForUrl(config.cookiesFromBrowser, seriesUrl);
         if (cookieHeader) {
           cookies = cookieHeader;
         } else {
           notifier.notify(
             NotificationLevel.WARNING,
-            `[${domain}] ${seriesName}: cookie file has no cookies for this domain - VIP episodes may resolve to previews`,
+            `[${domain}] ${seriesName}: Firefox profile has no cookies for this domain - VIP episodes may resolve to previews`,
           );
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        notifier.notify(NotificationLevel.WARNING, `[${domain}] ${seriesName}: cookie file unreadable - ${message}`);
+        notifier.notify(NotificationLevel.WARNING, `[${domain}] ${seriesName}: cookies unavailable - ${message}`);
       }
     }
 

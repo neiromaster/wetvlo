@@ -63,7 +63,7 @@ export class DownloadManager {
       await this.cleanupEpisodeArtifacts(targetDir, filenameWithoutExt);
 
       const result = await downloader.download(episode, targetDir, filenameWithoutExt, {
-        cookieFile: downloadOptions.cookieFile,
+        cookiesFromBrowser: downloadOptions.cookiesFromBrowser,
         subLangs: downloadOptions.subLangs,
         subsOnly: downloadOptions.subsBeforeVideo,
         onProgress: (progress) => notifier.progress(progress),

@@ -189,7 +189,7 @@ describe('Windows Advanced Tests', () => {
             tempDir: 'C:\\Users\\JohnDoe\\AppData\\Local\\Temp\\wetvlo',
           },
           stateFile: 'C:\\Users\\JohnDoe\\Documents\\wetvlo\\state.json',
-          cookieFile: 'C:\\Users\\JohnDoe\\Documents\\wetvlo\\cookies.txt',
+          cookiesFromBrowser: 'firefox:default-release-1',
         },
       };
 
@@ -200,7 +200,7 @@ describe('Windows Advanced Tests', () => {
       expect(downloadOptions.downloadDir).toBe('C:\\Users\\JohnDoe\\Downloads\\TV Shows');
       expect(downloadOptions.tempDir).toBe('C:\\Users\\JohnDoe\\AppData\\Local\\Temp\\wetvlo');
       expect(resolved.stateFile).toBe('C:\\Users\\JohnDoe\\Documents\\wetvlo\\state.json');
-      expect(resolved.cookieFile).toBe('C:\\Users\\JohnDoe\\Documents\\wetvlo\\cookies.txt');
+      expect(resolved.cookiesFromBrowser).toBe('firefox:default-release-1');
     });
 
     it('should handle network drive scenarios', () => {
@@ -231,7 +231,7 @@ describe('Windows Advanced Tests', () => {
             tempDir: '.\\temp',
           },
           stateFile: '.\\wetvlo-state.json',
-          cookieFile: '.\\cookies.txt',
+          cookiesFromBrowser: 'firefox:default-release',
         },
       };
 
@@ -242,7 +242,7 @@ describe('Windows Advanced Tests', () => {
       expect(downloadOptions.downloadDir).toBe('.\\downloads');
       expect(downloadOptions.tempDir).toBe('.\\temp');
       expect(resolved.stateFile).toBe('.\\wetvlo-state.json');
-      expect(resolved.cookieFile).toBe('.\\cookies.txt');
+      expect(resolved.cookiesFromBrowser).toBe('firefox:default-release');
     });
   });
 
@@ -299,8 +299,7 @@ describe('Windows Advanced Tests', () => {
             downloadTypes: ['available', 'vip'],
           },
           stateFile: 'C:\\Users\\User\\Documents\\wetvlo\\state.json',
-          cookieFile: 'C:\\Users\\User\\Documents\\wetvlo\\cookies.txt',
-          browser: 'chrome',
+          cookiesFromBrowser: 'firefox:default-release-1',
           subLangs: ['ru', 'zh', 'en'],
         },
       };

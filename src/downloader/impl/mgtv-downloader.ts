@@ -56,10 +56,10 @@ export class MgtvDownloader extends BaseDownloader {
       throw new DownloadError(`Cannot extract MGTV video ID from URL: ${episode.url}`, episode.url);
     }
 
-    // Cookies: domain-filtered at parse time — only mgtv.com lines survive
+    // Cookies: domain-filtered at parse time — only mgtv.com cookies survive
     let cookies: string | undefined;
-    if (options?.cookieFile) {
-      cookies = await readMgtvCookieHeader(options.cookieFile);
+    if (options?.cookiesFromBrowser) {
+      cookies = await readMgtvCookieHeader(options.cookiesFromBrowser);
       onLog(`MGTV: loaded ${cookies.split('; ').length} mgtv.com cookies`);
     }
 

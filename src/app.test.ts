@@ -21,7 +21,6 @@ describe('App', () => {
     mockConfig = {
       series: [],
       stateFile: 'state.json',
-      browser: 'chrome' as const,
     } as any;
   });
 
@@ -32,7 +31,6 @@ describe('App', () => {
   const createMockDeps = (overrides: Partial<AppDependencies> = {}): AppDependencies => ({
     loadConfig: mock(() => Promise.resolve(mockConfig)) as any,
     checkYtDlpInstalled: mock(() => Promise.resolve(true)),
-    readCookieFile: mock(() => Promise.resolve('cookies')),
     createDownloadManager: mock(() => mockDownloadManager),
     createScheduler: mock(() => mockScheduler),
     ...overrides,

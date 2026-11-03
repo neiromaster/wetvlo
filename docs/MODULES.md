@@ -99,9 +99,7 @@ src/
     ├── video-validator.test.ts
     ├── env-resolver.ts
     ├── env-resolver.test.ts
-    ├── cookie-extractor.ts
-    ├── cookie-extractor.test.ts
-    ├── cookie-sync.ts
+    ├── firefox-cookies.ts
     ├── deep-merge.ts
     ├── logger.ts
     ├── logger.test.ts
@@ -150,7 +148,6 @@ main()
 type AppDependencies = {
   loadConfig: typeof loadConfig,
   checkYtDlpInstalled: () => Promise<boolean>,
-  readCookieFile: typeof readCookieFile,
   createDownloadManager: () => DownloadManager,
   createScheduler: (configs, downloadManager, options?, eventBus?) => Scheduler
 };
@@ -774,11 +771,11 @@ enum NotificationLevel {
 
 ---
 
-### `src/utils/cookie-sync.ts`
+### `src/utils/firefox-cookies.ts`
 
-**Class:** `CookieRefreshManager`
-
-**Responsibility:** Cookie refresh via Playwright
+**Responsibility:** Read cookies from a Firefox profile SQLite database for a target URL
+(spec format `"firefox:<profile>"`; profile matches a Firefox Profiles directory
+by full name or suffix after the dot)
 
 ---
 

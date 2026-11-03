@@ -180,10 +180,10 @@ executorBusy = false
   │     └─ executeCheck(item, "wetv.vip", "check:wetv.vip:a1b2c3d4e5f6")
   │          ↓
   │       📁 queue/queue-manager.ts:executeCheck()
-  │         ├─ Refresh cookies (if needed)
   │         └─ performCheck(handler, seriesUrl, config, attemptNumber=1, "wetv.vip")
   │              ↓
   │           📁 queue/queue-manager.ts:performCheck()
+  │             ├─ Read cookies from Firefox profile (if cookiesFromBrowser set)
   │             ├─ handler.extractEpisodes("https://wetv.vip/play/series-a")
   │             │   ↓
   │             │  📁 handlers/impl/wetv-handler.ts:extractEpisodes()

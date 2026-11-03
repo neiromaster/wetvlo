@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { queueModuleRestore } from '../../test-utils/queue-module-restore';
+import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
 import {
   extractVideoId,
   fetchSubtitle,
@@ -15,6 +14,14 @@ import {
   subtitleLangTag,
 } from './youku-api';
 
+const mockReadFirefoxCookies = mock(async () => [] as FirefoxCookie[]);
+
+mock.module('../../utils/firefox-cookies.js', () => ({
+  readFirefoxCookies: mockReadFirefoxCookies,
+  readCookieHeaderForUrl: mock(async () => ''),
+}));
+queueModuleRestore('../../utils/firefox-cookies.js', import.meta.dir);
+
 describe('mtopSign', () => {
   it('produces the golden-vector signature for fixed inputs', () => {
     // md5(token & t & appKey & data) — verified against the live gateway 2026-10-16
@@ -26,31 +33,50 @@ describe('mtopSign', () => {
 });
 
 describe('readYoukuCookiePairs', () => {
-  // Netscape format: domain \t flag \t path \t secure \t expiry \t name \t value
-  const NETSCAPE = [
-    '# Netscape HTTP Cookie File',
-    '# This is a generated file! Do not edit.',
-    '',
-    '.openai.com\tTRUE\t/\tTRUE\t0\t__Secure-next-auth.session-token\tSECRET-MUST-NOT-LEAK',
-    '.alipay.com\tTRUE\t/\tTRUE\t1780000000\tcna\tALIPAY-SECRET',
-    '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tcna\tCNA-DEVICE-ID',
-    '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tcna\tduplicate-domain-skipped',
-    'www.youku.tv\tFALSE\t/\tFALSE\t1790000000\tcsrfToken\tcsrf-42',
-    '.www.youku.tv\tTRUE\t/\tFALSE\t1790000000\tP_F\tf-token',
-    '.youku.com\tTRUE\t/\tTRUE\t1790000000\tsid\tCOMVAL',
-    'evil-youku.tv\tTRUE\t/\tTRUE\t1790000000\tspoof\tMUST-NOT-LEAK',
-    'youku.tv.evil.com\tTRUE\t/\tTRUE\t1790000000\tspoof2\tMUST-NOT-LEAK-EITHER',
-    'short-line',
-    '',
-  ].join('\n');
+  beforeEach(() => {
+    mockReadFirefoxCookies.mockClear();
+    mockReadFirefoxCookies.mockResolvedValue([]);
+  });
 
   it('keeps only youku.tv/youku.com cookies, filters .www.* junk, preserves order', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    await writeFile(file, NETSCAPE, 'utf-8');
+    mockReadFirefoxCookies.mockResolvedValue([
+      {
+        name: '__Secure-next-auth.session-token',
+        value: 'SECRET-MUST-NOT-LEAK',
+        domain: '.openai.com',
+        path: '/',
+        secure: true,
+        expiry: 0,
+      },
+      { name: 'cna', value: 'ALIPAY-SECRET', domain: '.alipay.com', path: '/', secure: true, expiry: 1780000000 },
+      { name: 'cna', value: 'CNA-DEVICE-ID', domain: '.youku.tv', path: '/', secure: false, expiry: 1790000000 },
+      {
+        name: 'cna',
+        value: 'duplicate-domain-skipped',
+        domain: '.youku.tv',
+        path: '/',
+        secure: false,
+        expiry: 1790000000,
+      },
+      { name: 'csrfToken', value: 'csrf-42', domain: 'www.youku.tv', path: '/', secure: false, expiry: 1790000000 },
+      { name: 'P_F', value: 'f-token', domain: '.www.youku.tv', path: '/', secure: true, expiry: 1790000000 },
+      { name: 'sid', value: 'COMVAL', domain: '.youku.com', path: '/', secure: true, expiry: 1790000000 },
+      { name: 'spoof', value: 'MUST-NOT-LEAK', domain: 'evil-youku.tv', path: '/', secure: true, expiry: 1790000000 },
+      {
+        name: 'spoof2',
+        value: 'MUST-NOT-LEAK-EITHER',
+        domain: 'youku.tv.evil.com',
+        path: '/',
+        secure: true,
+        expiry: 1790000000,
+      },
+    ]);
 
-    const pairs = await readYoukuCookiePairs(file);
+    const pairs = await readYoukuCookiePairs('firefox:default-release');
 
+    // Pinned: NO url filter — both .youku.tv and .youku.com cookies must reach
+    // the parser, so the call carries exactly one argument (no opts object)
+    expect(mockReadFirefoxCookies).toHaveBeenCalledWith('firefox:default-release');
     expect(pairs).toEqual(['cna=CNA-DEVICE-ID', 'csrfToken=csrf-42', 'sid=COMVAL']);
     expect(pairs.join('; ')).not.toContain('MUST-NOT-LEAK');
     expect(pairs.join('; ')).not.toContain('ALIPAY-SECRET');
@@ -61,53 +87,53 @@ describe('readYoukuCookiePairs', () => {
     // Real prod shape (2026-10-16): browsers store one name per subdomain, but
     // this module joins all pairs into ONE header — youku answers HTTP 400 to
     // headers with duplicate names (61 pairs / 43 unique names → 400; dedup → 200)
-    const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    await writeFile(
-      file,
-      [
-        '.youku.com\tTRUE\t/\tTRUE\t1790000000\tcsrfToken\tfrom-youku-com',
-        'www.youku.tv\tFALSE\t/\tFALSE\t1790000000\tcsrfToken\tfrom-www-youku-tv',
-        '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tcsrfToken\tfrom-auth-domain',
-        'so.youku.tv\tTRUE\t/\tFALSE\t1790000000\tctoken\tsearch-ctoken',
-        'pay.youku.tv\tTRUE\t/\tFALSE\t1790000000\tctoken\tpay-ctoken',
-        '.youku.tv\tTRUE\t/\tFALSE\t1790000000\tP_sck\tauth',
-      ].join('\n'),
-      'utf-8',
-    );
+    mockReadFirefoxCookies.mockResolvedValue([
+      {
+        name: 'csrfToken',
+        value: 'from-youku-com',
+        domain: '.youku.com',
+        path: '/',
+        secure: true,
+        expiry: 1790000000,
+      },
+      {
+        name: 'csrfToken',
+        value: 'from-www-youku-tv',
+        domain: 'www.youku.tv',
+        path: '/',
+        secure: false,
+        expiry: 1790000000,
+      },
+      {
+        name: 'csrfToken',
+        value: 'from-auth-domain',
+        domain: '.youku.tv',
+        path: '/',
+        secure: false,
+        expiry: 1790000000,
+      },
+      { name: 'ctoken', value: 'search-ctoken', domain: 'so.youku.tv', path: '/', secure: false, expiry: 1790000000 },
+      { name: 'ctoken', value: 'pay-ctoken', domain: 'pay.youku.tv', path: '/', secure: false, expiry: 1790000000 },
+      { name: 'P_sck', value: 'auth', domain: '.youku.tv', path: '/', secure: false, expiry: 1790000000 },
+    ]);
 
-    const pairs = await readYoukuCookiePairs(file);
+    const pairs = await readYoukuCookiePairs('firefox:default-release');
 
     expect(pairs).toEqual(['csrfToken=from-auth-domain', 'ctoken=search-ctoken', 'P_sck=auth']);
   });
 
-  it('throws CookieError when the file has no youku cookies', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    await writeFile(file, '.example.com\tTRUE\t/\tTRUE\t0\tfoo\tbar', 'utf-8');
+  it('throws CookieError when the profile has no youku cookies', async () => {
+    mockReadFirefoxCookies.mockResolvedValue([
+      { name: 'foo', value: 'bar', domain: '.example.com', path: '/', secure: true, expiry: 0 },
+    ]);
 
-    await expect(readYoukuCookiePairs(file)).rejects.toThrow(CookieError);
+    await expect(readYoukuCookiePairs('firefox:default-release')).rejects.toThrow(CookieError);
   });
 
-  it('throws CookieError when the file does not exist', async () => {
-    await expect(readYoukuCookiePairs('Z:/definitely/not/here.txt')).rejects.toThrow(CookieError);
-  });
+  it('propagates CookieError from the Firefox profile reader', async () => {
+    mockReadFirefoxCookies.mockRejectedValue(new CookieError('Firefox profile "nope": cookies.sqlite not found'));
 
-  it('parses #HttpOnly_ cookies and handles CRLF line endings', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'youku-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    // \r\n line endings are what Windows exports produce
-    await writeFile(
-      file,
-      [
-        '#HttpOnly_.youku.tv\tTRUE\t/\tFALSE\t1790000000\tP_sck\thttponly-session',
-        '.openai.com\tTRUE\t/\tTRUE\t0\tk\tv',
-      ].join('\r\n'),
-      'utf-8',
-    );
-
-    const pairs = await readYoukuCookiePairs(file);
-    expect(pairs).toEqual(['P_sck=httponly-session']);
+    await expect(readYoukuCookiePairs('firefox:nope')).rejects.toThrow(CookieError);
   });
 });
 

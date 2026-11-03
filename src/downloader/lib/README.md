@@ -79,13 +79,10 @@ await wrapper.download(url, 'output', './downloads', {
 });
 ```
 
-## Cookie Files
+## Cookies
 
-```typescript
-await wrapper.download(url, 'output', './downloads', {
-  cookieFile: '/path/to/cookies.txt'
-});
-```
+The wrapper has no cookie options. yt-dlp reads its own cookies from `yt-dlp.conf`
+in the working directory (e.g. `--cookies-from-browser firefox:<profile>`).
 
 ## Progress Tracking
 

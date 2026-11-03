@@ -36,7 +36,6 @@ describe('Config', () => {
         ],
         globalConfig: {
           stateFile: 'state.json',
-          browser: 'chrome',
         },
       };
 
@@ -55,7 +54,6 @@ describe('Config', () => {
         ],
         globalConfig: {
           stateFile: 'state.json',
-          browser: 'chrome',
         },
       };
 
@@ -80,7 +78,6 @@ series:
     startTime: "20:00"
 globalConfig:
   stateFile: state.json
-  browser: chrome
   telegram:
     botToken: token123
     chatId: chat123
@@ -106,7 +103,6 @@ series:
     startTime: "20:00"
 globalConfig:
   stateFile: state.json
-  browser: chrome
   telegram:
     botToken: "\${TEST_TOKEN}"
     chatId: chat123

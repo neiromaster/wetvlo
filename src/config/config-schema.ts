@@ -59,11 +59,6 @@ export const TelegramConfigSchema = z.object({
 
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 
-/**
- * Browser options
- */
-const BrowserSchema = z.enum(['chrome', 'firefox', 'safari', 'chromium', 'edge']);
-
 const CommonSettingsSchema = z.object({
   check: CheckSettingsSchema.optional().describe('Check settings'),
   download: DownloadSettingsSchema.optional().describe('Download settings'),
@@ -75,11 +70,19 @@ const CommonSettingsSchema = z.object({
     .describe('Notification settings'),
   telegram: TelegramConfigSchema.optional().describe('Telegram notification configuration'),
   stateFile: z.string().optional().describe('Path to state file'),
-  browser: BrowserSchema.optional().describe('Browser to use for scraping'),
-  cookieFile: z.string().optional().describe('Path to cookie file'),
+  cookiesFromBrowser: z
+    .string()
+    .refine(
+      (s) =>
+        /^\$\{[^}]+\}$/.test(s) || // env placeholder — resolved before the spec is parsed
+        (s.startsWith('firefox:') && s.slice('firefox:'.length).trim().length > 0),
+      {
+        message: 'cookiesFromBrowser must be "firefox:<profile>" - only Firefox is supported',
+      },
+    )
+    .optional()
+    .describe('Firefox profile cookie spec: "firefox:<profile>"'),
   subLangs: z.array(z.string()).optional().describe('List of subtitle languages to download'),
-  cookieRefreshBrowser: BrowserSchema.optional().describe('Browser to use for Playwright cookie refresh'),
-  playwrightHeadless: z.boolean().optional().describe('Run Playwright browser in headless mode'),
 });
 
 /**
@@ -205,6 +208,36 @@ export function validateConfigWithWarnings(rawConfig: RawConfig): void {
   if ((rawConfig as Record<string, unknown>).globalConfigs) {
     warnings.push(`'globalConfigs' found. Did you mean 'globalConfig'?`);
   }
+
+  // Removed legacy keys — zod strips unknown keys silently, so warn
+  // explicitly on the raw config. rawConfig here is pre-env-resolution;
+  // only key presence matters, values may be env placeholders.
+  const LEGACY_KEYS = ['cookieFile', 'cookieRefreshBrowser', 'playwrightHeadless', 'browser'] as const;
+  const checkLegacyKeys = (obj: unknown, where: string): void => {
+    if (typeof obj !== 'object' || obj === null) return;
+    for (const key of LEGACY_KEYS) {
+      if (key in (obj as Record<string, unknown>)) {
+        const hint =
+          key === 'cookieFile'
+            ? `Use 'cookiesFromBrowser: "firefox:<profile>"' instead ` +
+              `(and put '--cookies-from-browser firefox:<profile>' into yt-dlp.conf in the working directory).`
+            : `Remove it — it has no effect anymore.`;
+        warnings.push(`'${key}' found in ${where} is no longer supported. ${hint}`);
+      }
+    }
+  };
+  checkLegacyKeys(rawConfig, 'the top level');
+  if (Array.isArray(rawConfig.series)) {
+    rawConfig.series.forEach((s, i) => {
+      checkLegacyKeys(s, `series[${i}]`);
+    });
+  }
+  if (Array.isArray(rawConfig.domainConfigs)) {
+    rawConfig.domainConfigs.forEach((d, i) => {
+      checkLegacyKeys(d, `domainConfigs[${i}]`);
+    });
+  }
+  checkLegacyKeys((rawConfig as Record<string, unknown>).globalConfig, 'globalConfig');
 
   // Check for misplaced settings in domain configs
   if (rawConfig.domainConfigs && Array.isArray(rawConfig.domainConfigs)) {

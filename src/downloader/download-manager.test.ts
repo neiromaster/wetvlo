@@ -52,11 +52,11 @@ const mockConfigRegistry = {
     stateFile: 'state.json',
     name: 'Test Series',
     download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0, subsBeforeVideo: false },
-    cookieFile: undefined,
+    cookiesFromBrowser: undefined,
   })),
   getConfig: mock(() => ({
     telegram: undefined,
-    cookieFile: undefined,
+    cookiesFromBrowser: undefined,
     download: { downloadDir: '/downloads', tempDir: undefined },
   })),
 };
@@ -116,7 +116,7 @@ describe('DownloadManager', () => {
       stateFile: 'state.json',
       name: 'Test Series',
       download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0, subsBeforeVideo: false },
-      cookieFile: undefined,
+      cookiesFromBrowser: undefined,
     }));
 
     // Initialize AppContext
@@ -161,7 +161,7 @@ describe('DownloadManager', () => {
       stateFile: 'state.json',
       name: 'Test Series',
       download: { downloadDir: '/downloads', tempDir: '/temp', minDuration: 0 },
-      cookieFile: undefined,
+      cookiesFromBrowser: undefined,
     } as any);
 
     mockStateManager.isDownloaded.mockReturnValue(false);
@@ -186,7 +186,7 @@ describe('DownloadManager', () => {
       stateFile: 'state.json',
       name: 'Test Series',
       download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50 },
-      cookieFile: undefined,
+      cookiesFromBrowser: undefined,
     } as any);
 
     mockStateManager.isDownloaded.mockReturnValue(false);
@@ -204,7 +204,7 @@ describe('DownloadManager', () => {
       stateFile: 'state.json',
       name: 'Test Series',
       download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50 },
-      cookieFile: undefined,
+      cookiesFromBrowser: undefined,
     } as any);
 
     mockStateManager.isDownloaded.mockReturnValue(false);
@@ -231,7 +231,7 @@ describe('DownloadManager', () => {
       stateFile: 'state.json',
       name: 'Test Series',
       download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 50, subsBeforeVideo: true },
-      cookieFile: undefined,
+      cookiesFromBrowser: undefined,
     } as any);
 
     const subsOnlyResult = {

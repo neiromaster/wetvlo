@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { queueModuleRestore } from '../../test-utils/queue-module-restore';
+import type { FirefoxCookie } from '../../utils/firefox-cookies.js';
 import {
   downloadSubtitle,
   extractVideoId,
@@ -15,6 +14,14 @@ import {
   resolveM3u8Url,
   resolveSubtitleUrl,
 } from './mgtv-api';
+
+const mockReadFirefoxCookies = mock(async () => [] as FirefoxCookie[]);
+
+mock.module('../../utils/firefox-cookies.js', () => ({
+  readFirefoxCookies: mockReadFirefoxCookies,
+  readCookieHeaderForUrl: mock(async () => ''),
+}));
+queueModuleRestore('../../utils/firefox-cookies.js', import.meta.dir);
 
 describe('makeTk2', () => {
   it('produces the golden-vector signature for a fixed did and clit', () => {
@@ -57,60 +64,55 @@ describe('extractVideoId', () => {
 });
 
 describe('readMgtvCookieHeader', () => {
-  // Netscape format: domain \t flag \t path \t secure \t expiry \t name \t value
-  const NETSCAPE = [
-    '# Netscape HTTP Cookie File',
-    '# This is a generated file! Do not edit.',
-    '',
-    '.openai.com\tTRUE\t/\tTRUE\t0\t__Secure-next-auth.session-token\tSECRET-MUST-NOT-LEAK',
-    '.alipay.com\tTRUE\t/\tTRUE\t1780000000\tcna\tALIPAY-SECRET',
-    '.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tPHPSESSID\tabc123',
-    'w.mgtv.com\tFALSE\t/\tTRUE\t1790000000\tsessionid\tvip-session-42',
-    '.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tPHPSESSID\tduplicate-domain-skipped',
-    'evil-mgtv.com.attacker.com\tTRUE\t/\tTRUE\t1790000000\tspoof\tMUST-NOT-LEAK',
-    'short-line',
-  ].join('\n');
+  beforeEach(() => {
+    mockReadFirefoxCookies.mockClear();
+    mockReadFirefoxCookies.mockResolvedValue([]);
+  });
 
-  it('keeps only mgtv.com cookies and dedupes by name+domain', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'mgtv-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    await writeFile(file, NETSCAPE, 'utf-8');
+  it('keeps only mgtv.com cookies from the Firefox profile', async () => {
+    mockReadFirefoxCookies.mockResolvedValue([
+      { name: 'PHPSESSID', value: 'abc123', domain: '.mgtv.com', path: '/', secure: true, expiry: 1790000000 },
+      { name: 'sessionid', value: 'vip-session-42', domain: 'w.mgtv.com', path: '/', secure: true, expiry: 1790000000 },
+      {
+        name: '__Secure-next-auth.session-token',
+        value: 'SECRET-MUST-NOT-LEAK',
+        domain: '.openai.com',
+        path: '/',
+        secure: true,
+        expiry: 0,
+      },
+      { name: 'cna', value: 'ALIPAY-SECRET', domain: '.alipay.com', path: '/', secure: true, expiry: 1780000000 },
+      {
+        name: 'spoof',
+        value: 'MUST-NOT-LEAK',
+        domain: 'evil-mgtv.com.attacker.com',
+        path: '/',
+        secure: true,
+        expiry: 1790000000,
+      },
+    ]);
 
-    const header = await readMgtvCookieHeader(file);
+    const header = await readMgtvCookieHeader('firefox:default-release');
 
     expect(header).toBe('PHPSESSID=abc123; sessionid=vip-session-42');
     expect(header).not.toContain('SECRET-MUST-NOT-LEAK');
     expect(header).not.toContain('ALIPAY-SECRET');
     expect(header).not.toContain('MUST-NOT-LEAK');
+    expect(mockReadFirefoxCookies).toHaveBeenCalledWith('firefox:default-release', { url: 'https://w.mgtv.com/' });
   });
 
-  it('throws CookieError when the file has no mgtv.com cookies', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'mgtv-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    await writeFile(file, '.example.com\tTRUE\t/\tTRUE\t0\tfoo\tbar', 'utf-8');
+  it('throws CookieError when the profile has no mgtv.com cookies', async () => {
+    mockReadFirefoxCookies.mockResolvedValue([
+      { name: 'foo', value: 'bar', domain: '.example.com', path: '/', secure: true, expiry: 0 },
+    ]);
 
-    await expect(readMgtvCookieHeader(file)).rejects.toThrow(CookieError);
+    await expect(readMgtvCookieHeader('firefox:default-release')).rejects.toThrow(CookieError);
   });
 
-  it('throws CookieError when the file does not exist', async () => {
-    await expect(readMgtvCookieHeader('Z:/definitely/not/here.txt')).rejects.toThrow(CookieError);
-  });
+  it('propagates CookieError from the Firefox profile reader', async () => {
+    mockReadFirefoxCookies.mockRejectedValue(new CookieError('Firefox profile "nope": cookies.sqlite not found'));
 
-  it('parses #HttpOnly_ cookies and handles CRLF line endings', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'mgtv-cookie-test-'));
-    const file = join(dir, 'cookies.txt');
-    // \r\n line endings are what Windows exports produce
-    await writeFile(
-      file,
-      [
-        '#HttpOnly_.mgtv.com\tTRUE\t/\tTRUE\t1790000000\tsessionid\thttponly-session',
-        '.openai.com\tTRUE\t/\tTRUE\t0\tk\tv',
-      ].join('\r\n'),
-      'utf-8',
-    );
-
-    const header = await readMgtvCookieHeader(file);
-    expect(header).toBe('sessionid=httponly-session');
+    await expect(readMgtvCookieHeader('firefox:nope')).rejects.toThrow(CookieError);
   });
 });
 

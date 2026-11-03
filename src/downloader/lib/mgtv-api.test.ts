@@ -330,8 +330,9 @@ describe('MGTV endpoints (mocked fetch)', () => {
     await expect(downloadSubtitle('https://subtitle.hitv.com/ru.srt')).rejects.toThrow(DownloadError);
   });
 
-  it('fetchPlayerInfo throws a clear error when pm2 is missing (stale cookies)', async () => {
+  it('fetchPlayerInfo throws CookieError when pm2 is missing (stale cookies)', async () => {
     stubFetch([JSON.stringify({ code: 200, data: { user: { login: true }, info: {} } })]);
+    await expect(fetchPlayerInfo('24677071', 'sessionid=vip')).rejects.toThrow(CookieError);
     await expect(fetchPlayerInfo('24677071', 'sessionid=vip')).rejects.toThrow(/pm2 token/);
   });
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { CookieError, DownloadError, TrialContentError } from '../../errors/custom-errors.js';
 import { queueModuleRestore } from '../../test-utils/queue-module-restore';
 import type { Episode } from '../../types/episode.types.js';
 import { EpisodeType } from '../../types/episode-type';
@@ -177,6 +177,23 @@ describe('YoukuDownloader', () => {
       const dl = new YoukuDownloader(api, makeWrapper());
 
       await expect(dl.download(makeEpisode(), dir, 'E08')).rejects.toThrow(/trial/);
+    });
+
+    it('throws TrialContentError when mintUps returns a trial payload', async () => {
+      mockReadFirefoxCookies.mockResolvedValue([
+        { name: 'cna', value: 'aaa', domain: '.youku.tv', path: '/', secure: false, expiry: 1900000000 },
+      ]);
+      const api = makeApi({
+        mintUps: mock(async (): Promise<YoukuUpsResult> => ({ ...UPS_OK, trial: true })),
+      });
+      const wrapper = makeWrapper();
+      const dl = new YoukuDownloader(api, wrapper);
+
+      await expect(
+        dl.download(makeEpisode(), dir, 'E08', { cookiesFromBrowser: 'firefox:default-release' }),
+      ).rejects.toThrow(TrialContentError);
+      // the trial stream must never reach yt-dlp
+      expect(wrapper.download).not.toHaveBeenCalled();
     });
 
     it('falls back below an inline-text-only higher tier and logs the degradation', async () => {

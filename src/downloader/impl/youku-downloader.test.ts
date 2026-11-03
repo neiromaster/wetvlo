@@ -165,7 +165,7 @@ describe('YoukuDownloader', () => {
       ).rejects.toThrow(CookieError);
     });
 
-    it('propagates the trial DownloadError from mintUps', async () => {
+    it('propagates DownloadError from mintUps rejections', async () => {
       const api = makeApi({
         mintUps: mock(async () => {
           throw new DownloadError(
@@ -188,10 +188,14 @@ describe('YoukuDownloader', () => {
       });
       const wrapper = makeWrapper();
       const dl = new YoukuDownloader(api, wrapper);
+      const episode = makeEpisode();
 
-      await expect(
-        dl.download(makeEpisode(), dir, 'E08', { cookiesFromBrowser: 'firefox:default-release' }),
-      ).rejects.toThrow(TrialContentError);
+      const error = await dl
+        .download(episode, dir, 'E08', { cookiesFromBrowser: 'firefox:default-release' })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TrialContentError);
+      expect((error as TrialContentError).url).toBe(episode.url);
       // the trial stream must never reach yt-dlp
       expect(wrapper.download).not.toHaveBeenCalled();
     });

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { CookieError, DownloadError } from '../../errors/custom-errors.js';
+import { CookieError, DownloadError, TrialContentError } from '../../errors/custom-errors.js';
 import { readFirefoxCookies } from '../../utils/firefox-cookies.js';
 
 /**
@@ -312,7 +312,7 @@ export async function mintUps(
     throw new DownloadError(`Youku ups error ${inner.error.code}${note}`, 'https://www.youku.tv/');
   }
   if (inner?.trial && !options?.allowTrial) {
-    throw new DownloadError(
+    throw new TrialContentError(
       'Youku: the server issued a 6-minute trial — for TVOD (paid) episodes this is normal even with valid cookies ' +
         '(set download.subsBeforeVideo: true to fetch subtitles now); otherwise cookies are logged out or expired — log in to a youku site in Firefox',
       'https://www.youku.tv/',

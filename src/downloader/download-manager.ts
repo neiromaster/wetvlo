@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { AppContext } from '../app-context';
-import { DownloadError } from '../errors/custom-errors';
+import { CookieError, DownloadError, TrialContentError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notification-level';
 import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
@@ -94,7 +94,10 @@ export class DownloadManager {
           if (duration < downloadOptions.minDuration) {
             // Delete all downloaded files
             await this.cleanupFiles(result.allFiles);
-            throw new Error(`Video duration ${duration}s is less than minimum ${downloadOptions.minDuration}s`);
+            throw new TrialContentError(
+              `Video duration ${duration}s is less than minimum ${downloadOptions.minDuration}s`,
+              episode.url,
+            );
           }
         }
       }
@@ -164,6 +167,15 @@ export class DownloadManager {
       const message = `${seriesName} - ${paddedNumber}: ${error instanceof Error ? error.message : String(error)}`;
 
       notifier.notify(NotificationLevel.ERROR, message);
+
+      // Session-related classes must survive the wrap: the queue manager keys
+      // the Firefox-tab session rescue off CookieError / TrialContentError.
+      if (error instanceof TrialContentError) {
+        throw new TrialContentError(message, episode.url);
+      }
+      if (error instanceof CookieError) {
+        throw new CookieError(message);
+      }
       throw new DownloadError(message, episode.url);
     }
   }

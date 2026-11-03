@@ -359,7 +359,7 @@ describe('mintUps', () => {
     await expect(mintUps('XNjU3NzMxMTcxNg==', ['cna=1'])).rejects.toThrow(/-6004.*rate limit.*cna/s);
   });
 
-  it('throws DownloadError on a trial response mentioning the TVOD possibility', async () => {
+  it('throws TrialContentError on a trial response mentioning the TVOD possibility', async () => {
     stubFetch(
       'mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"data":{"controller":{"max_stream_level":4},"video":{"title":"Good Night 08","seconds":2749.32},"stream":[{"stream_type":"cmfv4hd2","width":1280,"height":720,"drm_type":"default","m3u8_url":"http://pl-ali.youku.tv/hd2.m3u8?x=1"}],"subtitle":[],"trial":{"trial_str":"您可以免费试看前6分钟","time":360,"type":"time"}}}})',
     );

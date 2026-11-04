@@ -45,10 +45,13 @@ const DEFAULT_WAIT_MS = 20_000;
 const DEFAULT_KILL_GRACE_MS = 10_000;
 const DEFAULT_DELEGATED_SETTLE_MS = 5_000;
 
-/** Standard Windows install locations, in probe order. */
+/** Standard Windows install locations, in probe order. Covers the per-user
+ * install (%LOCALAPPDATA%, the modern installer default) and machine-wide ones. */
 export function defaultFirefoxPaths(): string[] {
   const paths: string[] = [];
-  const programFiles = process.env['ProgramFiles'];
+  const localAppData = process.env.LOCALAPPDATA;
+  if (localAppData) paths.push(join(localAppData, 'Mozilla Firefox', 'firefox.exe'));
+  const programFiles = process.env.ProgramFiles;
   if (programFiles) paths.push(join(programFiles, 'Mozilla Firefox', 'firefox.exe'));
   const programFilesX86 = process.env['ProgramFiles(x86)'];
   if (programFilesX86) paths.push(join(programFilesX86, 'Mozilla Firefox', 'firefox.exe'));

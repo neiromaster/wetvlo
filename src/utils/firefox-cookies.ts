@@ -1,8 +1,8 @@
-import { Database } from 'bun:sqlite';
 import { type Dirent, existsSync, readdirSync } from 'node:fs';
 import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { AppContext } from '../app-context';
 import { CookieError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notification-level.js';
@@ -166,11 +166,11 @@ export async function readFirefoxCookies(
     // between the main db and wal copies) surfaces as a raw SQLiteError at
     // open OR query time — wrap it in the module's CookieError contract.
     try {
-      const db = new Database(join(tmp, 'cookies.sqlite'), { readonly: true });
+      const db = new DatabaseSync(join(tmp, 'cookies.sqlite'), { readOnly: true });
       try {
-        const { user_version: schemaVersion } = db.query('PRAGMA user_version').get() as { user_version: number };
+        const { user_version: schemaVersion } = db.prepare('PRAGMA user_version').get() as { user_version: number };
         const msExpiry = schemaVersion >= MS_EXPIRY_SCHEMA_VERSION;
-        const rows = db.query('SELECT name, value, host, path, expiry, isSecure FROM moz_cookies').all() as Array<{
+        const rows = db.prepare('SELECT name, value, host, path, expiry, isSecure FROM moz_cookies').all() as Array<{
           name: string;
           value: string;
           host: string;

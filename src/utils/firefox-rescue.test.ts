@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { refreshSessionsViaTab } from './firefox-rescue.js';
+import { NotificationLevel } from '../notifications/notification-level.js';
+import { CookieSessionRescue, refreshSessionsViaTab } from './firefox-rescue.js';
 
 // --- execa mock: script-driven process lifetimes ---
 
@@ -196,5 +197,79 @@ describe('refreshSessionsViaTab', () => {
     expect(result.outcome).toBe('skipped');
     expect(result.skipReason).toMatch(/only "firefox:/);
     expect(execaCalls).toHaveLength(0);
+  });
+});
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+describe('CookieSessionRescue', () => {
+  const makeNotify = () => mock((_level: NotificationLevel, _message: string) => {});
+
+  it('runs the refresh and reports cookiesChanged', async () => {
+    const refresh = mock(async () => ({ outcome: 'launched' as const, cookiesChanged: true }));
+    const rescue = new CookieSessionRescue(60_000, refresh as any);
+    const notify = makeNotify();
+
+    const result = await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'Test Series', notify as any);
+
+    expect(result).toEqual({ attempted: true, cookiesChanged: true });
+    expect(refresh).toHaveBeenCalledWith(SPEC, MGTV_URL);
+    expect(notify).toHaveBeenCalledWith(
+      NotificationLevel.INFO,
+      expect.stringContaining('opening the series page in Firefox'),
+    );
+    expect(notify).toHaveBeenCalledWith(NotificationLevel.INFO, expect.stringContaining('domain cookies updated'));
+  });
+
+  it('respects the cooldown per domain', async () => {
+    const refresh = mock(async () => ({ outcome: 'launched' as const, cookiesChanged: true }));
+    const rescue = new CookieSessionRescue(50, refresh as any);
+    const notify = makeNotify();
+
+    expect(await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'S', notify as any)).toEqual({
+      attempted: true,
+      cookiesChanged: true,
+    });
+    expect(await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'S', notify as any)).toEqual({ attempted: false });
+    // a different domain has an independent cooldown
+    expect(await rescue.maybeRescue('youku.tv', SPEC, MGTV_URL, 'S', notify as any)).toEqual({
+      attempted: true,
+      cookiesChanged: true,
+    });
+
+    await sleep(60);
+    expect(await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'S', notify as any)).toEqual({
+      attempted: true,
+      cookiesChanged: true,
+    });
+  });
+
+  it('warns when the tab did not change the cookies', async () => {
+    const refresh = mock(async () => ({ outcome: 'launched' as const, cookiesChanged: false }));
+    const rescue = new CookieSessionRescue(60_000, refresh as any);
+    const notify = makeNotify();
+
+    const result = await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'Test Series', notify as any);
+
+    expect(result).toEqual({ attempted: true, cookiesChanged: false });
+    expect(notify).toHaveBeenCalledWith(NotificationLevel.WARNING, expect.stringContaining('log back in to Firefox'));
+  });
+
+  it('warns with the skip reason and treats it as not-changed', async () => {
+    const refresh = mock(async () => ({
+      outcome: 'skipped' as const,
+      cookiesChanged: false,
+      skipReason: 'firefox.exe not found',
+    }));
+    const rescue = new CookieSessionRescue(60_000, refresh as any);
+    const notify = makeNotify();
+
+    const result = await rescue.maybeRescue('mgtv.com', SPEC, MGTV_URL, 'Test Series', notify as any);
+
+    expect(result).toEqual({ attempted: true, cookiesChanged: false });
+    expect(notify).toHaveBeenCalledWith(
+      NotificationLevel.WARNING,
+      expect.stringContaining('session rescue skipped: firefox.exe not found'),
+    );
   });
 });

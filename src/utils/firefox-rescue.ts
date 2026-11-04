@@ -16,6 +16,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
+import { NotificationLevel } from '../notifications/notification-level.js';
 import { findProfileDir, parseCookieBrowserSpec, readFirefoxCookies } from './firefox-cookies';
 
 export type RescueOptions = {
@@ -137,5 +138,84 @@ async function closeGracefully(child: ExecaChild, graceMs: number): Promise<void
     await execa('taskkill', ['/PID', String(child.pid), '/F'], { reject: false });
   }
   // Bound the reap: if /F failed (e.g. access denied), never hang the caller
-  await Promise.race([child.catch(() => {}), sleep(5_000)]);
+  await Promise.race([child.catch(() => {}), sleep(REAP_TIMEOUT_MS)]);
+}
+
+export type RescueAttempt = {
+  attempted: boolean;
+  cookiesChanged?: boolean;
+};
+
+export type RescueNotifier = (level: NotificationLevel, message: string) => void;
+
+const DEFAULT_COOLDOWN_MS = 30 * 60 * 1000;
+
+/** Defensive cap for the post-/F reap in closeGracefully. */
+const REAP_TIMEOUT_MS = 5_000;
+
+/**
+ * Per-domain wrapper around refreshSessionsViaTab with a cooldown and user
+ * notifications. The cooldown keeps a truly dead session from spamming
+ * Firefox tabs on every retry: at most one rescue per domain per cooldown.
+ */
+export class CookieSessionRescue {
+  private readonly lastAttemptAt = new Map<string, number>();
+
+  constructor(
+    private readonly cooldownMs: number = DEFAULT_COOLDOWN_MS,
+    private readonly refresh: typeof refreshSessionsViaTab = refreshSessionsViaTab,
+  ) {}
+
+  async maybeRescue(
+    domain: string,
+    spec: string,
+    url: string,
+    seriesName: string,
+    notify: RescueNotifier,
+  ): Promise<RescueAttempt> {
+    const now = Date.now();
+    const last = this.lastAttemptAt.get(domain);
+    if (last !== undefined && now - last < this.cooldownMs) {
+      return { attempted: false };
+    }
+    this.lastAttemptAt.set(domain, now); // marked BEFORE the run
+
+    let profile = '?';
+    try {
+      profile = parseCookieBrowserSpec(spec).profile;
+    } catch {
+      // the spec is already schema-validated; never let the rescue crash here
+    }
+
+    notify(
+      NotificationLevel.INFO,
+      `[${domain}] ${seriesName}: session/trial error — opening the series page in Firefox (profile ${profile}) to refresh the session`,
+    );
+
+    const result = await this.refresh(spec, url);
+
+    if (result.outcome === 'skipped') {
+      notify(
+        NotificationLevel.WARNING,
+        `[${domain}] ${seriesName}: session rescue skipped: ${result.skipReason ?? 'unknown reason'}`,
+      );
+      return { attempted: true, cookiesChanged: false };
+    }
+
+    const where = result.outcome === 'launched' ? 'browser opened and closed' : 'tab opened in the running Firefox';
+    if (result.cookiesChanged) {
+      notify(NotificationLevel.INFO, `[${domain}] ${seriesName}: ${where}, domain cookies updated — retrying now`);
+    } else if (result.outcome === 'delegated') {
+      notify(
+        NotificationLevel.WARNING,
+        `[${domain}] ${seriesName}: tab opened in the running Firefox (close it yourself); cookies unchanged — if the error repeats, log back in to Firefox`,
+      );
+    } else {
+      notify(
+        NotificationLevel.WARNING,
+        `[${domain}] ${seriesName}: ${where}, cookies unchanged — if the error repeats, log back in to Firefox`,
+      );
+    }
+    return { attempted: true, cookiesChanged: result.cookiesChanged };
+  }
 }

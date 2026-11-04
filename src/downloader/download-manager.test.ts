@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } fr
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { AppContext } from '../app-context';
+import { CookieError, TrialContentError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notification-level';
 import * as VideoValidator from '../utils/video-validator';
 import { DownloadManager } from './download-manager';
@@ -198,7 +199,7 @@ describe('DownloadManager', () => {
     expect(getVideoDurationSpy).toHaveBeenCalled();
   });
 
-  it('should throw error and delete file if video duration is too short', async () => {
+  it('should throw TrialContentError and delete file if video duration is too short', async () => {
     // Update mock to return minDuration > 0
     mockConfigRegistry.resolve.mockReturnValue({
       stateFile: 'state.json',
@@ -210,9 +211,11 @@ describe('DownloadManager', () => {
     mockStateManager.isDownloaded.mockReturnValue(false);
     getVideoDurationSpy.mockResolvedValue(30); // 30s < 50s
 
-    await expect(downloadManager.download('url', { number: 1, url: 'url' } as any)).rejects.toThrow(
-      'Video duration 30s is less than minimum 50s',
-    );
+    const download = downloadManager.download('url', { number: 1, url: 'url' } as any);
+    // Session-related class must survive the wrap — the queue manager keys the
+    // Firefox-tab rescue off it
+    await expect(download).rejects.toThrow(TrialContentError);
+    await expect(download).rejects.toThrow('Video duration 30s is less than minimum 50s');
 
     expect(getVideoDurationSpy).toHaveBeenCalled();
     // Verify file deletion
@@ -224,6 +227,27 @@ describe('DownloadManager', () => {
       NotificationLevel.ERROR,
       expect.stringContaining('Video duration'),
     );
+  });
+
+  it('preserves CookieError instead of wrapping it into DownloadError', async () => {
+    mockConfigRegistry.resolve.mockReturnValue({
+      stateFile: 'state.json',
+      name: 'Test Series',
+      download: { downloadDir: '/downloads', tempDir: undefined, minDuration: 0 },
+      cookiesFromBrowser: undefined,
+    } as any);
+    mockStateManager.isDownloaded.mockReturnValue(false);
+    getDownloaderSpy.mockReturnValue({
+      getName: () => 'fake',
+      supports: () => true,
+      download: mock(async () => {
+        throw new CookieError('No mgtv.com cookies in Firefox profile "x" — log in to mgtv.com in Firefox');
+      }) as any,
+    } as any);
+
+    const download = downloadManager.download('url', { number: 1, url: 'url' } as any);
+    await expect(download).rejects.toThrow(CookieError);
+    await expect(download).rejects.toThrow('Test Series - 01: No mgtv.com cookies');
   });
 
   it('should mark subs-only result in state and skip video validation', async () => {

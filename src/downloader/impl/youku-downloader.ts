@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { DownloadError } from '../../errors/custom-errors.js';
+import { DownloadError, TrialContentError } from '../../errors/custom-errors.js';
 import type { Episode } from '../../types/episode.types.js';
 import { extractDomain } from '../../utils/url-utils.js';
 import { BaseDownloader } from '../base-downloader.js';
@@ -71,7 +71,7 @@ export class YoukuDownloader extends BaseDownloader {
 
     // Trial payloads carry preview streams only — never hand them to yt-dlp
     if (ups.trial === true && !subsOnlyMode) {
-      throw new DownloadError(
+      throw new TrialContentError(
         'Youku: not logged in or cookies expired — the server issued a 6-minute trial; log in to a youku site in Firefox and make sure cookiesFromBrowser is set in config',
         episode.url,
       );

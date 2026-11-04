@@ -312,6 +312,10 @@ roundRobinIndex = 2
   │        ↓
   │   📁 queue/queue-manager.ts:executeDownload(ep1, "wetv.vip")
   │     └─ downloadManager.download("https://wetv.vip/play/series-a", ep1)
+  │          # on CookieError/TrialContentError + cookiesFromBrowser (retry
+  │          # branch): session rescue — open the series page in Firefox,
+  │          # compare domain cookies, 10s retry when they changed, 30 min
+  │          # per-domain cooldown
   │          ↓
   │       📁 downloader/download-manager.ts:download()
   │         ├─ isDownloaded() = false ✓

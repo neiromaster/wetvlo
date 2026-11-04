@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { AppContext } from '../app-context';
 import { ConfigRegistry } from '../config/config-registry';
+import { CookieError, DownloadError, TrialContentError } from '../errors/custom-errors';
 import { NotificationLevel } from '../notifications/notification-level';
 import { queueModuleRestore } from '../test-utils/queue-module-restore';
 import { EpisodeType } from '../types/episode-type';
@@ -500,6 +501,124 @@ describe('QueueManager', () => {
       }),
       expect.any(Number), // Backoff delay
     );
+  });
+
+  function makeRescueManager(maybeRescue: ReturnType<typeof mock>): QueueManager {
+    // Separate registry with cookiesFromBrowser — the beforeEach config doesn't set it
+    const configRegistry = new ConfigRegistry({
+      series: [
+        {
+          name: 'Test Series',
+          url: 'https://wetv.vip/play/123',
+          download: { downloadDelay: 10 },
+          cookiesFromBrowser: 'firefox:default-release',
+        },
+      ],
+      stateFile: 'test-state.json',
+    } as any);
+    AppContext.initialize(configRegistry, mockNotifier as any);
+
+    return new QueueManager(
+      mockDownloadManager,
+      ((executor: any) => {
+        schedulerExecutor = executor;
+        return mockScheduler;
+      }) as any,
+      undefined,
+      { maybeRescue } as any,
+    );
+  }
+
+  const rescueTask = () => ({
+    seriesUrl: 'https://wetv.vip/play/123',
+    episode: { number: 1, url: 'url1', type: EpisodeType.AVAILABLE, extractedAt: new Date() },
+    retryCount: 0,
+  });
+
+  it('runs the session rescue on CookieError and retries shortly when cookies changed', async () => {
+    const maybeRescue = mock(async () => ({ attempted: true, cookiesChanged: true }));
+    makeRescueManager(maybeRescue);
+    mockDownloadManager.download.mockRejectedValue(new CookieError('cookies expired'));
+
+    await schedulerExecutor(rescueTask(), 'download:wetv.vip');
+
+    expect(maybeRescue).toHaveBeenCalledWith(
+      'wetv.vip',
+      'firefox:default-release',
+      'https://wetv.vip/play/123',
+      'Test Series',
+      expect.any(Function),
+    );
+    // fresh cookies → short retry instead of full backoff
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ retryCount: 1 }),
+      10_000,
+    );
+  });
+
+  it('runs the session rescue on TrialContentError too', async () => {
+    const maybeRescue = mock(async () => ({ attempted: true, cookiesChanged: true }));
+    makeRescueManager(maybeRescue);
+    mockDownloadManager.download.mockRejectedValue(
+      new TrialContentError('Test Series - 01: Video duration 30s is less than minimum 50s', 'url1'),
+    );
+
+    await schedulerExecutor(rescueTask(), 'download:wetv.vip');
+
+    expect(maybeRescue).toHaveBeenCalled();
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ retryCount: 1 }),
+      10_000,
+    );
+  });
+
+  it('keeps the normal backoff when the rescue did not change cookies', async () => {
+    const maybeRescue = mock(async () => ({ attempted: true, cookiesChanged: false }));
+    makeRescueManager(maybeRescue);
+    mockDownloadManager.download.mockRejectedValue(new CookieError('cookies expired'));
+
+    await schedulerExecutor(rescueTask(), 'download:wetv.vip');
+
+    expect(maybeRescue).toHaveBeenCalled();
+    const call = mockScheduler.addPriorityTask.mock.calls.find((c: any[]) => c[0] === 'download:wetv.vip');
+    expect(call).toBeDefined();
+    expect(call![2]).not.toBe(10_000);
+  });
+
+  it('does not rescue on non-session download errors', async () => {
+    const maybeRescue = mock(async () => ({ attempted: true, cookiesChanged: true }));
+    makeRescueManager(maybeRescue);
+    mockDownloadManager.download.mockRejectedValue(new DownloadError('boom', 'url1'));
+
+    await schedulerExecutor(rescueTask(), 'download:wetv.vip');
+
+    expect(maybeRescue).not.toHaveBeenCalled();
+    expect(mockScheduler.addPriorityTask).toHaveBeenCalledWith(
+      'download:wetv.vip',
+      expect.objectContaining({ retryCount: 1 }),
+      expect.any(Number),
+    );
+  });
+
+  it('does not rescue when cookiesFromBrowser is not configured', async () => {
+    // beforeEach config has no cookiesFromBrowser; default manager
+    const maybeRescue = mock(async () => ({ attempted: true, cookiesChanged: true }));
+    new QueueManager(
+      mockDownloadManager,
+      ((executor: any) => {
+        schedulerExecutor = executor;
+        return mockScheduler;
+      }) as any,
+      undefined,
+      { maybeRescue } as any,
+    );
+    mockDownloadManager.download.mockRejectedValue(new CookieError('cookies expired'));
+
+    await schedulerExecutor(rescueTask(), 'download:wetv.vip');
+
+    expect(maybeRescue).not.toHaveBeenCalled();
   });
 
   it('should handle unknown queue type', async () => {

@@ -101,6 +101,10 @@ globalConfig:
   # %APPDATA%\Mozilla\Firefox\Profiles by full name or suffix after the dot.
   # yt-dlp reads its own cookies from yt-dlp.conf (--cookies-from-browser).
   # cookiesFromBrowser: "firefox:default-release-1"
+  # When a download fails for session reasons (expired cookies / trial
+  # preview), wetvlo opens the series page in this Firefox profile so the
+  # site refreshes its session, then retries. The rescue itself runs at
+  # most once per domain per 30 minutes.
 
   # =============================================================================
   # Optional: Telegram notifications for errors

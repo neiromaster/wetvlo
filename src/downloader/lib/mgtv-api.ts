@@ -168,9 +168,8 @@ export async function fetchPlayerInfo(videoId: string, cookies?: string): Promis
   const user = data?.data?.user;
   const pm2 = String(data?.data?.atc?.pm2 ?? '');
   if (pm2 === '') {
-    throw new DownloadError(
+    throw new CookieError(
       'MGTV returned no pm2 token — cookies likely expired; log in to mgtv.com in Firefox and make sure cookiesFromBrowser is set in config',
-      url,
     );
   }
   return {

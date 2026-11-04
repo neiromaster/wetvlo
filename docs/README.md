@@ -1,6 +1,6 @@
 # wetvlo Documentation
 
-CLI application for automatic downloading of TV series episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com) via yt-dlp.
+CLI application for automatic downloading of TV series episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com, youku.tv) via yt-dlp.
 
 ## 📚 Documentation
 
@@ -101,7 +101,7 @@ Two queues per domain:
 ```yaml
 defaults (config-defaults.ts)
   ↓
-globalConfigs (config.yaml)
+globalConfig (config.yaml)
   ↓
 domainConfigs (config.yaml)
   ↓
@@ -111,7 +111,7 @@ series (config.yaml)  # highest priority
 ## 📖 Additional Resources
 
 - [CLAUDE.md](../CLAUDE.md) - Instructions for Claude Code
-- [config.yaml.example](../config.yaml.example) - Configuration example
+- [config.example.yaml](../config.example.yaml) - Configuration example
 
 ## 🧪 Tests
 
@@ -126,4 +126,4 @@ bun test src/scheduler/scheduler.test.ts
 bun test src/scheduler/scheduler-regression.test.ts
 ```
 
-Total: **290 tests**, all passing.
+All tests should pass — run `bun test` to verify.

@@ -8,87 +8,121 @@ Complete description of all modules with files, functions, and responsibilities.
 
 ```
 src/
-├── index.ts              # Entry point
-├── app.ts                # Application orchestration
-├── app-context.ts        # Service locator
-├── app.test.ts           # App tests
+├── index.ts                        # Entry point
+├── index.test.ts
+├── app.ts                          # Application orchestration
+├── app-context.ts                  # Service locator
+├── app.test.ts
+├── app-interactive.test.ts
 │
-├── scheduler/            # Time-based scheduling
+├── scheduler/                      # Time-based scheduling
 │   ├── scheduler.ts
 │   ├── scheduler.test.ts
 │   └── scheduler-regression.test.ts
 │
-├── queue/                # Queue management
+├── queue/                          # Queue management
 │   ├── queue-manager.ts
 │   ├── queue-manager.test.ts
+│   ├── queue-retry.test.ts
 │   ├── universal-scheduler.ts
-│   └── typed-queue.ts
+│   ├── universal-scheduler.test.ts
+│   ├── typed-queue.ts
+│   ├── typed-queue.test.ts
+│   ├── retry-strategy.ts
+│   ├── retry-strategy.test.ts
+│   └── types.ts
 │
-├── events/               # Event-based architecture
+├── events/                         # Event-based architecture
 │   ├── event-bus.ts
 │   ├── event-bus.test.ts
 │   └── event-types.ts
 │
-├── config/               # Configuration
+├── config/                         # Configuration
 │   ├── config-schema.ts
 │   ├── config-schema.test.ts
 │   ├── config-loader.ts
 │   ├── config-loader.test.ts
 │   ├── config-registry.ts
 │   ├── config-registry.test.ts
-│   └── config-defaults.ts
+│   ├── config-registry-windows-paths.test.ts
+│   ├── config-defaults.ts
+│   ├── config-windows-advanced.test.ts
+│   ├── config-windows-integration.test.ts
+│   └── config-windows-specific.test.ts
 │
-├── handlers/             # Episode extractors
+├── handlers/                       # Episode extractors
 │   ├── base/
-│   │   └── base-handler.ts
+│   │   ├── base-handler.ts
+│   │   └── base-handler.test.ts
 │   ├── impl/
 │   │   ├── wetv-handler.ts
 │   │   ├── wetv-handler.test.ts
 │   │   ├── iqiyi-handler.ts
 │   │   ├── iqiyi-handler.test.ts
 │   │   ├── mgtv-handler.ts
-│   │   └── mgtv-handler.test.ts
-│   └── handler-registry.ts
+│   │   ├── mgtv-handler.test.ts
+│   │   ├── youku-handler.ts
+│   │   └── youku-handler.test.ts
+│   ├── handler-registry.ts
+│   └── handler-registry.test.ts
 │
-├── downloader/           # Download management
+├── downloader/                     # Download management
 │   ├── download-manager.ts
 │   ├── download-manager.test.ts
 │   ├── download-options.ts
 │   ├── downloader-registry.ts
 │   ├── base-downloader.ts
 │   ├── types.ts
-│   └── impl/
-│       ├── yt-dlp-downloader.ts
-│       └── lib/
-│           ├── ytdlp-wrapper.ts
-│           ├── ytdlp-presets.ts
-│           └── index.ts
+│   ├── impl/
+│   │   ├── yt-dlp-downloader.ts
+│   │   ├── mgtv-downloader.ts
+│   │   ├── mgtv-downloader.test.ts
+│   │   ├── youku-downloader.ts
+│   │   └── youku-downloader.test.ts
+│   └── lib/
+│       ├── index.ts
+│       ├── ytdlp-wrapper.ts
+│       ├── ytdlp-wrapper.test.ts
+│       ├── ytdlp-presets.ts
+│       ├── mgtv-api.ts
+│       ├── mgtv-api.test.ts
+│       ├── mgtv-quality.ts
+│       ├── mgtv-quality.test.ts
+│       ├── mgtv-subs.ts
+│       ├── mgtv-subs.test.ts
+│       ├── youku-api.ts
+│       └── youku-api.test.ts
 │
-├── state/                # State persistence
+├── state/                          # State persistence
 │   ├── state-manager.ts
 │   └── state-manager.test.ts
 │
-├── notifications/        # Notifications
+├── notifications/                  # Notifications
 │   ├── notifier.ts
 │   ├── notification-level.ts
 │   ├── console-notifier.ts
 │   ├── console-notifier.test.ts
 │   ├── telegram-notifier.ts
 │   ├── telegram-notifier.test.ts
-│   ├── event-notifier.ts
-│   └── composite-notifier.ts
+│   ├── composite-notifier.ts
+│   ├── composite-notifier.test.ts
+│   └── event-notifier.ts
 │
-├── types/                # TypeScript types
+├── types/                          # TypeScript types
 │   ├── episode.types.ts
 │   ├── config.types.ts
 │   ├── state.types.ts
 │   ├── handler.types.ts
 │   └── episode-type.ts
 │
-├── errors/               # Custom errors
-│   └── custom-errors.ts
+├── errors/                         # Custom errors
+│   ├── custom-errors.ts
+│   └── custom-errors.test.ts
 │
-└── utils/                # Utilities
+├── test-utils/                     # Shared test helpers
+│   └── queue-module-restore.ts
+│
+└── utils/                          # Utilities
     ├── time-utils.ts
     ├── time-utils.test.ts
     ├── url-utils.ts
@@ -100,7 +134,9 @@ src/
     ├── env-resolver.ts
     ├── env-resolver.test.ts
     ├── firefox-cookies.ts
+    ├── firefox-cookies.test.ts
     ├── firefox-rescue.ts
+    ├── firefox-rescue.test.ts
     ├── deep-merge.ts
     ├── logger.ts
     ├── logger.test.ts
@@ -162,11 +198,12 @@ runApp()
   ├─ new CompositeNotifier() (ConsoleNotifier + TelegramNotifier)
   ├─ getEventBus()                       # global EventBus singleton
   ├─ AppContext.initialize(..., eventBus)
-  ├─ handlerRegistry.register()
+  ├─ checkYtDlpInstalled()               # static DownloadManager.checkYtDlpInstalled
+  ├─ handlerRegistry.register()          # wetv, iqiyi, mgtv, youku
+  ├─ downloaderRegistry.register()       # mgtv, youku custom downloaders
   ├─ new DownloadManager()
   ├─ new Scheduler(..., eventBus)
-  ├─ scheduler.start()
-  └─ await forever (for scheduled mode)
+  └─ scheduler.start()
 ```
 
 ---
@@ -270,8 +307,6 @@ type QueueManagerFactory = (downloadManager: DownloadManager) => QueueManager;
 | `resetQueues()` | Reset to initial state |
 | `hasActiveProcessing()` | Check activity |
 | `getQueueStats()` | Queue statistics |
-| `registerDownloadQueue()` | Register download queue |
-| `registerSeriesCheckQueue()` | Register check queue |
 
 **EventBus integration:** subscribes to `queue:task:start`, `queue:task:complete`, `queue:task:error`, `queue:idle`, `queue:wait` for monitoring/logging. Unsubscribe functions are stored and released in `stop()`, re-registered on `start()`.
 
@@ -331,6 +366,41 @@ private getEarliestAvailableTime(): {time, queueName} | null
 
 ---
 
+### `src/queue/retry-strategy.ts`
+
+**Responsibility:** Retry helpers with exponential backoff and jitter
+
+**Functions:**
+
+| Function | Purpose |
+|----------|---------|
+| `calculateBackoff()` | Backoff delay = initialTimeout × multiplier^attempt ± jitter (never negative) |
+| `shouldRetry()` | Attempt-budget check against `maxRetries` |
+| `getRetryDelay()` | Delay before the next retry |
+| `retryWithBackoff()` | Run an async fn with retries (optional `onRetry` callback); throws last error when exhausted |
+| `sleep()` | Async delay |
+
+---
+
+### `src/queue/types.ts`
+
+**Responsibility:** Queue-layer type definitions
+
+**Types:**
+```typescript
+type CheckSettings      // count / checkInterval / downloadTypes
+type DownloadSettings   // downloadDir, downloadDelay, maxRetries, initialTimeout, backoff, jitter, minDuration
+type CheckQueueItem     // seriesUrl, attemptNumber, scheduledTime
+type DownloadQueueItem  // seriesUrl, episode, scheduledTime
+type QueueProcessor<T> / ExecutorCallback<T>  // processor / executor callbacks
+type QueueStatus, CheckResult, DownloadResult, TaskItem<T>, SchedulerConfig
+type ScheduledTask      // CheckQueueItem | DownloadQueueItem union
+```
+
+(`RetryConfig` is deprecated in favor of `DownloadSettings`.)
+
+---
+
 ### `src/events/` — Events Layer
 
 #### `src/events/event-bus.ts`
@@ -354,23 +424,26 @@ private getEarliestAvailableTime(): {time, queueName} | null
 
 #### `src/events/event-types.ts`
 
-**Responsibility:** Type-safe event payload definitions — 30 event types in 7 categories
+**Responsibility:** Type-safe event payload definitions — the `WetvloEvent` map,
+grouped under 9 prefixes
 
-| Category | Events |
-|----------|--------|
-| Scheduler | `scheduler:start`, `scheduler:trigger`, `scheduler:complete` |
-| Queue | `queue:register`, `queue:add`, `queue:task:start/complete/error`, `queue:drain`, `queue:idle`, `queue:wait`, `queue:cleared`, `queue:reset` |
-| Download | `download:start`, `download:progress`, `download:complete`, `download:error`, `download:cleanup` |
-| Scraping | `scraping:start`, `scraping:complete`, `scraping:error` |
-| State | `state:load`, `state:save`, `state:update` |
-| Notification | `notification:sent`, `notification:error` |
-| System | `app:start`, `app:shutdown` |
+| Prefix | Events |
+|--------|--------|
+| `scheduler` | `scheduler:start`, `scheduler:trigger`, `scheduler:complete` |
+| `queue` | `queue:register`, `queue:add`, `queue:task:start/complete/error`, `queue:drain`, `queue:idle`, `queue:cleared`, `queue:reset`, `queue:wait` |
+| `download` | `download:start`, `download:progress`, `download:complete`, `download:error`, `download:cleanup` |
+| `scraping` | `scraping:start`, `scraping:complete`, `scraping:error` |
+| `state` | `state:load`, `state:save`, `state:update` |
+| `notification` | `notification:send`, `notification:error` |
+| `app` | `app:start`, `app:shutdown` |
+| `config` | `config:reload`, `config:error` |
+| `health` | `health:check` |
 
 ---
 
 ### `src/queue/typed-queue.ts`
 
-**Responsibility:** FIFO queue with delays and cooldown
+**Responsibility:** Passive FIFO store for tasks of one type (delays + cooldown, no execution)
 
 **Class:** `TypedQueue<TaskType>`
 
@@ -378,16 +451,22 @@ private getEarliestAvailableTime(): {time, queueName} | null
 
 | Method | Purpose |
 |--------|---------|
-| `add()` | Add task with delay |
-| `addPriority()` | Add to queue front |
-| `getNext()` | Get next task |
-| `hasTasks()` | Check for tasks |
-| `canStart()` | Check ready to execute |
+| `add(task, delay?)` | Add task with optional availability delay |
+| `addFirst(task, delay?)` | Add to queue front (priority) |
+| `getNext()` | Pop next task |
+| `peekNext()` | Peek next task without removing |
+| `canStart(now)` | Ready to execute (idle, past cooldown, head past its delay) |
 | `markStarted()` | Mark execution started |
+| `markCompleted(cooldownMs)` | Mark complete + start cooldown |
+| `markFailed(cooldownMs)` | Mark failed + start cooldown |
+| `hasTasks()` | Check for tasks |
+| `getNextAvailableTime()` | Next time this queue can start a task |
+| `getQueueLength()` | Queue length |
+| `getIsExecuting()` | Execution flag |
+| `getCooldownMs()` / `setCooldownMs()` | Cooldown accessors |
 | `clear()` | Clear queue |
-| `reset()` | Reset to initial state |
-| `getLength()` | Queue length |
-| `getNextAvailableTime()` | Next task time |
+| `reset()` | Reset to initial state (forces immediate execution) |
+| `getStatus()` | Status snapshot (length / executing / nextAvailableAt / cooldown / canStartNow) |
 
 ---
 
@@ -428,7 +507,7 @@ protected parseEpisodeType(element, $): EpisodeType
 **Methods:**
 ```typescript
 getDomain(): string  // "wetv.vip"
-async extractEpisodes(url: string): Promise<Episode[]>
+async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
 ```
 
 ---
@@ -442,7 +521,7 @@ async extractEpisodes(url: string): Promise<Episode[]>
 **Methods:**
 ```typescript
 getDomain(): string  // "iq.com"
-async extractEpisodes(url: string): Promise<Episode[]>
+async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
 ```
 
 ---
@@ -456,8 +535,31 @@ async extractEpisodes(url: string): Promise<Episode[]>
 **Methods:**
 ```typescript
 getDomain(): string  // "mgtv.com"
-async extractEpisodes(url: string): Promise<Episode[]>
+async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
 ```
+
+---
+
+### `src/handlers/impl/youku-handler.ts`
+
+**Responsibility:** Extractor for youku.tv
+
+**Class:** `YoukuHandler extends BaseHandler`
+
+**Methods:**
+```typescript
+getDomain(): string  // "youku.tv"
+async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
+```
+
+Parses the episode list embedded in the episode page's SSR HTML (`type:10013`
+anthology nodes, located by string anchor and expanded with a string-aware
+balanced-brace scan; no list API). Numbering follows each item's numeric
+`stage` — never list position; availability marks map '' → available,
+VIP → vip, Express/TVOD → express (unknown marks fail safe to express with a
+warning); trailer rows are skipped and duplicate encodevids are deduped. An
+unparseable page warns and returns an empty list so the "no episodes" retry
+flow engages.
 
 ---
 
@@ -472,7 +574,6 @@ export const handlerRegistry = {
   getHandler(url: string): DomainHandler | undefined
   getHandlerOrThrow(url: string): DomainHandler
   getDomains(): string[]
-  hasHandler(url: string): boolean
 };
 ```
 
@@ -482,7 +583,7 @@ export const handlerRegistry = {
 
 ### `src/downloader/download-manager.ts`
 
-**Responsibility:** Download orchestration via yt-dlp
+**Responsibility:** Download orchestration via the downloader registry (yt-dlp default)
 
 **Class:** `DownloadManager`
 
@@ -490,8 +591,8 @@ export const handlerRegistry = {
 
 | Method | Purpose |
 |--------|---------|
-| `download()` | Download episode |
-| `checkYtDlpInstalled()` | Check yt-dlp presence |
+| `download()` | Download episode (picks downloader via `downloaderRegistry.getDownloader(url)`) |
+| `checkYtDlpInstalled()` | Check yt-dlp presence (static) |
 | `cleanupEpisodeArtifacts()` | Delete .part files |
 | `verifyDownload()` | Verify file size |
 | `formatSize()` | Format size |
@@ -522,15 +623,90 @@ async download(episode, targetDir, filenameWithoutExt, options): Promise<{
 
 ---
 
+### `src/downloader/impl/mgtv-downloader.ts`
+
+**Responsibility:** Downloader for MGTV International (mgtv.com / w.mgtv.com)
+
+**Class:** `MgtvDownloader extends BaseDownloader`
+
+Resolves the signed HLS playlist via the tinker API (`mgtvApi`: player info →
+source streams → m3u8) using VIP-account cookies, then hands it to yt-dlp
+(yt-dlp has no MGTV extractor of its own; `--referer https://w.mgtv.com/`).
+Subtitles are downloaded separately and saved next to the video as
+`<name>.<lang>.srt`; subtitle failures never fail the video.
+
+---
+
+### `src/downloader/impl/youku-downloader.ts`
+
+**Responsibility:** Downloader for Youku International (youku.tv)
+
+**Class:** `YoukuDownloader extends BaseDownloader`
+
+Mints the signed HLS playlist through the ups API right before downloading
+(signed URLs expire after ~5 h) and hands it to yt-dlp without cookies — the
+signature is the only auth, plus a youku.tv referer. A 6-minute trial payload
+(stale/missing session, locked/TVOD episode) raises `TrialContentError` — or,
+in `subsOnly` mode, saves the subtitles only and postpones the video.
+Subtitles are unsigned .ass CDN links saved as `<name>.<lang>.ass` sidecars;
+subtitle failures never fail the video.
+
+---
+
+### `src/downloader/lib/mgtv-api.ts`
+
+**Responsibility:** MGTV International API layer (tinker*.glb.mgtv.com) —
+everything site-specific about MGTV: `tk2` auth signature (`makeTk2`),
+mgtv.com-only cookie header (`readMgtvCookieHeader`), JSONP unwrap, and the
+endpoints for player info, source streams, signed m3u8 resolution, and
+subtitle list/resolve/download. Exports the `MgtvApi` injectable type and the
+`mgtvApi` instance, plus `MGTV_UA` and the stream/subtitle result types.
+
+---
+
+### `src/downloader/lib/mgtv-quality.ts`
+
+**Responsibility:** `pickBestStream()` — highest numeric `filebitrate` among
+streams with a non-empty url; locked VIP streams (empty url = cookies
+missing/expired or no VIP) are skipped and reported via the `degraded` flag
+
+---
+
+### `src/downloader/lib/mgtv-subs.ts`
+
+**Responsibility:** Subtitle matching for MGTV: `matchSubLangs()` filters
+subtitle entries against yt-dlp-style `subLangs` patterns (`ru.*`/`ru*`
+prefix match, `ru` exact match, compared against the lowercased language
+code), `langTag()` gives the filename language tag (e.g. `ZH_CN` → `zh_cn`)
+
+---
+
+### `src/downloader/lib/youku-api.ts`
+
+**Responsibility:** Youku International API layer (h5 mtop gateway
+acs.youku.tv, `mtop.youku.play.ups.appinfo.get`): `mintUps()` mints the
+signed playlist result (title, duration, streams, subtitles, trial flag),
+`readYoukuCookiePairs()` collects youku.tv/youku.com cookie pairs deduped by
+name with domain precedence (duplicate names make youku answer HTTP 400),
+plus `pickBestStream()` (DRM streams filtered), `matchYoukuSubLangs()` /
+`fetchSubtitle()`, `extractVideoId()`, and the mtop signing/transport
+helpers. Exports the `YoukuApi` injectable type and the `youkuApi` instance.
+`trial: true` payloads are 6-minute previews — their streams must never be
+downloaded, but they still carry the full subtitle array.
+
+---
+
 ### `src/downloader/downloader-registry.ts`
 
 **Responsibility:** Downloader registration and retrieval
 
 **Exports:**
 ```typescript
-export const downloaderRegistry = {
-  getDownloader(url: string): Downloader
-};
+export class DownloaderRegistry {
+  register(downloader: Downloader): void  // custom downloaders, checked first
+  getDownloader(url: string): Downloader  // first supporting, else default YtDlpDownloader
+}
+export const downloaderRegistry = new DownloaderRegistry();
 ```
 
 ---
@@ -548,8 +724,14 @@ export const downloaderRegistry = {
 | Method | Purpose |
 |--------|---------|
 | `isDownloaded()` | Check if episode downloaded |
-| `addDownloadedEpisode()` | Add episode to state |
+| `addDownloadedEpisode()` | Add episode to state (upgrades a `"NN:subs"` marker to `"NN"`) |
+| `addSubsOnlyEpisode()` | Mark `"NN:subs"` subtitles-only placeholder |
+| `isSubsOnly()` | Check whether an episode carries the `"NN:subs"` marker |
 | `getSeriesEpisodes()` | Get all series episodes |
+
+State entries carry `"NN:subs"` markers (subtitles-only placeholders, not
+counted by `isDownloaded`) that convert back to `"NN"` when the video later
+downloads.
 
 **Private Methods:**
 ```typescript
@@ -575,14 +757,15 @@ private handleError(error, message): void
 | Method | Purpose |
 |--------|---------|
 | `resolve()` | Get config for URL and level |
-| `listSeries()` | List all series |
-| `getDomain()` | Extract domain from URL |
+| `listSeries()` | List all series configs |
+| `listSeriesUrls()` | List all series URLs |
+| `listDomains()` | List configured domains |
 
 **Resolution levels:**
 ```typescript
 resolve(url, 'global')   // Global settings
 resolve(url, 'domain')   // Domain settings
-resolve(url, 'series')   // Series settings (highest priority)
+resolve(url)             // Series settings (highest priority)
 ```
 
 ---
@@ -617,18 +800,29 @@ export type ResolvedConfig<Level> = z.infer<...>;
 
 **Exports:**
 ```typescript
-export const DEFAULTS = {
+export const defaults: DefaultConfig = {
   check: {
     count: 3,
-    interval: 600,
-    ...
+    checkInterval: 600,          // seconds
+    downloadTypes: ['available']
   },
   download: {
-    maxRetries: 2,
-    initialTimeout: 60,
-    ...
-  }
+    downloadDir: './downloads',
+    tempDir: './downloads',
+    downloadDelay: 10,           // seconds
+    maxRetries: 3,
+    initialTimeout: 5,           // seconds
+    backoffMultiplier: 2,
+    jitterPercentage: 10,
+    minDuration: 0,              // 0 = disabled
+    subsBeforeVideo: false
+  },
+  notifications: { consoleMinLevel: 'info' },
+  telegram: { minLevel: 'error' },
+  stateFile: 'wetvlo-state.json'
 };
+
+export function getDefaults(): DefaultConfig  // returns `defaults`
 ```
 
 ---
@@ -642,9 +836,9 @@ export const DEFAULTS = {
 **Type:**
 ```typescript
 type Notifier = {
-  notify(level: NotificationLevel, message: string): void
-  progress(message: string): void
-  endProgress(): void
+  notify(level: NotificationLevel, message: string): Promise<void> | void
+  progress(message: string): Promise<void> | void
+  endProgress(): Promise<void> | void
 };
 ```
 
@@ -702,14 +896,20 @@ Subscribes to bus events and forwards them as notifications to the wrapped notif
 
 **Exports:**
 ```typescript
-enum NotificationLevel {
-  DEBUG = 0,
-  INFO = 1,
-  SUCCESS = 2,
-  HIGHLIGHT = 3,
-  WARNING = 4,
-  ERROR = 5
-}
+// String-valued enum built via createEnum (NOT a numeric TS enum):
+export const NotificationLevel = {
+  DEBUG: 'debug',
+  INFO: 'info',
+  SUCCESS: 'success',
+  HIGHLIGHT: 'highlight',
+  WARNING: 'warning',
+  ERROR: 'error'
+} as const;
+
+// Filtering priorities (lower = less severe):
+export const LEVEL_PRIORITIES = {
+  debug: 0, info: 1, success: 2, highlight: 3, warning: 4, error: 5
+};
 ```
 
 ---
@@ -726,6 +926,7 @@ enum NotificationLevel {
 | `getMsUntilCron()` | Milliseconds until cron |
 | `sleep()` | Async delay |
 | `parseTime()` | Parse HH:MM |
+| `formatDuration()` | Human-readable duration for ms |
 
 ---
 
@@ -737,6 +938,7 @@ enum NotificationLevel {
 |----------|---------|
 | `extractDomain()` | Extract domain from URL |
 | `isValidUrl()` | Validate URL |
+| `normalizeUrl()` | Normalize URL |
 
 ---
 
@@ -756,8 +958,8 @@ enum NotificationLevel {
 
 | Function | Purpose |
 |----------|---------|
-| `getVideoDuration()` | Get video duration |
-| `getVideoSize()` | Get file size |
+| `getVideoDuration()` | Duration in seconds via ffprobe (0 on failure) |
+| `checkFfprobeInstalled()` | ffprobe presence |
 
 ---
 
@@ -789,6 +991,30 @@ graceful close when we launched the browser, cookie snapshot before/after),
 
 ---
 
+### `src/utils/logger.ts`
+
+**Responsibility:** Colored timestamped console logger — `Logger` class with
+level filtering (`debug`/`info`/`success`/`warning`/`error`/`highlight`),
+`LogLevel` constants and a default `logger` instance
+
+---
+
+### `src/utils/create-enum.ts`
+
+**Responsibility:** `createEnum()` helper — builds an uppercase-keyed string
+enum object, a matching Zod schema, and a string-literal type from a list of
+values (used by `EpisodeType` and `NotificationLevel`)
+
+---
+
+### `src/utils/env-resolver.ts`
+
+**Responsibility:** `${VAR}` environment-variable resolution in strings
+(`resolveEnv()`, throws when the variable is unset) and recursively through
+config objects (`resolveEnvRecursive()`)
+
+---
+
 ## 📝 Types Layer
 
 ### `src/types/episode.types.ts`
@@ -800,6 +1026,7 @@ type Episode = {
   url: string
   type: EpisodeType
   title?: string
+  extractedAt: Date
 }
 ```
 
@@ -845,7 +1072,11 @@ type DomainHandler = {
 
 **Types:**
 ```typescript
-type EpisodeType = 'episode' | 'pv' | 'extra' | 'opening' | 'ending'
+// String-valued enum built via createEnum:
+export type EpisodeType =
+  | 'available' | 'vip' | 'svip' | 'preview' | 'locked' | 'teaser' | 'express'
+// plus: EpisodeType object (UPPERCASE key → value), EpisodeTypeSchema (Zod),
+//       EpisodeTypeValues
 ```
 
 ---
@@ -859,10 +1090,14 @@ type EpisodeType = 'episode' | 'pv' | 'extra' | 'opening' | 'ending'
 | Class | Extends | Purpose |
 |-------|---------|---------|
 | `WetvloError` | Error | Base error |
-| `ConfigError` | WetvloError | Config error |
-| `SchedulerError` | WetvloError | Scheduler error |
-| `HandlerError` | WetvloError | Handler error |
-| `DownloadError` | WetvloError | Download error |
+| `ConfigError` | WetvloError | Configuration error |
+| `StateError` | WetvloError | State file error |
+| `HandlerError` | WetvloError | Episode extraction error (carries url) |
+| `DownloadError` | WetvloError | Download error (carries url) |
+| `TrialContentError` | WetvloError | Trial/preview content served instead of the full episode (message, url) — triggers session rescue |
+| `NotificationError` | WetvloError | Notification error |
+| `CookieError` | WetvloError | Cookie extraction error (session state) — triggers session rescue |
+| `SchedulerError` | WetvloError | Scheduling error |
 
 ---
 
@@ -910,9 +1145,11 @@ bun test <path>             # Specific file
 ```
 
 **Coverage:**
-- Unit tests for each component (incl. `event-bus.test.ts` — 21 tests)
+- Unit tests for each component
 - Regression tests (`scheduler-regression.test.ts`)
-- Total: **290 tests**
+
+This document deliberately carries no hard test counts (they rot) — run
+`bun test` and keep the suite all green.
 
 ---
 

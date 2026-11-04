@@ -1,6 +1,6 @@
 {
   "name": "wetvlo",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "description": "CLI application for monitoring and downloading TV series episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com, youku.tv)",
   "module": "dist/index.js",
   "main": "dist/index.js",

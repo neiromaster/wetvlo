@@ -109,7 +109,7 @@ Controls how the system downloads episodes.
 | `svip` | SVIP episodes. |
 | `preview` | Preview episodes. |
 | `locked` | Locked episodes. |
-| `teaser` | Teaser/trailer episodes. |
+| `teaser` | Teaser/trailer episodes. MGTV "Preview EP N" clips (promos occupying an episode slot before release) come through as this type. |
 | `express` | Express (TVOD / early-access) episodes. Required for `download.subsBeforeVideo` to attempt TVOD episodes. |
 
 ## Cookies and Firefox

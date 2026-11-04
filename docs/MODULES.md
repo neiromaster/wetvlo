@@ -100,6 +100,7 @@ src/
     ├── env-resolver.ts
     ├── env-resolver.test.ts
     ├── firefox-cookies.ts
+    ├── firefox-rescue.ts
     ├── deep-merge.ts
     ├── logger.ts
     ├── logger.test.ts
@@ -776,6 +777,15 @@ enum NotificationLevel {
 **Responsibility:** Read cookies from a Firefox profile SQLite database for a target URL
 (spec format `"firefox:<profile>"`; profile matches a Firefox Profiles directory
 by full name or suffix after the dot)
+
+---
+
+### `src/utils/firefox-rescue.ts`
+
+**Responsibility:** Session rescue: on `CookieError`/`TrialContentError` open the
+series page in the configured Firefox profile (`refreshSessionsViaTab` — CLI spawn,
+graceful close when we launched the browser, cookie snapshot before/after),
+`CookieSessionRescue` adds a per-domain cooldown and user notifications
 
 ---
 

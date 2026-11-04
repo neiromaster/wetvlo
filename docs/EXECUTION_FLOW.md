@@ -184,6 +184,9 @@ executorBusy = false
   │              ↓
   │           📁 queue/queue-manager.ts:performCheck()
   │             ├─ Read cookies from Firefox profile (if cookiesFromBrowser set)
+  │             ├─ On CookieError/TrialContentError + cookiesFromBrowser: session rescue
+  │             │   (open the series page in Firefox, compare domain cookies,
+  │             │   shorter retry delay when they changed, 30 min per-domain cooldown)
   │             ├─ handler.extractEpisodes("https://wetv.vip/play/series-a")
   │             │   ↓
   │             │  📁 handlers/impl/wetv-handler.ts:extractEpisodes()

@@ -109,7 +109,9 @@ globalConfig:
   # =============================================================================
   # Cookie settings
   # =============================================================================
-  # Extract cookies from a Firefox profile for page checks and mgtv/youku API.
+  # Extract cookies from a Firefox profile for page checks and youku API.
+  # MGTV downloads go through yt-dlp — give it cookies via yt-dlp.conf
+  # (--cookies-from-browser firefox:<full-profile-dir-name>).
   # Format: "firefox:<profile>"; profile matches a directory in
   # %APPDATA%\Mozilla\Firefox\Profiles by full name or suffix after the dot.
   # yt-dlp reads its own cookies from yt-dlp.conf (--cookies-from-browser);

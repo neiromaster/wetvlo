@@ -200,7 +200,7 @@ runApp()
   ├─ AppContext.initialize(..., eventBus)
   ├─ checkYtDlpInstalled()               # static DownloadManager.checkYtDlpInstalled
   ├─ handlerRegistry.register()          # wetv, iqiyi, mgtv, youku
-  ├─ downloaderRegistry.register()       # mgtv, youku custom downloaders
+  ├─ downloaderRegistry.register()       # youku custom downloader (mgtv → yt-dlp native)
   ├─ new DownloadManager()
   ├─ new Scheduler(..., eventBus)
   └─ scheduler.start()
@@ -625,13 +625,16 @@ async download(episode, targetDir, filenameWithoutExt, options): Promise<{
 
 ### `src/downloader/impl/mgtv-downloader.ts`
 
-**Responsibility:** Downloader for MGTV International (mgtv.com / w.mgtv.com)
+**Responsibility:** Downloader for MGTV International (mgtv.com / w.mgtv.com) —
+currently NOT registered: MGTV downloads route to yt-dlp's native MGTV
+extractor (the intl tinker dispatch tier answered 618 "busy" to certain IPs).
+Kept for a one-line revert in `app.ts` if the intl tier recovers.
 
 **Class:** `MgtvDownloader extends BaseDownloader`
 
 Resolves the signed HLS playlist via the tinker API (`mgtvApi`: player info →
 source streams → m3u8) using VIP-account cookies, then hands it to yt-dlp
-(yt-dlp has no MGTV extractor of its own; `--referer https://w.mgtv.com/`).
+(`--referer https://w.mgtv.com/`).
 Subtitles are downloaded separately and saved next to the video as
 `<name>.<lang>.srt`; subtitle failures never fail the video.
 

@@ -26,7 +26,7 @@ bun run dist/index.js --once             # Single-run mode
 
 ## Architecture Overview
 
-This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com, youku.tv). yt-dlp is the default/fallback downloader (wetv/iq); mgtv and youku use custom downloaders (`MgtvDownloader` / `YoukuDownloader`), routed by DownloadManager via `downloaderRegistry`.
+This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com, youku.tv). yt-dlp is the default/fallback downloader — it handles wetv/iq and mgtv (native MGTV extractor); youku uses a custom downloader (`YoukuDownloader`), routed by DownloadManager via `downloaderRegistry`.
 
 ### Flow
 
@@ -34,7 +34,7 @@ This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip
 2. **Scheduler** waits for `startTime`, then adds series checks to **QueueManager**
 3. **QueueManager** uses **UniversalScheduler** to execute tasks sequentially:
    - **Check tasks**: Fetch page, extract episodes via domain handlers
-   - **Download tasks**: Execute downloads via **DownloadManager** (yt-dlp fallback; custom downloaders for mgtv/youku)
+   - **Download tasks**: Execute downloads via **DownloadManager** (yt-dlp default, incl. mgtv via its native extractor; custom downloader for youku)
 4. **StateManager** tracks downloaded episodes in JSON to prevent duplicates
 5. **Notifier** sends console output + Telegram errors
 
@@ -103,7 +103,7 @@ globalConfig:
 2. Implement `getDomain()` and `extractEpisodes()`
 3. Register in `src/app.ts` with `handlerRegistry.register()`
 4. Handler automatically matches URLs via `supports()` method
-5. If yt-dlp can't download for the domain, also add a custom downloader and register it in `src/app.ts` with `downloaderRegistry.register()` (see `MgtvDownloader` / `YoukuDownloader`) — DownloadManager routes via `downloaderRegistry.getDownloader(url)`
+5. If yt-dlp can't download for the domain, also add a custom downloader and register it in `src/app.ts` with `downloaderRegistry.register()` (see `YoukuDownloader`) — DownloadManager routes via `downloaderRegistry.getDownloader(url)`
 
 ### State File Format
 

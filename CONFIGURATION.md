@@ -125,6 +125,10 @@ The profile cookies are used for:
 
 **yt-dlp does not receive cookies from wetvlo.** To give yt-dlp cookies, put `--cookies-from-browser firefox:<profile>` into `yt-dlp.conf` in the working directory. Unlike wetvlo's own matching, yt-dlp only accepts the **full profile directory name** under `Profiles\` (e.g. `firefox:urj13kw6.default-release`) — short profile names like `default-release` fail with "could not find firefox cookies database".
 
+Keep a **single cookie source** in `yt-dlp.conf`: combining `--cookies <file>` with `--cookies-from-browser` lets a stale snapshot in the file shadow the fresh browser session, and the site serves broken/preview streams instead of the real video. Prefer `--cookies-from-browser` alone.
+
+The app config (`cookiesFromBrowser`) uses the opposite convention: the **short profile name** is preferred there — wetvlo's matcher accepts it, and session rescue passes the value to `firefox -P`, which expects the profile name from `profiles.ini`, not the directory name.
+
 ### Session Rescue
 
 Session rescue has no configuration keys — it activates automatically when `cookiesFromBrowser` is set. When a download fails with a session or trial error (`CookieError` / `TrialContentError`), wetvlo:

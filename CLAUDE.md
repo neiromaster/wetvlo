@@ -133,7 +133,7 @@ The app handles `SIGINT` (Ctrl+C) and `SIGTERM` for graceful shutdown, allowing 
 
 ## Bun Notes
 
-Default to using Bun instead of Node.js.
+Bun is the dev toolchain only — **runtime code must stay Node-runnable** (see APIs). Default to Bun for development:
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
 - Use `bun test` instead of `jest` or `vitest`
@@ -144,12 +144,15 @@ Default to using Bun instead of Node.js.
 
 ## APIs
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
+The published package is a Node CLI: its `bin` (`dist/index.js`, shebang
+`#!/usr/bin/env node`) is executed by node in production (mise installs it as an
+npm package). **No `bun:*` imports or `Bun.*` APIs in runtime code** — a single
+`bun:` import in `src` (outside `*.test.ts`) breaks every production install.
+bun modules in tests (`bun:test`, `bun:sqlite` fixtures) are fine.
+
+- `node:sqlite` (`DatabaseSync`) for SQLite. Don't use `better-sqlite3`.
+- Node built-ins (`node:fs`, `node:path`, ...) — not `Bun.file` or other Bun globals.
+- Don't use `express`, `ioredis`, `pg`, `postgres.js`, or `ws`.
 
 ## Testing
 

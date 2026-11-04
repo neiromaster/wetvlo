@@ -10,14 +10,23 @@ type MGTVResponse = {
     current_page: number;
     list: Array<{
       t1: string; // Episode number (e.g. "1")
-      t2: string; // Title (e.g. "EP 1")
-      t4: string; // Chinese title (e.g. "第1集")
+      t2: string; // Title (e.g. "EP 1", or "Preview EP 1" for teasers)
+      t3?: string; // Alternate title (matches t2)
+      t4: string; // Chinese title (e.g. "第1集" — same for full episodes and teasers)
       isvip: string; // "1" = VIP, "0" = Free
       url: string; // Relative URL (e.g. "/b/823701/23967831.html")
       video_id: string;
       clip_id: string;
-      time: string; // Duration (e.g. "45:00")
+      time: string; // Duration (e.g. "45:00"; teasers run ~00:45)
       ts: string; // Timestamp
+      isIntact?: string; // "1" = full episode, "3" = preview clip (observed 2026-11-04)
+      corner?: Array<{
+        // UI badges; teasers carry {area:"rightUp", flag:"2", font:"Pre"}
+        area: string;
+        flag: string;
+        color: string;
+        font: string;
+      }>;
     }>;
     info: {
       title: string;
@@ -68,11 +77,19 @@ export class MGTVHandler extends BaseHandler {
 
         const episodeUrl = `https://w.mgtv.com${item.url}`;
 
+        // A teaser is a content kind, not a pay tier — it wins over
+        // VIP/available so check.downloadTypes can gate it independently
+        // (excluded by default).
+        let type = item.isvip === '1' ? EpisodeType.VIP : EpisodeType.AVAILABLE;
+        if (this.isTeaserEpisode(item)) {
+          type = EpisodeType.TEASER;
+        }
+
         episodes.push({
           number: episodeNumber,
           title: item.t2 || item.t4 || `Episode ${episodeNumber}`,
           url: episodeUrl,
-          type: item.isvip === '1' ? EpisodeType.VIP : EpisodeType.AVAILABLE,
+          type,
           extractedAt: new Date(),
         });
       }
@@ -91,13 +108,38 @@ export class MGTVHandler extends BaseHandler {
   }
 
   /**
-   * Deduplicate episodes based on episode number
+   * Detect teaser clips ("Preview EP N"): short promos occupying an episode
+   * slot before the real episode is released. Three markers, any one is
+   * enough — evidence from the episode list API (2026-11-04, series 919355):
+   * - t2/t3 read "Preview EP N" (t4, the Chinese title, is identical for
+   *   full episodes and teasers and cannot be used);
+   * - corner badge {area: "rightUp", flag: "2", font: "Pre"};
+   * - isIntact "3" where full episodes carry "1".
+   */
+  private isTeaserEpisode(item: MGTVResponse['data']['list'][number]): boolean {
+    if (/^preview/i.test(item.t2 ?? '') || /^preview/i.test(item.t3 ?? '')) {
+      return true;
+    }
+    if (item.isIntact === '3') {
+      return true;
+    }
+    return item.corner?.some((badge) => /^pre/i.test(badge.font ?? '')) ?? false;
+  }
+
+  /**
+   * Deduplicate episodes based on episode number. The API usually lists
+   * "Preview EP N" BEFORE the full "EP N", so first-wins would shadow a
+   * released episode with its teaser forever — a non-teaser always
+   * displaces a teaser occupying the slot.
    */
   private deduplicateEpisodes(episodes: Episode[]): Episode[] {
     const uniqueEpisodes = new Map<number, Episode>();
 
     for (const episode of episodes) {
-      if (!uniqueEpisodes.has(episode.number)) {
+      const existing = uniqueEpisodes.get(episode.number);
+      if (!existing) {
+        uniqueEpisodes.set(episode.number, episode);
+      } else if (existing.type === EpisodeType.TEASER && episode.type !== EpisodeType.TEASER) {
         uniqueEpisodes.set(episode.number, episode);
       }
     }

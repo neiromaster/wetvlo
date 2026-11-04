@@ -538,6 +538,13 @@ getDomain(): string  // "mgtv.com"
 async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
 ```
 
+Teaser clips ("Preview EP N" — short promos occupying an episode slot before
+the real episode is released) are typed `teaser` and excluded by default
+`check.downloadTypes`. Detection markers: `t2`/`t3` title prefix "Preview",
+corner badge `font: "Pre"`, or `isIntact: "3"` (full episodes carry "1").
+The episode list places a preview before the full episode of the same
+number, so dedup lets a non-teaser displace a teaser occupying the slot.
+
 ---
 
 ### `src/handlers/impl/youku-handler.ts`

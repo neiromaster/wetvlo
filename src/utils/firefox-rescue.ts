@@ -16,7 +16,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
-import { NotificationLevel } from '../notifications/notification-level.js';
 import { findProfileDir, parseCookieBrowserSpec, readFirefoxCookies } from './firefox-cookies';
 
 export type RescueOptions = {
@@ -41,7 +40,7 @@ export type RescueResult = {
   skipReason?: string;
 };
 
-export const DEFAULT_WAIT_MS = 20_000;
+const DEFAULT_WAIT_MS = 20_000;
 const DEFAULT_KILL_GRACE_MS = 10_000;
 const DEFAULT_DELEGATED_SETTLE_MS = 5_000;
 
@@ -137,5 +136,6 @@ async function closeGracefully(child: ExecaChild, graceMs: number): Promise<void
   if (!exited) {
     await execa('taskkill', ['/PID', String(child.pid), '/F'], { reject: false });
   }
-  await child.catch(() => {}); // reap, never throws
+  // Bound the reap: if /F failed (e.g. access denied), never hang the caller
+  await Promise.race([child.catch(() => {}), sleep(5_000)]);
 }

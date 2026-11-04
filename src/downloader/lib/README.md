@@ -32,8 +32,10 @@ import { YtdlpWrapper, YtdlpPresets } from './lib/index.js';
 const wrapper = new YtdlpWrapper();
 const presets = new YtdlpPresets(wrapper);
 
-// Download with subtitles (defaults to ['en', 'ru'])
-await presets.downloadWithSubs(url, 'Video', './downloads');
+// Download with subtitles (subLangs must be provided - there is no built-in default)
+await presets.downloadWithSubs(url, 'Video', './downloads', {
+  subLangs: ['en', 'ru']
+});
 
 // Download with custom subtitle languages
 await presets.downloadWithSubs(url, 'Video', './downloads', {

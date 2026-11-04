@@ -100,16 +100,17 @@ type AppDependencies = {
 
 **Files:**
 - `event-bus.ts` — `EventBus` class (wrapper over Emittery) + `getEventBus()`/`resetEventBus()` singleton accessors
-- `event-types.ts` — 30 event payload types across 7 categories
+- `event-types.ts` — typed event payload definitions (categories: `app:*`, `config:*`, `download:*`, `health:*`, `notification:*`, `queue:*`, `scheduler:*`, `scraping:*`, `state:*`)
 
 **Key Methods:**
 - `emit()` / `emitSync()` — emit event (async / fire-and-forget)
 - `on()` / `onMany()` / `onAny()` / `once()` — subscribe (return unsubscribe function)
 - `waitFor()` — promise-based wait for event
 - `onWithSignal()` — subscription with AbortSignal
+- `iterate()` — async generator consuming an event's stream
 - `listenerCount()` / `clearListeners()` — introspection
 
-**Event categories:** scheduler (`scheduler:*`), queue (`queue:*`), download (`download:*`), scraping (`scraping:*`), state (`state:*`), notification (`notification:*`), system (`app:*`)
+**Event categories:** scheduler (`scheduler:*`), queue (`queue:*`), download (`download:*`), scraping (`scraping:*`), state (`state:*`), notification (`notification:*`), system (`app:*`, `config:*`), health (`health:*`)
 
 **Wiring:** `app.ts` obtains the global bus via `getEventBus()`, passes it to `AppContext.initialize()` and `Scheduler` (→ `QueueManager` → `UniversalScheduler`).
 
@@ -124,12 +125,13 @@ type AppDependencies = {
 - `fetchHtml()` — load HTML with cookies
 - `parseHtml()` — Cheerio parsing
 - `parseEpisodeNumber()` — extract episode number
-- `parseEpisodeType()` — determine type (episode/pv/extra)
+- `parseEpisodeType()` — determine episode type (returns `EpisodeType`: `'available'` | `'vip'` | `'svip'` | `'preview'` | `'locked'` | `'teaser'` | `'express'`)
 
 **Implementations:**
 - `WeTVHandler` — wetv.vip
 - `IQiyiHandler` — iq.com
 - `MGTVHandler` — mgtv.com
+- `YoukuHandler` — youku.tv
 
 **Pattern:** Strategy + Template Method
 
@@ -149,7 +151,7 @@ type AppDependencies = {
 
 **Merge order (low → high priority):**
 1. `defaults` (config-defaults.ts)
-2. `globalConfigs` (config.yaml)
+2. `globalConfig` (config.yaml)
 3. `domainConfigs` (config.yaml)
 4. `series` (config.yaml)
 
@@ -160,8 +162,10 @@ type AppDependencies = {
 **Responsibility:** JSON persistence, mutex for concurrent operations
 
 **Methods:**
-- `isDownloaded()` — check if episode is downloaded
-- `addDownloadedEpisode()` — add episode to state
+- `isDownloaded()` — check if episode is downloaded (ignores the `"NN:subs"` marker)
+- `addDownloadedEpisode()` — add episode to state (upgrades `"NN:subs"` to `"NN"`)
+- `addSubsOnlyEpisode()` — record episode as subtitles-only (`"NN:subs"` marker)
+- `isSubsOnly()` — check the `"NN:subs"` marker
 - `getSeriesEpisodes()` — get all series episodes
 - `withLock()` — mutex for safe writes
 
@@ -170,17 +174,17 @@ type AppDependencies = {
 {
   "version": "3.0.0",
   "series": {
-    "Series Name": ["01", "02", "03"]
+    "Series Name": ["01", "02:subs", "03"]
   }
 }
 ```
-Series are keyed by name; values are sorted zero-padded episode-number lists.
+Series are keyed by name; values are sorted zero-padded episode-number lists. `"NN:subs"` marks a subtitles-only download (`subsBeforeVideo`); it is not counted by `isDownloaded()` (so the episode keeps being retried) and `addDownloadedEpisode()` upgrades the marker to plain `"NN"` when the video itself later downloads.
 
 ---
 
 #### DownloadManager (`src/downloader/download-manager.ts`)
 
-**Responsibility:** Running yt-dlp, validation, cleanup of .part files
+**Responsibility:** Running downloaders (custom ones via `downloaderRegistry`, yt-dlp as default fallback), validation, cleanup of .part files
 
 **Methods:**
 - `download()` — download episode
@@ -313,10 +317,21 @@ Scheduler.start()
 ```
 executeCheck()
   → performCheck()
-  → handler.extractEpisodes()
+  → readCookieHeaderForUrl()             # Firefox cookies for this domain (when cookiesFromBrowser set, best-effort)
+  → handler.extractEpisodes(url, cookies)
   → stateManager.isDownloaded() filter
   → addEpisodes()
   → UniversalScheduler.addTask() × N
+```
+
+### Download Retry & Session Rescue Flow
+```
+executeDownload() fails (CookieError / TrialContentError, cookiesFromBrowser set)
+  → CookieSessionRescue.maybeRescue()            # 30-min per-domain cooldown
+    → refreshSessionsViaTab()                    # opens the series page in the Firefox profile
+      → domain cookie snapshot before/after      # sorted name=value pairs
+  → cookiesChanged → retryDelay = 10s            # replaces exponential backoff for this retry
+  → addPriorityTask() requeue
 ```
 
 ---
@@ -352,9 +367,9 @@ domainConfigs:
 
 ### Adding a New Downloader
 
-1. Implement downloader interface
-2. Register in `downloaderRegistry`
-3. UniversalScheduler will pick it up automatically
+1. Implement the `Downloader` interface (`src/downloader/types.ts`)
+2. Register in `src/app.ts` with `downloaderRegistry.register()`
+3. `DownloadManager` routes each episode via `downloaderRegistry.getDownloader(url)` — registered downloaders are matched first, `YtDlpDownloader` (which supports every URL) is the default fallback
 
 ---
 

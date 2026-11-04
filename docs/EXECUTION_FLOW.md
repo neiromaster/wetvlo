@@ -45,6 +45,10 @@ series:
             ├─ handlerRegistry.register(new WeTVHandler())
             ├─ handlerRegistry.register(new IQiyiHandler())
             ├─ handlerRegistry.register(new MGTVHandler())
+            ├─ handlerRegistry.register(new YoukuHandler())
+            │
+            ├─ downloaderRegistry.register(new MgtvDownloader())
+            ├─ downloaderRegistry.register(new YoukuDownloader())
             │
             ├─ new DownloadManager()
             │

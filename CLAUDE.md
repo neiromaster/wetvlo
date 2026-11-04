@@ -26,7 +26,7 @@ bun run dist/index.js --once             # Single-run mode
 
 ## Architecture Overview
 
-This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com) using yt-dlp.
+This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip, iq.com, mgtv.com, youku.tv). yt-dlp is the default/fallback downloader (wetv/iq); mgtv and youku use custom downloaders (`MgtvDownloader` / `YoukuDownloader`), routed by DownloadManager via `downloaderRegistry`.
 
 ### Flow
 
@@ -34,7 +34,7 @@ This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip
 2. **Scheduler** waits for `startTime`, then adds series checks to **QueueManager**
 3. **QueueManager** uses **UniversalScheduler** to execute tasks sequentially:
    - **Check tasks**: Fetch page, extract episodes via domain handlers
-   - **Download tasks**: Execute yt-dlp via **DownloadManager**
+   - **Download tasks**: Execute downloads via **DownloadManager** (yt-dlp fallback; custom downloaders for mgtv/youku)
 4. **StateManager** tracks downloaded episodes in JSON to prevent duplicates
 5. **Notifier** sends console output + Telegram errors
 
@@ -54,17 +54,19 @@ This is a CLI app for downloading TV episodes from Chinese video sites (wetv.vip
   - **Artifact cleanup**: Automatically cleans up partial files on failed downloads before retry
   - Uses pattern matching `${filenameWithoutExt}.*` to find and remove `.part`, `.tmp`, etc.
   - Cleans before download (removes old artifacts) and on error (removes failed attempt)
+- **Firefox cookies** (`src/utils/firefox-cookies.ts`): Reads cookies from a Firefox profile (`cookiesFromBrowser: "firefox:<profile>"`) — copies cookies.sqlite (+wal/shm) to a temp dir and reads it with `node:sqlite`; `readCookieHeaderForUrl()` returns only cookies scoped to the target URL's domain
+- **CookieSessionRescue** (`src/utils/firefox-rescue.ts`): Session rescue — on `CookieError`/`TrialContentError` during download with `cookiesFromBrowser` set (handled in QueueManager.executeDownload's retry branch), opens the series page in the Firefox profile, compares the domain's cookies before/after, retries in 10s when changed; 30-min per-domain cooldown
 - **StateManager** (`src/state/state-manager.ts`): JSON file persistence, series-grouped structure, dirty-checking for saves
-- **EventBus** (`src/events/event-bus.ts`): Typed pub/sub over Emittery; global singleton via `getEventBus()`, also on `AppContext.getEventBus()`. Event types in `src/events/event-types.ts` (30 events, 7 categories: scheduler, queue, download, scraping, state, notification, system). UniversalScheduler and Scheduler emit events (`queue:*`, `scheduler:*`); QueueManager subscribes for monitoring. Deprecated callbacks (`setOnWait`) remain only for tests
+- **EventBus** (`src/events/event-bus.ts`): Typed pub/sub over Emittery; global singleton via `getEventBus()`, also on `AppContext.getEventBus()`. Event types in `src/events/event-types.ts` (categories: app, config, download, health, notification, queue, scheduler, scraping, state). UniversalScheduler and Scheduler emit events (`queue:*`, `scheduler:*`); QueueManager subscribes for monitoring. Deprecated callbacks (`setOnWait`) remain only for tests
 - **Handlers** (`src/handlers/`): Domain-specific episode extractors extending `BaseHandler`
 
 ### Queue-Based Architecture
 
 The system uses a dual-queue design:
-- **Check queues** (`check:{domain}`): Series page scraping tasks
+- **Check queues** (`check:{domain}:{hash}`, hash = `md5(url).substring(0, 12)`): Series page scraping tasks (one per series)
 - **Download queues** (`download:{domain}`): Episode download tasks
 
-Tasks flow: Check queue → extract episodes → add to Download queue → yt-dlp → StateManager
+Tasks flow: Check queue → extract episodes → add to Download queue → downloader (yt-dlp or custom) → StateManager
 
 Key behaviors:
 - Fully sequential processing: only one task executes globally at a time
@@ -88,11 +90,11 @@ series:
     download:                    # Series-level (highest priority)
       maxRetries: 5
 
-globalConfigs:
+globalConfig:
   download:
-    maxRetries: 3                # Global-level (used if not set in series)
+    maxRetries: 4                # Global-level (used if not set in series)
 
-# Defaults in code: maxRetries: 2 (lowest)
+# Defaults in code: maxRetries: 3, initialTimeout: 5 (lowest)
 ```
 
 ### Adding New Domain Handlers
@@ -101,6 +103,7 @@ globalConfigs:
 2. Implement `getDomain()` and `extractEpisodes()`
 3. Register in `src/app.ts` with `handlerRegistry.register()`
 4. Handler automatically matches URLs via `supports()` method
+5. If yt-dlp can't download for the domain, also add a custom downloader and register it in `src/app.ts` with `downloaderRegistry.register()` (see `MgtvDownloader` / `YoukuDownloader`) — DownloadManager routes via `downloaderRegistry.getDownloader(url)`
 
 ### State File Format
 
@@ -108,12 +111,12 @@ globalConfigs:
 {
   "version": "3.0.0",
   "series": {
-    "Series Name": ["01", "02"]
+    "Series Name": ["01", "02:subs"]
   }
 }
 ```
 
-Series are keyed by series name; values are sorted lists of zero-padded episode-number strings (`"01"`, `"02"`) for proper sorting.
+Series are keyed by series name; values are sorted lists of zero-padded episode-number strings (`"01"`, `"02:subs"`) for proper sorting. `"NN:subs"` marks an episode recorded as subtitles-only (`subsBeforeVideo`); it is not counted by `isDownloaded()` (so the episode keeps being retried) and converts to plain `"NN"` when the video itself later downloads.
 
 ### Interactive Mode
 
@@ -122,10 +125,12 @@ When running in scheduled mode with a TTY, interactive mode is enabled:
 ```bash
 bun start
 # Press keys to trigger actions:
-# [r] Reload configuration from config.yaml
-# [c] Trigger immediate checks for all series
-# [q] Quit gracefully
+# [r] Reload configuration
+# [c] Clear queues and trigger checks
+# [q] Quit
 ```
+
+Cyrillic key aliases work too: й quits, к reloads configuration, с triggers checks (keypress handler in src/app.ts).
 
 **Config reload behavior**: Pressing `[r]` reloads config.yaml and rebuilds the ConfigRegistry. Only one message "Configuration reloaded successfully" should appear (from app.ts). If you see duplicate messages, check scheduler.ts for redundant logging.
 

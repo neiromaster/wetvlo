@@ -123,7 +123,7 @@ The profile cookies are used for:
 -   Page checks: a `Cookie` header is built from the profile for the series URL's host.
 -   MGTV and Youku API calls.
 
-**yt-dlp does not receive cookies from wetvlo.** To give yt-dlp cookies, put `--cookies-from-browser firefox:<profile>` into `yt-dlp.conf` in the working directory.
+**yt-dlp does not receive cookies from wetvlo.** To give yt-dlp cookies, put `--cookies-from-browser firefox:<profile>` into `yt-dlp.conf` in the working directory. Unlike wetvlo's own matching, yt-dlp only accepts the **full profile directory name** under `Profiles\` (e.g. `firefox:urj13kw6.default-release`) — short profile names like `default-release` fail with "could not find firefox cookies database".
 
 ### Session Rescue
 

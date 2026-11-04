@@ -112,7 +112,9 @@ globalConfig:
   # Extract cookies from a Firefox profile for page checks and mgtv/youku API.
   # Format: "firefox:<profile>"; profile matches a directory in
   # %APPDATA%\Mozilla\Firefox\Profiles by full name or suffix after the dot.
-  # yt-dlp reads its own cookies from yt-dlp.conf (--cookies-from-browser).
+  # yt-dlp reads its own cookies from yt-dlp.conf (--cookies-from-browser);
+  # there the profile must be the FULL directory name, e.g.
+  # "firefox:urj13kw6.default-release" — short names like "default-release" fail.
   # cookiesFromBrowser: "firefox:default-release-1"
   # When a download fails for session reasons (expired cookies / trial
   # preview), wetvlo opens the series page in this Firefox profile so the

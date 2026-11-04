@@ -14,14 +14,14 @@ series:
     # Optional: Override check settings for this series
     check:
       count: 10 # Number of times to check for new episodes (default: 3)
-      checkInterval: 300 # Seconds between checks (default: 60)
+      checkInterval: 300 # Seconds between checks (default: 600)
       downloadTypes: # Episode types to download
         - available
         - vip
 
     # Optional: Override download settings for this series
     download:
-      downloadDelay: 10 # Delay between downloads in seconds (default: 5)
+      downloadDelay: 10 # Delay between downloads in seconds (default: 10)
       minDuration: 300 # Minimum duration in seconds (ignore clips/trailers)
       maxRetries: 5 # Maximum retry attempts on failure (default: 3)
       initialTimeout: 15 # Initial retry delay in seconds (default: 5)
@@ -29,8 +29,10 @@ series:
       jitterPercentage: 20 # Random jitter 0-100% (default: 10)
 
   # Example 2: iQIYI series (uses domain/global defaults)
+  # Note: the URL hostname ("iq.com" here, possibly "www.iq.com") is what
+  # domainConfigs keys must match exactly
   - name: "My IQiyi Show"
-    url: "https://www.iq.com/play/your-series-id"
+    url: "https://iq.com/play/your-series-id"
     startTime: "21:00"
     # No check/download sections - will use domain/global defaults
 
@@ -53,7 +55,8 @@ domainConfigs:
       backoffMultiplier: 2 # Exponential backoff multiplier
       jitterPercentage: 10 # Random jitter (0-100%)
 
-  - domain: "iqiyi.com"
+  # The domain key must equal the series URL hostname exactly (e.g. "iq.com", not "iqiyi.com")
+  - domain: "iq.com"
     check:
       checkInterval: 120
       downloadTypes:
@@ -87,6 +90,16 @@ globalConfig:
     initialTimeout: 5 # Initial retry delay in seconds
     backoffMultiplier: 2 # Exponential backoff multiplier
     jitterPercentage: 10 # Random jitter (0-100%)
+  # subsBeforeVideo: false # Download subtitles for locked/TVOD episodes now and the video once it appears (requires "express" in check.downloadTypes for TVOD attempts)
+
+  # =============================================================================
+  # Subtitle languages (optional)
+  # =============================================================================
+  # Top-level common setting (also available per domain/series); passed to
+  # yt-dlp as --sub-lang. Omit to download no subtitles.
+  # subLangs:
+  #   - en
+  #   - ru
 
   # =============================================================================
   # State file for tracking downloaded episodes (auto-created)
@@ -118,3 +131,6 @@ globalConfig:
   #   # Chat ID to send notifications to
   #   # Use @userinfobot on Telegram to get your chat ID
   #   chatId: "${TELEGRAM_CHAT_ID}"
+  #
+  #   # Minimum notification level to send: debug|info|success|highlight|warning|error (default: error)
+  #   minLevel: "error"

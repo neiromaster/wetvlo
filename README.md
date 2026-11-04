@@ -1,27 +1,29 @@
 # wetvlo
 
-**wetvlo** is a powerful CLI application for automatically monitoring and downloading TV series episodes from popular Asian streaming platforms (WeTV, iQIYI, MGTV).
+**wetvlo** is a powerful CLI application for automatically monitoring and downloading TV series episodes from popular Asian streaming platforms (WeTV, iQIYI, MGTV, Youku).
 
 ## 🚀 Features
 
 *   **Automatic Monitoring**: Checks for new episodes at scheduled times.
 *   **Smart Queue**: Sequential downloading and checking to prevent IP bans and ensure stability.
-*   **Platform Support**: Built-in support for WeTV, iQIYI, and MGTV.
+*   **Platform Support**: Built-in support for WeTV, iQIYI, MGTV, and Youku.
 *   **Reliability**: Retry system with exponential backoff for network errors.
 *   **Notifications**: Telegram integration for error alerts.
 *   **Flexible Configuration**: Per-series, per-domain, or global settings.
+*   **Firefox Cookies** (optional): Read cookies from a Firefox profile via `cookiesFromBrowser` (`"firefox:<profile>"`). On session/trial download failures, wetvlo automatically opens the series page in that profile (session rescue) and retries. Firefox is only needed for this feature.
 *   **History**: Tracks downloaded episodes to prevent duplicates.
 
 ## 📋 Requirements
 
 *   [Bun](https://bun.sh/) (Runtime)
 *   [yt-dlp](https://github.com/yt-dlp/yt-dlp) (must be installed and available in PATH)
+*   Firefox (optional — only required for the `cookiesFromBrowser` feature)
 
 ## 🛠 Installation
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/your-username/wetvlo.git
+    git clone https://github.com/neiromaster/wetvlo.git
     cd wetvlo
     ```
 
@@ -78,7 +80,11 @@ Run the built file:
 bun dist/index.js
 # or with a custom config
 bun dist/index.js --config ./my-config.yaml
+# or with debug logging enabled
+bun dist/index.js --debug
 ```
+
+Add `--debug` (or `-d`) to enable debug logging in the console output.
 
 ## 🧪 Development
 

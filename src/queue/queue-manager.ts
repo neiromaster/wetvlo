@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { AppContext } from '../app-context';
 import type { ResolvedConfig } from '../config/config-schema';
 import type { DownloadManager } from '../downloader/download-manager';
+import { CookieError, TrialContentError } from '../errors/custom-errors';
 import type { EventBus } from '../events/event-bus.js';
 import { handlerRegistry } from '../handlers/handler-registry';
 import { NotificationLevel } from '../notifications/notification-level';
@@ -20,9 +21,13 @@ import type { StateManager } from '../state/state-manager';
 import type { Episode } from '../types/episode.types';
 import type { EpisodeType } from '../types/episode-type';
 import { readCookieHeaderForUrl } from '../utils/firefox-cookies';
+import { CookieSessionRescue } from '../utils/firefox-rescue';
 import { extractDomain } from '../utils/url-utils';
 import type { CheckQueueItem, DownloadQueueItem } from './types';
 import { UniversalScheduler } from './universal-scheduler';
+
+/** Fresh cookies after a rescue → retry almost immediately, without full backoff. */
+const RESCUE_RETRY_DELAY_MS = 10_000;
 
 /**
  * Queue Manager for orchestrating all queues with universal scheduler
@@ -30,6 +35,9 @@ import { UniversalScheduler } from './universal-scheduler';
 export class QueueManager {
   private stateManager: StateManager;
   private downloadManager: DownloadManager;
+
+  // Per-domain Firefox session rescue (cooldown state persists across calls)
+  private readonly sessionRescue: CookieSessionRescue;
 
   // Universal scheduler (handles all check and download queues)
   private scheduler: UniversalScheduler<CheckQueueItem | DownloadQueueItem>;
@@ -52,6 +60,7 @@ export class QueueManager {
    * @param downloadManager - Download manager instance
    * @param schedulerFactory - Optional factory for creating scheduler (for testing)
    * @param eventBus - Optional EventBus instance (uses AppContext if not provided)
+   * @param sessionRescue - Session rescue helper (default: new CookieSessionRescue; cooldown persists across tasks)
    */
   constructor(
     downloadManager: DownloadManager,
@@ -60,6 +69,7 @@ export class QueueManager {
       eventBus?: EventBus,
     ) => UniversalScheduler<CheckQueueItem | DownloadQueueItem>,
     eventBus?: EventBus,
+    sessionRescue: CookieSessionRescue = new CookieSessionRescue(),
   ) {
     // Get StateManager and EventBus from AppContext
     this.stateManager = AppContext.getStateManager();
@@ -74,6 +84,7 @@ export class QueueManager {
       }
     }
     this.downloadManager = downloadManager;
+    this.sessionRescue = sessionRescue;
 
     // Create universal scheduler with executor callback and EventBus
     const createScheduler =
@@ -576,12 +587,27 @@ export class QueueManager {
 
       if (retryCount < maxRetries) {
         // Retry with backoff
-        const retryDelay = this.calculateBackoff(
+        let retryDelay = this.calculateBackoff(
           retryCount,
           initialTimeout * 1000, // convert seconds to ms
           backoffMultiplier,
           jitterPercentage,
         );
+
+        // Session rescue: a cookie/trial failure may be fixable by visiting the
+        // series page in the configured Firefox profile (firefox-session-rescue)
+        if ((error instanceof CookieError || error instanceof TrialContentError) && resolvedConfig.cookiesFromBrowser) {
+          const rescue = await this.sessionRescue.maybeRescue(
+            domain,
+            resolvedConfig.cookiesFromBrowser,
+            seriesUrl,
+            seriesName,
+            (level, message) => notifier.notify(level, message),
+          );
+          if (rescue.attempted && rescue.cookiesChanged) {
+            retryDelay = RESCUE_RETRY_DELAY_MS;
+          }
+        }
 
         notifier.notify(
           NotificationLevel.WARNING,

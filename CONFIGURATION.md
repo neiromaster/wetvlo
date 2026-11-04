@@ -121,7 +121,9 @@ The profile name is matched against directories in `%APPDATA%\Mozilla\Firefox\Pr
 The profile cookies are used for:
 
 -   Page checks: a `Cookie` header is built from the profile for the series URL's host.
--   MGTV and Youku API calls.
+-   Youku API calls.
+
+MGTV downloads run through yt-dlp's native MGTV extractor, so their cookies come from `yt-dlp.conf` (see below), not from wetvlo.
 
 **yt-dlp does not receive cookies from wetvlo.** To give yt-dlp cookies, put `--cookies-from-browser firefox:<profile>` into `yt-dlp.conf` in the working directory. Unlike wetvlo's own matching, yt-dlp only accepts the **full profile directory name** under `Profiles\` (e.g. `firefox:urj13kw6.default-release`) — short profile names like `default-release` fail with "could not find firefox cookies database".
 

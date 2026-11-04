@@ -7,7 +7,6 @@ import { ConfigRegistry } from './config/config-registry';
 import type { SeriesConfigResolved } from './config/config-schema';
 import { DownloadManager } from './downloader/download-manager';
 import { downloaderRegistry } from './downloader/downloader-registry';
-import { MgtvDownloader } from './downloader/impl/mgtv-downloader';
 import { YoukuDownloader } from './downloader/impl/youku-downloader';
 import { ConfigError } from './errors/custom-errors';
 import type { EventBus } from './events/event-bus.js';
@@ -119,10 +118,13 @@ export async function runApp(
   handlerRegistry.register(new YoukuHandler());
   notifier.notify(NotificationLevel.DEBUG, `Registered handlers: ${handlerRegistry.getDomains().join(', ')}`);
 
-  // Register custom downloaders (checked before the default yt-dlp downloader)
-  downloaderRegistry.register(new MgtvDownloader());
+  // Register custom downloaders (checked before the default yt-dlp downloader).
+  // MGTV is deliberately NOT registered: its downloads go through yt-dlp's
+  // native MGTV extractor (the intl tinker dispatch tier answers 618 "busy"
+  // to this IP). MgtvDownloader stays in the codebase, unregistered, for a
+  // quick revert if the intl tier recovers.
   downloaderRegistry.register(new YoukuDownloader());
-  notifier.notify(NotificationLevel.DEBUG, 'Registered custom downloaders: mgtv, youku');
+  notifier.notify(NotificationLevel.DEBUG, 'Registered custom downloaders: youku');
 
   // Create download manager
   const downloadManager = deps.createDownloadManager();

@@ -149,7 +149,12 @@ export async function mgtvFetchJson(url: string, cookies?: string): Promise<any>
   }
 
   if (parsed && typeof parsed === 'object' && 'code' in parsed && Number(parsed.code) !== 200) {
-    throw new DownloadError(`MGTV API error (code ${parsed.code}): ${parsed.msg ?? 'unknown error'}`, url);
+    // Some endpoints report details in `info` instead of `msg` — e.g. the
+    // titan stream dispatcher answers {"info":"busy","code":618} when it
+    // refuses to mint a playlist. Surface both.
+    const parts = [parsed.msg, parsed.info].filter((part): part is string => typeof part === 'string' && part !== '');
+    const detail = parts.length > 0 ? parts.join(', ') : 'unknown error';
+    throw new DownloadError(`MGTV API error (code ${parsed.code}): ${detail}`, url);
   }
   return parsed;
 }

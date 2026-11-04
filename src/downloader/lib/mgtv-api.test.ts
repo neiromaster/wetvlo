@@ -169,6 +169,15 @@ describe('mgtvFetchJson', () => {
     await expect(mgtvFetchJson('https://tinker.glb.mgtv.com/x')).rejects.toThrow('video not found');
   });
 
+  it('includes the API info field in the error when msg is absent (titan busy)', async () => {
+    // Real body from disp-glb.titan.mgtv.com/atcl during the 2026-11-04 outage
+    stubFetch('{"isothercdn":0,"info":"busy","status":"error","code":618}');
+    await expect(mgtvFetchJson('https://disp-glb.titan.mgtv.com/atcl?x=1')).rejects.toThrow(
+      'MGTV API error (code 618)',
+    );
+    await expect(mgtvFetchJson('https://disp-glb.titan.mgtv.com/atcl?x=1')).rejects.toThrow('busy');
+  });
+
   it('does not treat a missing code field as an error (subtitle vod.do has status only)', async () => {
     stubFetch('{"ver":"1.0","status":"ok","info":"https://x/example.srt"}');
     const data = await mgtvFetchJson('https://disp-glb.titan.mgtv.com/vod.do?x=1');

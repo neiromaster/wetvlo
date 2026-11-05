@@ -124,11 +124,16 @@ describe('YoukuDownloader', () => {
 
       expect(api.mintUps).toHaveBeenCalledWith('XNjU3NzMxMTcxNg==', [], { allowTrial: false });
       expect(wrapper.download).toHaveBeenCalledTimes(1);
+      // The -f selector matters: the minted master playlist lists guoyu/en/vi
+      // audio renditions with the dub flagged DEFAULT=YES, and yt-dlp's
+      // default pick downloaded the Vietnamese AI dub over the Chinese
+      // original (observed live 2026-11-05, XNjU3NjgwMTg0NA==).
       expect(wrapper.download).toHaveBeenCalledWith('http://pl-ali.youku.tv/hd2.m3u8?x=1', 'E08', dir, {
-        args: ['--referer', 'https://www.youku.tv/'],
+        args: ['--referer', 'https://www.youku.tv/', '-f', 'bv*+ba[language=guoyu]/bv*+ba[language^=zh]/bv*+ba'],
         onProgress: undefined,
         onLog: expect.any(Function),
       });
+
       // best-overall == best-usable here: no degradation may be logged
       expect(logs.join('\n')).not.toMatch(/degrad|unlocked/i);
       expect(result).toEqual({ filename: 'out/E08.mp4', allFiles: ['out/E08.mp4'] });

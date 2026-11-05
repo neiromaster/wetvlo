@@ -99,9 +99,14 @@ export class YoukuDownloader extends BaseDownloader {
       onLog(`Youku: best unlocked quality is ${stream.height}p (higher tiers are DRM/locked)`);
     }
 
-    // Signed URL works without cookies; the referer is required (verified live)
+    // Signed URL works without cookies; the referer is required (verified live).
+    // The minted master playlist carries EVERY audio rendition (original
+    // Mandarin "guoyu", AI dubs like en/vi) and the dub is often flagged
+    // DEFAULT=YES — without an explicit selector yt-dlp downloads the flagged
+    // dub (observed 2026-11-05: a vi dub over the Chinese original). Prefer
+    // guoyu, then any zh-family track, then yt-dlp's default choice.
     const video = await this.wrapper.download(stream.m3u8_url, filenameWithoutExt, dir, {
-      args: ['--referer', 'https://www.youku.tv/'],
+      args: ['--referer', 'https://www.youku.tv/', '-f', 'bv*+ba[language=guoyu]/bv*+ba[language^=zh]/bv*+ba'],
       onProgress: options?.onProgress,
       onLog: options?.onLog,
     });

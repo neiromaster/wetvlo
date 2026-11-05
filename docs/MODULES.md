@@ -655,7 +655,13 @@ Subtitles are downloaded separately and saved next to the video as
 
 Mints the signed HLS playlist through the ups API right before downloading
 (signed URLs expire after ~5 h) and hands it to yt-dlp without cookies — the
-signature is the only auth, plus a youku.tv referer. A 6-minute trial payload
+signature is the only auth, plus a youku.tv referer. The minted master
+playlist carries every audio rendition — the original Mandarin (`language:
+"guoyu"`) plus AI dubs (`en`, `vi`, …) often flagged `DEFAULT=YES` — so an
+explicit audio selector (`-f "bv*+ba[language=guoyu]/bv*+ba[language^=zh]/
+bv*+ba"`) pins the original track; without it yt-dlp downloads the flagged
+dub (observed: a Vietnamese dub over the Chinese original, 2026-11-05). A
+6-minute trial payload
 (stale/missing session, locked/TVOD episode) raises `TrialContentError` — or,
 in `subsOnly` mode, saves the subtitles only and postpones the video.
 Subtitles are unsigned .ass CDN links saved as `<name>.<lang>.ass` sidecars;

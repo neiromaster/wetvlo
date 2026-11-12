@@ -561,12 +561,24 @@ async extractEpisodes(url: string, cookies?: string): Promise<Episode[]>
 
 Parses the episode list embedded in the episode page's SSR HTML (`type:10013`
 anthology nodes, located by string anchor and expanded with a string-aware
-balanced-brace scan; no list API). Numbering follows each item's numeric
-`stage` — never list position; availability marks map '' → available,
-VIP → vip, Express/TVOD → express (unknown marks fail safe to express with a
-warning); trailer rows are skipped and duplicate encodevids are deduped. An
-unparseable page warns and returns an empty list so the "no episodes" retry
-flow engages.
+balanced-brace scan) — but the SSR blob only ever carries PAGE 1 of the list
+(`pageSize` items). When the anthology container's data block shows a
+`pageIndex`/`pageSize`/`session` triple, the remaining pages are fetched from
+the columbus gateway (`fetchAnthologyPage` in youku-api.ts): stage-windowed
+requests (`itemStartStage`..`itemEndStage`) built from the container's
+`session` JSON, whose `trackInfo.pvv_vid` supplies the gateway `videoId`
+(the episode URL is the fallback). The loop ends on the server's `more:false`
+flag or when a page adds no new encodevids — a window past the end re-dumps
+the whole list, so the dedupe guard terminates that case (verified live
+2026-11-12 on a 41-episode show whose SSR held only stages 1-35). Gateway
+failures propagate so the task retry flow engages; single-page shows never
+call the gateway when no video id is resolvable.
+
+Numbering follows each item's numeric `stage` — never list position;
+availability marks map '' → available, VIP → vip, Express/TVOD → express
+(unknown marks fail safe to express with a warning); trailer rows are skipped
+and duplicate encodevids are deduped. An unparseable page warns and returns an
+empty list so the "no episodes" retry flow engages.
 
 ---
 
@@ -702,6 +714,11 @@ code), `langTag()` gives the filename language tag (e.g. `ZH_CN` → `zh_cn`)
 **Responsibility:** Youku International API layer (h5 mtop gateway
 acs.youku.tv, `mtop.youku.play.ups.appinfo.get`): `mintUps()` mints the
 signed playlist result (title, duration, streams, subtitles, trial flag),
+`fetchAnthologyPage()` fetches one episode-list page from the columbus
+gateway (`mtop.youku.columbus.gateway.new.execute` — anonymous calls work
+after the `_m_h5_tk` token dance, but ONLY with the browser's
+`type=originaljson&ecode=1&dataType=json` query form; the jsonp form used by
+ups answers SUCCESS with an empty data envelope, observed 2026-11-12),
 `readYoukuCookiePairs()` collects youku.tv/youku.com cookie pairs deduped by
 name with domain precedence (duplicate names make youku answer HTTP 400),
 plus `pickBestStream()` (DRM streams filtered), `matchYoukuSubLangs()` /

@@ -9,6 +9,14 @@ import { readFirefoxCookies } from '../../utils/firefox-cookies.js';
  * (acs.youku.tv, `mtop.youku.play.ups.appinfo.get`). Verified live 2026-10-15/16:
  * plain HTTP works, `ckey` is not required, the m3u8 needs no cookies (only a
  * youku.tv referer), and subtitle URLs are unsigned CDN links.
+ *
+ * Anthology pagination (episodes beyond SSR page 1) goes through the same
+ * gateway's columbus API (`mtop.youku.columbus.gateway.new.execute`) — the
+ * call the web player fires when a show's episode list is split into pages.
+ * Verified live 2026-11-12: anonymous (cookieless) calls work after the
+ * `_m_h5_tk` token dance, but ONLY with the browser's
+ * `type=originaljson&ecode=1&dataType=json` query form — the jsonp form used
+ * by the ups API answers SUCCESS with an empty data envelope.
  */
 
 /** App key of the Youku international web player (h5 mtop gateway). */
@@ -153,26 +161,39 @@ function parseJsonp(body: string, url: string): unknown {
   }
 }
 
+function parseJsonBody(body: string, url: string): unknown {
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    throw new DownloadError(`Youku: unparseable mtop response: ${body.slice(0, 120)}`, url);
+  }
+}
+
 type MtopEnvelope<T> = {
   ret?: string[];
   data?: { data?: T };
 };
 
+/** Query form of an mtop-h5 call. */
+type MtopForm = 'jsonp' | 'json';
+
 /**
- * GET `https://acs.youku.tv/h5/<api>/<version>/` with an mtop-h5 signed query.
+ * GET `https://acs.youku.tv/h5/<api>/<version>/` with an mtop-h5 signed query,
+ * return the raw envelope (`{ret, data}`) after the ret check.
  *
  * Mutates `cookiePairs` on the token dance: on `FAIL_SYS_TOKEN_*` the fresh
  * `_m_h5_tk` / `_m_h5_tk_enc` pairs from the response's set-cookie header are
  * patched into the pairs and the request is retried ONCE with a re-computed
  * signature (verified live: the gateway rejects a stale token in the Cookie
- * header even when the URL sign is fresh). Returns the inner `data.data`.
+ * header even when the URL sign is fresh).
  */
-export async function mtopGet<T = unknown>(
+async function mtopRequest(
   api: string,
   version: string,
   dataObj: object,
   cookiePairs: string[],
-): Promise<T> {
+  form: MtopForm,
+): Promise<{ ret: string; data: unknown; url: string }> {
   const call = async (): Promise<{ body: string; setCookie: string }> => {
     const t = String(Date.now());
     const dataStr = JSON.stringify(dataObj);
@@ -183,10 +204,18 @@ export async function mtopGet<T = unknown>(
     url.searchParams.set('sign', mtopSign(tokenFromPairs(cookiePairs), t, dataStr));
     url.searchParams.set('api', api);
     url.searchParams.set('v', version);
-    url.searchParams.set('type', 'jsonp');
-    url.searchParams.set('dataType', 'jsonp');
-    url.searchParams.set('timeout', '20000');
-    url.searchParams.set('callback', 'mtopjsonp1');
+    if (form === 'jsonp') {
+      url.searchParams.set('type', 'jsonp');
+      url.searchParams.set('dataType', 'jsonp');
+      url.searchParams.set('timeout', '20000');
+      url.searchParams.set('callback', 'mtopjsonp1');
+    } else {
+      // columbus requires the browser's originaljson form: jsonp-form calls
+      // answer SUCCESS with an empty data envelope (observed 2026-11-12)
+      url.searchParams.set('type', 'originaljson');
+      url.searchParams.set('ecode', '1');
+      url.searchParams.set('dataType', 'json');
+    }
     url.searchParams.set('data', dataStr);
 
     // Defense in depth: youku cookies may only ever be transmitted to youku hosts
@@ -221,16 +250,100 @@ export async function mtopGet<T = unknown>(
     ({ body } = await call());
   }
 
-  const json = parseJsonp(body, url) as MtopEnvelope<T>;
+  const json =
+    form === 'jsonp'
+      ? (parseJsonp(body, url) as MtopEnvelope<unknown>)
+      : (parseJsonBody(body, url) as MtopEnvelope<unknown>);
   const ret = json.ret?.[0] ?? '';
   if (!ret.startsWith('SUCCESS')) {
     throw new DownloadError(`Youku mtop ${api} failed: ${ret}`, url);
   }
-  const inner = json.data?.data;
+  return { ret, data: json.data, url };
+}
+
+/**
+ * mtop call returning the inner `data.data` (the shape the ups API answers in).
+ */
+export async function mtopGet<T = unknown>(
+  api: string,
+  version: string,
+  dataObj: object,
+  cookiePairs: string[],
+): Promise<T> {
+  const { ret, data, url } = await mtopRequest(api, version, dataObj, cookiePairs, 'jsonp');
+  // `data` is the envelope's `data` field; the ups payload sits one unwrap down
+  const inner = (data as { data?: T }).data;
   if (inner === undefined || inner === null) {
     throw new DownloadError(`Youku mtop ${api} returned no data (ret=${ret})`, url);
   }
   return inner;
+}
+
+const COLUMBUS_API = 'mtop.youku.columbus.gateway.new.execute';
+const COLUMBUS_VERSION = '1.0';
+/** Module code selecting the detail-page components (captured 2026-11-12). */
+const COLUMBUS_MS_CODES = '2019030100';
+
+/** Captured template values of the columbus component call (2026-11-12). */
+const COLUMBUS_PARAMS_BASE = {
+  biz: 'i18n_DETAIL_WEB_EN',
+  scene: 'component',
+  componentVersion: '3',
+  platform: 'pc',
+  gray: 0,
+  debug: 0,
+};
+
+const COLUMBUS_SYSTEM_INFO = {
+  os: 'pc',
+  device: 'pc',
+  ver: '1.0.0',
+  appPackageKey: 'pcweb',
+  appPackageId: 'pcweb',
+  appkey: APP_KEY,
+  language: 'EN',
+};
+
+/**
+ * One page of the anthology component from the columbus gateway (rest of the
+ * payload ignored). `nodes` holds the same `type:10013` episode rows as the
+ * SSR blob; `more === false` marks the server-declared last page; `data`
+ * carries the pagination session for subsequent windows.
+ */
+export type AnthologyPage = {
+  more?: boolean;
+  data?: { pageIndex?: number; pageSize?: number; session?: string };
+  nodes?: unknown[];
+};
+
+/**
+ * Fetch one anthology page via the columbus gateway.
+ *
+ * `nextSession` is the SSR container's `session` JSON string with
+ * `itemStartStage`/`itemEndStage` (the requested stage window) added — the
+ * window bounds drive which episodes come back (verified live 2026-11-12).
+ * `showId` is accepted by the API but not required (verified: calls without it
+ * return the same pages). Anonymous calls work — cookiePairs stays empty
+ * unless a caller has youku pairs to send (token dance still applies).
+ */
+export async function fetchAnthologyPage(
+  videoId: string,
+  nextSession: string,
+  cookiePairs: string[] = [],
+): Promise<AnthologyPage> {
+  const dataObj = {
+    ms_codes: COLUMBUS_MS_CODES,
+    params: JSON.stringify({ ...COLUMBUS_PARAMS_BASE, nextSession, videoId }),
+    system_info: JSON.stringify(COLUMBUS_SYSTEM_INFO),
+  };
+  const { ret, data, url } = await mtopRequest(COLUMBUS_API, COLUMBUS_VERSION, dataObj, cookiePairs, 'json');
+  // The component sits one wrapper down: data["2019030100"] = {data: COMPONENT} (captured 2026-11-12)
+  const wrapper = (data as Record<string, { data?: AnthologyPage } | undefined>)?.[COLUMBUS_MS_CODES];
+  const comp = wrapper?.data;
+  if (!comp || typeof comp !== 'object') {
+    throw new DownloadError(`Youku mtop ${COLUMBUS_API} returned no component ${COLUMBUS_MS_CODES} (ret=${ret})`, url);
+  }
+  return comp;
 }
 
 const UPS_API = 'mtop.youku.play.ups.appinfo.get';

@@ -25,6 +25,10 @@ type NextData = {
             payStatus?: number;
             episodeType?: number;
             contentType?: number;
+            vipInfo?: {
+              payMark?: string;
+              isVip?: number;
+            };
           }>;
         };
       };
@@ -236,12 +240,19 @@ export class IQiyiHandler extends BaseHandler {
     payMark?: string;
     payStatus?: number;
     episodeType?: number;
+    vipInfo?: { payMark?: string };
   }): EpisodeType {
-    const { isVip, payMark, payStatus, episodeType } = video;
+    const { isVip, payMark, payStatus, episodeType, vipInfo } = video;
 
     // Check explicitly for preview indicators
     if (payMark === 'preview' || episodeType === 1) {
       return EpisodeType.PREVIEW;
+    }
+
+    // Diamond tier (SVIP): top subscription level — checked before generic
+    // VIP because Diamond episodes also carry isVip = 1
+    if (vipInfo?.payMark === 'PAY_MARK_ONLY_DIAMOND') {
+      return EpisodeType.SVIP;
     }
 
     // Check if VIP (isVip=1 means VIP content)

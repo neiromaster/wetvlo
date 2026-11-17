@@ -257,6 +257,60 @@ describe('IQiyiHandler', () => {
         expect(episodes[2]?.type).toBe(EpisodeType.PREVIEW);
       });
 
+      it('should classify Diamond vipInfo as SVIP from cachePlayList', async () => {
+        const nextData = {
+          props: {
+            initialState: {
+              play: {
+                cachePlayList: {
+                  '1': [
+                    {
+                      albumPlayUrl: 'https://www.iq.com/play/ep1',
+                      order: 1,
+                      name: 'Episode 1',
+                      payMark: '',
+                      vipInfo: null,
+                    },
+                    {
+                      albumPlayUrl: 'https://www.iq.com/play/ep2',
+                      order: 2,
+                      name: 'Episode 2',
+                      payMark: 'VIP_MARK',
+                      vipInfo: { payMark: 'VIP_MARK', isVip: 1 },
+                    },
+                    {
+                      albumPlayUrl: 'https://www.iq.com/play/ep19',
+                      order: 19,
+                      name: 'Episode 19',
+                      payMark: 'lock',
+                      vipInfo: { payMark: 'PAY_MARK_ONLY_DIAMOND', isVip: 1 },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        };
+
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://www.iq.com/play/test');
+
+        expect(episodes).toHaveLength(3);
+        expect(episodes[0]?.type).toBe(EpisodeType.AVAILABLE);
+        expect(episodes[1]?.type).toBe(EpisodeType.VIP);
+        // Diamond despite isVip: 1 — checked before generic VIP
+        expect(episodes[2]?.type).toBe(EpisodeType.SVIP);
+      });
+
       it('should fall back to HTML parsing when __NEXT_DATA__ is invalid', async () => {
         const html = `
           <html>

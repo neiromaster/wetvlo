@@ -4,6 +4,9 @@ import type { Episode } from '../../types/episode.types';
 import { EpisodeType } from '../../types/episode-type';
 import { BaseHandler } from '../base/base-handler';
 
+/** iq.com Diamond subscription tier — the top tier (SVIP in wetvlo terms). */
+const PAY_MARK_ONLY_DIAMOND = 'PAY_MARK_ONLY_DIAMOND';
+
 type NextData = {
   props?: {
     pageProps?: {
@@ -28,7 +31,7 @@ type NextData = {
             vipInfo?: {
               payMark?: string;
               isVip?: number;
-            };
+            } | null;
           }>;
         };
       };
@@ -56,7 +59,7 @@ type PageData = {
     vipInfo?: {
       payMark?: string;
       isVip?: number;
-    };
+    } | null;
   }>;
 };
 
@@ -231,7 +234,7 @@ export class IQiyiHandler extends BaseHandler {
 
     // Diamond tier (SVIP): checked before generic VIP — Diamond episodes
     // also report isVip = 1
-    if (vipInfo?.payMark === 'PAY_MARK_ONLY_DIAMOND') {
+    if (vipInfo?.payMark === PAY_MARK_ONLY_DIAMOND) {
       return EpisodeType.SVIP;
     }
 
@@ -250,7 +253,7 @@ export class IQiyiHandler extends BaseHandler {
     payMark?: string;
     payStatus?: number;
     episodeType?: number;
-    vipInfo?: { payMark?: string };
+    vipInfo?: { payMark?: string } | null;
   }): EpisodeType {
     const { isVip, payMark, payStatus, episodeType, vipInfo } = video;
 
@@ -261,7 +264,7 @@ export class IQiyiHandler extends BaseHandler {
 
     // Diamond tier (SVIP): top subscription level — checked before generic
     // VIP because Diamond episodes also carry isVip = 1
-    if (vipInfo?.payMark === 'PAY_MARK_ONLY_DIAMOND') {
+    if (vipInfo?.payMark === PAY_MARK_ONLY_DIAMOND) {
       return EpisodeType.SVIP;
     }
 
@@ -325,13 +328,15 @@ export class IQiyiHandler extends BaseHandler {
               ? `https://www.iq.com${playLocSuffix}`
               : `https://www.iq.com/play/${playLocSuffix}`;
 
-            // Determine VIP status
+            // Diamond tier (SVIP) first: Diamond episodes also carry
+            // vipInfo.isVip = 1
+            const isDiamond = ep.vipInfo?.payMark === PAY_MARK_ONLY_DIAMOND;
             const isVip = ep.vipInfo?.isVip === 1 || ep.vipInfo?.isVip === true;
 
             episodes.push({
               number: episodeNumber,
               url: fullUrl,
-              type: isVip ? EpisodeType.VIP : EpisodeType.AVAILABLE,
+              type: isDiamond ? EpisodeType.SVIP : isVip ? EpisodeType.VIP : EpisodeType.AVAILABLE,
               title: ep.name || ep.shortName || undefined,
               extractedAt: new Date(),
             });

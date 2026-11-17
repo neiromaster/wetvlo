@@ -372,6 +372,90 @@ describe('IQiyiHandler', () => {
         expect(episodes[2]?.type).toBe(EpisodeType.SVIP);
       });
 
+      it('should classify Diamond vipInfo as SVIP from episodeListSource API', async () => {
+        const apiData = {
+          data: {
+            epg: [
+              {
+                order: 4,
+                playLocSuffix: '/play/ep4',
+                name: 'Episode 4',
+                vipInfo: { payMark: 'VIP_MARK', isVip: 1 },
+              },
+              {
+                order: 5,
+                playLocSuffix: '/play/ep5',
+                name: 'Episode 5',
+                vipInfo: { payMark: 'PAY_MARK_ONLY_DIAMOND', isVip: 1 },
+              },
+            ],
+          },
+        };
+
+        const cachePlayList = {
+          '1': [
+            {
+              albumId: '6601524114503801',
+              albumPlayUrl: 'https://www.iq.com/play/ep1',
+              order: 1,
+              name: 'Episode 1',
+              payMark: '',
+              vipInfo: null,
+            },
+            {
+              albumId: '6601524114503801',
+              albumPlayUrl: 'https://www.iq.com/play/ep2',
+              order: 2,
+              name: 'Episode 2',
+              payMark: 'VIP_MARK',
+              vipInfo: { payMark: 'VIP_MARK', isVip: 1 },
+            },
+            {
+              albumId: '6601524114503801',
+              albumPlayUrl: 'https://www.iq.com/play/ep3p',
+              order: 3,
+              name: 'Episode 3 Preview',
+              payMark: 'preview',
+              vipInfo: { payMark: 'PAY_MARK_ONLY_DIAMOND', isVip: 1 },
+            },
+          ],
+        };
+
+        const nextData = {
+          props: {
+            initialState: {
+              play: { cachePlayList },
+            },
+          },
+        };
+
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script>
+              <script>window.__flag={"albumLocSuffix":"xx","total":5}</script>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock((input: any) => {
+          const url = typeof input === 'string' ? input : (input?.url ?? '');
+          if (String(url).includes('pcw-api.iq.com')) {
+            return Promise.resolve(new Response(JSON.stringify(apiData)));
+          }
+          return Promise.resolve(new Response(html));
+        }) as any;
+
+        const episodes = await handler.extractEpisodes('https://www.iq.com/play/test');
+
+        expect(episodes).toHaveLength(5);
+        expect(episodes[2]?.type).toBe(EpisodeType.PREVIEW); // preview beats Diamond
+        expect(episodes[3]?.number).toBe(4);
+        expect(episodes[3]?.type).toBe(EpisodeType.VIP);
+        expect(episodes[4]?.number).toBe(5);
+        expect(episodes[4]?.type).toBe(EpisodeType.SVIP);
+      });
+
       it('should fall back to HTML parsing when __NEXT_DATA__ is invalid', async () => {
         const html = `
           <html>

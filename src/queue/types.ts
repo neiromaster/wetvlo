@@ -16,7 +16,7 @@ export type CheckSettings = {
   /** Interval between checks in seconds */
   checkInterval?: number;
   /** Episode types to download */
-  downloadTypes?: ('available' | 'vip' | 'teaser' | 'express' | 'preview' | 'locked')[];
+  downloadTypes?: ('available' | 'vip' | 'svip' | 'teaser' | 'express' | 'preview' | 'locked')[];
 };
 
 /**

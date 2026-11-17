@@ -320,6 +320,9 @@ export class WeTVHandler extends BaseHandler {
         if (labelText === 'teaser') {
           return EpisodeType.TEASER;
         }
+        if (labelText === 'svip') {
+          return EpisodeType.SVIP;
+        }
         if (labelText === 'vip') {
           return EpisodeType.VIP;
         }
@@ -330,6 +333,9 @@ export class WeTVHandler extends BaseHandler {
     const status = payStatus || defaultPayStatus;
     if (status === 6) {
       return EpisodeType.VIP;
+    }
+    if (status === 15) {
+      return EpisodeType.SVIP;
     }
     if (status === 12) {
       return EpisodeType.EXPRESS;
@@ -386,6 +392,9 @@ export class WeTVHandler extends BaseHandler {
         const badgeText = badge.text().trim().toLowerCase();
 
         // Check badge types
+        if (badgeText === 'svip' || badgeText.includes('svip')) {
+          return EpisodeType.SVIP;
+        }
         if (badgeText === 'vip' || badgeText.includes('vip')) {
           return EpisodeType.VIP;
         }
@@ -399,6 +408,9 @@ export class WeTVHandler extends BaseHandler {
 
       // Also check text content for badges
       const liText = $li.text() || '';
+      if (liText.includes('SVIP')) {
+        return EpisodeType.SVIP;
+      }
       if (liText.includes('VIP') && !liText.includes('Teaser')) {
         return EpisodeType.VIP;
       }

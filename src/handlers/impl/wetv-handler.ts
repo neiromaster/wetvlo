@@ -392,6 +392,9 @@ export class WeTVHandler extends BaseHandler {
         const badgeText = badge.text().trim().toLowerCase();
 
         // Check badge types
+        if (badgeText === 'svip' || badgeText.includes('svip')) {
+          return EpisodeType.SVIP;
+        }
         if (badgeText === 'vip' || badgeText.includes('vip')) {
           return EpisodeType.VIP;
         }
@@ -405,6 +408,9 @@ export class WeTVHandler extends BaseHandler {
 
       // Also check text content for badges
       const liText = $li.text() || '';
+      if (liText.includes('SVIP')) {
+        return EpisodeType.SVIP;
+      }
       if (liText.includes('VIP') && !liText.includes('Teaser')) {
         return EpisodeType.VIP;
       }

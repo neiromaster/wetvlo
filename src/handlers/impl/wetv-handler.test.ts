@@ -104,6 +104,37 @@ describe('WeTVHandler', () => {
       expect(episodes).toHaveLength(1);
     });
 
+    it('should classify SVIP badges as svip instead of vip', async () => {
+      const html = `
+        <html>
+          <body>
+            <ul>
+              <li>
+                <span class="play-video__label">SVIP</span>
+                <a class="play-video__link" href="/play/123/EP1" aria-label="Play episode 01">
+                  Episode 1
+                </a>
+              </li>
+              <li>
+                <span class="play-video__label">VIP</span>
+                <a class="play-video__link" href="/play/123/EP2" aria-label="Play episode 02">
+                  Episode 2
+                </a>
+              </li>
+            </ul>
+          </body>
+        </html>
+      `;
+
+      global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+      const episodes = await handler.extractEpisodes('https://wetv.vip/play/123');
+
+      expect(episodes).toHaveLength(2);
+      expect(episodes[0]?.type).toBe(EpisodeType.SVIP);
+      expect(episodes[1]?.type).toBe(EpisodeType.VIP);
+    });
+
     it('should sort episodes by number', async () => {
       const html = `
         <html>

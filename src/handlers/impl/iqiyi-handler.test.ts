@@ -283,6 +283,7 @@ describe('IQiyiHandler', () => {
                       order: 19,
                       name: 'Episode 19',
                       payMark: 'lock',
+                      isVip: 1,
                       vipInfo: { payMark: 'PAY_MARK_ONLY_DIAMOND', isVip: 1 },
                     },
                   ],
@@ -308,6 +309,66 @@ describe('IQiyiHandler', () => {
         expect(episodes[0]?.type).toBe(EpisodeType.AVAILABLE);
         expect(episodes[1]?.type).toBe(EpisodeType.VIP);
         // Diamond despite isVip: 1 — checked before generic VIP
+        expect(episodes[2]?.type).toBe(EpisodeType.SVIP);
+      });
+
+      it('should classify Diamond vipInfo as SVIP from pageProps.data', async () => {
+        const pageData = {
+          albumInfo: {
+            albumId: 'test123',
+            title: 'Test Series',
+          },
+          videoList: [
+            {
+              vid: 'abc123',
+              order: 1,
+              subTitle: 'Episode 1',
+              isTrailer: false,
+              payMark: '',
+              vipInfo: null,
+            },
+            {
+              vid: 'def456',
+              order: 2,
+              subTitle: 'Episode 2',
+              isTrailer: false,
+              payMark: 'VIP_MARK',
+              vipInfo: { payMark: 'VIP_MARK', isVip: 1 },
+            },
+            {
+              vid: 'ghi789',
+              order: 3,
+              subTitle: 'Episode 3',
+              isTrailer: false,
+              payMark: 'lock',
+              vipInfo: { payMark: 'PAY_MARK_ONLY_DIAMOND', isVip: 1 },
+            },
+          ],
+        };
+
+        const nextData = {
+          props: {
+            pageProps: {
+              data: JSON.stringify(pageData),
+            },
+          },
+        };
+
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://www.iq.com/play/test');
+
+        expect(episodes).toHaveLength(3);
+        expect(episodes[0]?.type).toBe(EpisodeType.AVAILABLE);
+        expect(episodes[1]?.type).toBe(EpisodeType.VIP);
         expect(episodes[2]?.type).toBe(EpisodeType.SVIP);
       });
 

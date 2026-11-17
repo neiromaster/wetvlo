@@ -53,6 +53,10 @@ type PageData = {
     payMark?: string;
     episodeType?: number;
     contentType?: number;
+    vipInfo?: {
+      payMark?: string;
+      isVip?: number;
+    };
   }>;
 };
 
@@ -218,11 +222,17 @@ export class IQiyiHandler extends BaseHandler {
    * Determine episode type from video data
    */
   private determineType(video: NonNullable<PageData['videoList']>[number]): EpisodeType {
-    const { payStatus, payMark, episodeType } = video;
+    const { payStatus, payMark, episodeType, vipInfo } = video;
 
     // Check explicitly for preview indicators
     if (payMark === 'preview' || episodeType === 1) {
       return EpisodeType.PREVIEW;
+    }
+
+    // Diamond tier (SVIP): checked before generic VIP — Diamond episodes
+    // also report isVip = 1
+    if (vipInfo?.payMark === 'PAY_MARK_ONLY_DIAMOND') {
+      return EpisodeType.SVIP;
     }
 
     if (payMark === 'VIP_MARK' || payStatus === 6) {

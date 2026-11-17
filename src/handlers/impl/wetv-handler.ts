@@ -320,6 +320,9 @@ export class WeTVHandler extends BaseHandler {
         if (labelText === 'teaser') {
           return EpisodeType.TEASER;
         }
+        if (labelText === 'svip') {
+          return EpisodeType.SVIP;
+        }
         if (labelText === 'vip') {
           return EpisodeType.VIP;
         }
@@ -330,6 +333,9 @@ export class WeTVHandler extends BaseHandler {
     const status = payStatus || defaultPayStatus;
     if (status === 6) {
       return EpisodeType.VIP;
+    }
+    if (status === 15) {
+      return EpisodeType.SVIP;
     }
     if (status === 12) {
       return EpisodeType.EXPRESS;

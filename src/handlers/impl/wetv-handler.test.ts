@@ -306,6 +306,71 @@ describe('WeTVHandler', () => {
         expect(episodes).toHaveLength(1);
         expect(episodes[0]?.number).toBe(1);
       });
+
+      it('should classify SVIP episodes from labels and payStatus', async () => {
+        const pageData = {
+          canPlay: true,
+          coverInfo: {
+            cid: 'test123',
+            title: 'Test Series',
+          },
+          videoList: [
+            {
+              vid: 'vip001',
+              episode: '01',
+              isTrailer: 0,
+              payStatus: 6,
+              labels: { 2: { text: 'VIP' } },
+            },
+            {
+              vid: 'svip001',
+              episode: '02',
+              isTrailer: 0,
+              payStatus: 15,
+              labels: { 2: { text: 'SVIP' } },
+            },
+            {
+              vid: 'svip002',
+              episode: '03',
+              isTrailer: 0,
+              payStatus: 15,
+            },
+            {
+              vid: 'svip003',
+              episode: '04',
+              isTrailer: 0,
+              payStatus: 6,
+              labels: { 2: { text: 'SVIP' } },
+            },
+          ],
+        };
+
+        const nextData = {
+          props: {
+            pageProps: {
+              data: JSON.stringify(pageData),
+            },
+          },
+        };
+
+        const html = `
+          <html>
+            <body>
+              <script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://wetv.vip/play/test');
+
+        expect(episodes).toHaveLength(4);
+        expect(episodes[0]?.type).toBe(EpisodeType.VIP);
+        expect(episodes[1]?.type).toBe(EpisodeType.SVIP);
+        expect(episodes[2]?.type).toBe(EpisodeType.SVIP); // payStatus 15 without label
+        expect(episodes[3]?.type).toBe(EpisodeType.SVIP); // SVIP label wins over payStatus 6
+      });
     });
 
     describe('extractFromFlightData', () => {
@@ -386,9 +451,9 @@ describe('WeTVHandler', () => {
         expect(episodes[1]?.number).toBe(2);
         expect(episodes[1]?.type).toBe(EpisodeType.VIP);
 
-        // SVIP (status 15) is not VIP/EXPRESS — same as the old payStatus path
+        // SVIP (status 15 + label SVIP) now gets its own type
         expect(episodes[2]?.number).toBe(3);
-        expect(episodes[2]?.type).toBe(EpisodeType.AVAILABLE);
+        expect(episodes[2]?.type).toBe(EpisodeType.SVIP);
       });
 
       it('should fall back to HTML parsing when flight data has no currentVid node', async () => {

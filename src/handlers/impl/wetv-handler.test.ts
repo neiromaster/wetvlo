@@ -307,5 +307,113 @@ describe('WeTVHandler', () => {
         expect(episodes[0]?.number).toBe(1);
       });
     });
+
+    describe('extractFromFlightData', () => {
+      // wetv.vip now serves a Next.js App Router page variant (~50% of
+      // requests as of 2026-11): no __NEXT_DATA__, series/episode data is
+      // embedded in self.__next_f.push([1, "..."]) flight chunks inside an
+      // RSC node holding "currentVid". Field names differ from __NEXT_DATA__
+      // (episodes[].id/is_trailer/final_pay_status vs videoList[].vid/
+      // isTrailer/payStatus) but carry the same values.
+      const flightNode = {
+        locale: 'en',
+        cid: 'test123',
+        currentVid: 'abc123',
+        album: {
+          id: 'test123',
+          title: 'Test Series',
+        },
+        video: {
+          id: 'abc123',
+          cover_list: ['test123'],
+        },
+        episodes: [
+          {
+            id: 'abc123',
+            episode: '01',
+            is_trailer: 0,
+            final_pay_status: 8,
+            default_pay_status: 8,
+            labels: {},
+          },
+          {
+            id: 'def456',
+            episode: '02',
+            is_trailer: 0,
+            final_pay_status: 6,
+            default_pay_status: 6,
+            labels: { 2: { text: 'VIP' } },
+          },
+          {
+            id: 'ghi789',
+            episode: '03',
+            is_trailer: 0,
+            final_pay_status: 15,
+            default_pay_status: 15,
+            labels: { 2: { text: 'SVIP' } },
+          },
+          {
+            id: 'jkl012',
+            episode: '04',
+            is_trailer: 1,
+            final_pay_status: 8,
+            default_pay_status: 8,
+            labels: { 2: { text: 'Teaser' } },
+          },
+        ],
+      };
+
+      const buildFlightHtml = (node: object): string => {
+        // Emulate Next.js: the RSC node is serialized inside a push chunk as
+        // a JSON string literal, preceded by framework chunks.
+        const flightText = `2:I[544,[],""]\na9:["$","$Laa",null,${JSON.stringify(node)}]`;
+        const chunks = ['3:"$Sreact.fragment"', JSON.stringify(flightText)];
+        const pushes = chunks.map((c) => `self.__next_f.push([1,${c}])`).join('');
+        return `<html><body><script>${pushes}</script></body></html>`;
+      };
+
+      it('should extract episodes from App Router flight data', async () => {
+        global.fetch = mock(() => Promise.resolve(new Response(buildFlightHtml(flightNode)))) as any;
+
+        const episodes = await handler.extractEpisodes('https://wetv.vip/play/test');
+
+        expect(episodes).toHaveLength(3); // Excludes is_trailer teaser
+
+        expect(episodes[0]?.number).toBe(1);
+        expect(episodes[0]?.type).toBe(EpisodeType.AVAILABLE);
+        expect(episodes[0]?.url).toBe('https://wetv.vip/en/play/test123/abc123-EP01%3ATest%20Series');
+
+        expect(episodes[1]?.number).toBe(2);
+        expect(episodes[1]?.type).toBe(EpisodeType.VIP);
+
+        // SVIP (status 15) is not VIP/EXPRESS — same as the old payStatus path
+        expect(episodes[2]?.number).toBe(3);
+        expect(episodes[2]?.type).toBe(EpisodeType.AVAILABLE);
+      });
+
+      it('should fall back to HTML parsing when flight data has no currentVid node', async () => {
+        const html = `
+          <html>
+            <body>
+              <script>self.__next_f.push([1,"2:I[544,[],\\"\\"]"])</script>
+              <ul>
+                <li>
+                  <a class="play-video__link" href="/play/123/EP1" aria-label="Play episode 01">
+                    Episode 1
+                  </a>
+                </li>
+              </ul>
+            </body>
+          </html>
+        `;
+
+        global.fetch = mock(() => Promise.resolve(new Response(html))) as any;
+
+        const episodes = await handler.extractEpisodes('https://wetv.vip/play/123');
+
+        expect(episodes).toHaveLength(1);
+        expect(episodes[0]?.number).toBe(1);
+      });
+    });
   });
 });

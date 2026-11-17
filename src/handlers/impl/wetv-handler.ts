@@ -36,6 +36,31 @@ type PageData = {
 };
 
 /**
+ * Series/episode node embedded in the Next.js App Router (flight) page
+ * variant. Same data as PageData.videoList, different field names.
+ */
+type FlightNode = {
+  currentVid?: string;
+  album?: {
+    id?: string;
+    title?: string;
+  };
+  video?: {
+    id?: string;
+    cover_list?: string[];
+  };
+  episodes?: Array<{
+    id?: string;
+    episode?: string;
+    is_trailer?: number | boolean;
+    final_pay_status?: number;
+    default_pay_status?: number;
+    cover_list?: string[];
+    labels?: PageData['videoList'][number]['labels'];
+  }>;
+};
+
+/**
  * Handler for wetv.vip domain
  */
 export class WeTVHandler extends BaseHandler {
@@ -52,6 +77,14 @@ export class WeTVHandler extends BaseHandler {
       return nextDataEpisodes;
     }
 
+    // App Router flight-data variant (wetv.vip rollout, 2026-11): page ships
+    // series/episode data in self.__next_f.push chunks instead of
+    // __NEXT_DATA__
+    const flightEpisodes = this.extractFromFlightData(html);
+    if (flightEpisodes.length > 0) {
+      return flightEpisodes;
+    }
+
     // Fallback to HTML parsing (old method)
     return this.extractFromHtml(html);
   }
@@ -61,58 +94,171 @@ export class WeTVHandler extends BaseHandler {
    * This method gets ALL episodes including those not visible due to pagination
    */
   private extractFromNextData(html: string): Episode[] {
-    const episodes: Episode[] = [];
-
     try {
       // Extract __NEXT_DATA__ script content
       const match = html.match(/<script id="__NEXT_DATA__"[^>]*>(.+?)<\/script>/s);
       if (!match?.[1]) {
-        return episodes;
+        return [];
       }
 
       const nextData: NextData = JSON.parse(match[1]);
       const dataStr = nextData.props?.pageProps?.data;
-      if (!dataStr) return episodes;
+      if (!dataStr) return [];
       const pageData: PageData = JSON.parse(dataStr as string);
 
-      const { coverInfo, videoList = [] } = pageData;
-      const { cid, title } = coverInfo;
-
-      // Extract CID from first video's coverList if not available in coverInfo
-      const coverId = videoList[0]?.coverList?.[0] || cid;
-
-      // Process each video
-      for (const video of videoList) {
-        const { vid, episode, isTrailer } = video;
-
-        // Skip trailers/teasers
-        if (isTrailer) {
-          continue;
-        }
-
-        const episodeNumber = this.parseEpisodeNumber(episode);
-        if (!episodeNumber) {
-          continue;
-        }
-
-        // Build URL: /en/play/{cid}/{vid}-EP{episode}%3A{title}
-        const encodedTitle = encodeURIComponent(title);
-        const episodeUrl = `https://wetv.vip/en/play/${coverId}/${vid}-EP${episode}%3A${encodedTitle}`;
-
-        // Determine episode type based on labels and payStatus
-        const type = this.determineTypeFromVideo(video);
-
-        episodes.push({
-          number: episodeNumber,
-          url: episodeUrl,
-          type,
-          title: `${title} - Episode ${episode}`,
-          extractedAt: new Date(),
-        });
-      }
+      return this.episodesFromVideoList(pageData.videoList ?? [], pageData.coverInfo);
     } catch (error) {
       // If extraction fails, return empty array to trigger fallback
       console.error('Failed to extract from __NEXT_DATA__:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Extract episodes from the Next.js App Router page variant: data is
+   * serialized across self.__next_f.push([1, "..."]) flight chunks inside an
+   * RSC node that holds "currentVid".
+   */
+  private extractFromFlightData(html: string): Episode[] {
+    const flight = this.decodeFlightText(html);
+    if (!flight) return [];
+
+    const node = this.extractFlightNode(flight);
+    if (!node) return [];
+
+    const { album, video, episodes = [] } = node;
+
+    // Map flight fields onto the __NEXT_DATA__ videoList shape so both
+    // variants share the episode-building/classification logic
+    const videoList: PageData['videoList'] = episodes.map((ep) => ({
+      vid: ep.id ?? '',
+      episode: ep.episode ?? '',
+      isTrailer: ep.is_trailer ?? 0,
+      payStatus: ep.final_pay_status,
+      defaultPayStatus: ep.default_pay_status,
+      coverList: ep.cover_list,
+      labels: ep.labels,
+    }));
+
+    const coverInfo: PageData['coverInfo'] = {
+      cid: video?.cover_list?.[0] || album?.id || '',
+      title: album?.title || '',
+    };
+
+    return this.episodesFromVideoList(videoList, coverInfo);
+  }
+
+  /** Concatenate every flight chunk string into one RSC text blob. */
+  private decodeFlightText(html: string): string | null {
+    const chunkRe = /self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g;
+    const chunks: string[] = [];
+    for (const match of html.matchAll(chunkRe)) {
+      try {
+        chunks.push(JSON.parse(match[1]!) as string);
+      } catch {
+        // Skip corrupted chunk
+      }
+    }
+    return chunks.length > 0 ? chunks.join('') : null;
+  }
+
+  /**
+   * Find the smallest flight object that directly holds "currentVid":
+   * walk candidate '{' positions backwards from the marker and take the
+   * first whose balanced brace span contains it.
+   */
+  private extractFlightNode(flight: string): FlightNode | null {
+    const marker = flight.indexOf('"currentVid"');
+    if (marker === -1) return null;
+
+    const opens: number[] = [];
+    let idx = flight.indexOf('{');
+    while (idx !== -1 && idx < marker) {
+      opens.push(idx);
+      idx = flight.indexOf('{', idx + 1);
+    }
+
+    for (let i = opens.length - 1; i >= 0; i--) {
+      const node = this.parseObjectAt(flight, opens[i]!);
+      if (node && 'currentVid' in node) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  /** JSON-decode the object starting at start (string-aware brace walk). */
+  private parseObjectAt(flight: string, start: number): FlightNode | null {
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = start; j < flight.length; j++) {
+      const ch = flight[j]!;
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === '\\') {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+      } else if (ch === '"') {
+        inStr = true;
+      } else if (ch === '{') {
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(flight.slice(start, j + 1)) as FlightNode;
+          } catch {
+            return null;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Build Episode[] from a PageData-style video list (shared by the
+   * __NEXT_DATA__ and flight-data extraction paths).
+   */
+  private episodesFromVideoList(videoList: PageData['videoList'], coverInfo: PageData['coverInfo']): Episode[] {
+    const episodes: Episode[] = [];
+    const { cid, title } = coverInfo;
+
+    // Extract CID from first video's coverList if not available in coverInfo
+    const coverId = videoList[0]?.coverList?.[0] || cid;
+
+    // Process each video
+    for (const video of videoList) {
+      const { vid, episode, isTrailer } = video;
+
+      // Skip trailers/teasers
+      if (isTrailer) {
+        continue;
+      }
+
+      const episodeNumber = this.parseEpisodeNumber(episode);
+      if (!episodeNumber) {
+        continue;
+      }
+
+      // Build URL: /en/play/{cid}/{vid}-EP{episode}%3A{title}
+      const encodedTitle = encodeURIComponent(title);
+      const episodeUrl = `https://wetv.vip/en/play/${coverId}/${vid}-EP${episode}%3A${encodedTitle}`;
+
+      // Determine episode type based on labels and payStatus
+      const type = this.determineTypeFromVideo(video);
+
+      episodes.push({
+        number: episodeNumber,
+        url: episodeUrl,
+        type,
+        title: `${title} - Episode ${episode}`,
+        extractedAt: new Date(),
+      });
     }
 
     // Sort by episode number
